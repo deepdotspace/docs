@@ -1,9 +1,9 @@
 ---
 title: "SDK reference"
-description: "All exports from the deepspace package, with signatures and short examples."
+description: "Every export from the deepspace package, with signatures and examples."
 ---
 
-DeepSpace exposes three entry points. Each section of this reference documents the surface of one entry point, organized by feature area.
+The `deepspace` package exposes three entry points. Each section of this reference documents the surface of one entry point, organized by feature.
 
 ```ts
 import { ... } from 'deepspace'          // React client SDK
@@ -11,75 +11,41 @@ import { ... } from 'deepspace/worker'   // Cloudflare Worker runtime
 import { ... } from 'deepspace/testing'  // Playwright fixture (test files only)
 ```
 
-## Client (`deepspace`)
+## Client — `deepspace`
 
-Everything you need on the frontend — providers, hooks, components, and utility functions.
+Everything you import on the frontend — providers, hooks, components, and utility functions.
 
-<CardGroup cols={2}>
-  <Card title="Auth" icon="lock" href="/sdk-reference/client/auth">
-    `useAuth`, `useUser`, `AuthGate`, `AuthOverlay`, `signIn`, `signOut`
-  </Card>
-  <Card title="Records" icon="database" href="/sdk-reference/client/records">
-    `useQuery`, `useMutations`, `RecordProvider`, `RecordScope`
-  </Card>
-  <Card title="Messaging" icon="message" href="/sdk-reference/client/messaging">
-    `useChannels`, `useMessages`, `useReactions`, `useReadReceipts`
-  </Card>
-  <Card title="Real-time" icon="bolt" href="/sdk-reference/client/realtime">
-    `usePresence`, `usePresenceRoom`, `useYjsText`, `useCanvas`, `useGameRoom`
-  </Card>
-  <Card title="Files" icon="file" href="/sdk-reference/client/files">
-    `useR2Files`, `formatFileSize`
-  </Card>
-  <Card title="Integrations" icon="plug" href="/sdk-reference/client/integrations">
-    `integration.post`, OAuth helpers
-  </Card>
-  <Card title="Payments" icon="credit-card" href="/sdk-reference/client/payments">
-    `useSubscription`, `useCheckout`, `PricingTable`
-  </Card>
-  <Card title="Theming" icon="palette" href="/sdk-reference/client/theming">
-    `DeepSpaceThemeProvider`, `applyDeepSpaceTheme`, `getUserColor`
-  </Card>
-</CardGroup>
+| Section | Covers |
+|---|---|
+| [Auth](/sdk-reference/client/auth) | `useAuth`, `useUser`, `AuthGate`, `AuthOverlay`, `signIn`, `signOut`, `getAuthToken` |
+| [Records](/sdk-reference/client/records) | `useQuery`, `useMutations`, `RecordProvider`, `RecordScope`, `useUsers`, `useUserLookup` |
+| [Messaging](/sdk-reference/client/messaging) | `useChannels`, `useMessages`, `useReactions`, `useChannelMembers`, `useReadReceipts`, `useConversation` |
+| [Real-time](/sdk-reference/client/realtime) | `usePresence`, `usePresenceRoom`, `useYjsText`, `useYjsField`, `useCanvas`, `useGameRoom`, `useCronMonitor` |
+| [Files](/sdk-reference/client/files) | `useR2Files`, `formatFileSize`, `isImageFile` |
+| [Integrations](/sdk-reference/client/integrations) | `integration.post`, OAuth helpers, platform-context exports |
+| [Payments](/sdk-reference/client/payments) | `useSubscription`, `useCheckout`, `PricingTable`, server helpers |
+| [Theming](/sdk-reference/client/theming) | `DeepSpaceThemeProvider`, `applyDeepSpaceTheme`, `getUserColor` |
 
-## Worker (`deepspace/worker`)
+## Worker — `deepspace/worker`
 
-Everything you need in your Cloudflare Worker — DO base classes, schemas, auth verification, AI helpers.
+Everything you import inside your Cloudflare Worker — DO base classes, schemas, auth verification, AI helpers.
 
-<CardGroup cols={2}>
-  <Card title="Rooms" icon="server" href="/sdk-reference/worker/rooms">
-    `RecordRoom`, `YjsRoom`, `CanvasRoom`, `PresenceRoom`, `CronRoom`, `GameRoom`
-  </Card>
-  <Card title="Schemas" icon="table" href="/sdk-reference/worker/schemas">
-    `CollectionSchema`, `CHANNELS_SCHEMA`, RBAC types
-  </Card>
-  <Card title="Server actions" icon="shield-halved" href="/sdk-reference/worker/server-actions">
-    `ActionHandler`, `ActionContext`, `ActionResult`
-  </Card>
-  <Card title="AI" icon="sparkles" href="/sdk-reference/worker/ai">
-    `createDeepSpaceAI`, context compaction, chat history
-  </Card>
-  <Card title="Cron" icon="clock" href="/sdk-reference/worker/cron">
-    `CronTask`, `buildCronContext`
-  </Card>
-  <Card title="Auth" icon="key" href="/sdk-reference/worker/auth">
-    `verifyJwt`, HMAC primitives
-  </Card>
-  <Card title="Bindings" icon="plug" href="/sdk-reference/worker/bindings">
-    `runMigrations`, `meterAi`, `meterVectorize`, `meterUsage`
-  </Card>
-  <Card title="Proxy helpers" icon="arrows-right-left" href="/sdk-reference/worker/proxy-helpers">
-    `apiWorkerFetch`, `platformWorkerFetch`, `authWorkerFetch`
-  </Card>
-</CardGroup>
+| Section | Covers |
+|---|---|
+| [Rooms](/sdk-reference/worker/rooms) | `RecordRoom`, `YjsRoom`, `CanvasRoom`, `PresenceRoom`, `CronRoom`, `GameRoom`, `DOManifest` |
+| [Schemas](/sdk-reference/worker/schemas) | `CollectionSchema`, RBAC types, drop-in collections, role constants |
+| [Server actions](/sdk-reference/worker/server-actions) | `ActionHandler`, `ActionContext`, `ActionTools`, `ActionResult` |
+| [AI](/sdk-reference/worker/ai) | `createDeepSpaceAI`, context compaction, chat history, built-in tools |
+| [Cron](/sdk-reference/worker/cron) | `CronTask`, `CronExecution`, `buildCronContext` |
+| [Auth](/sdk-reference/worker/auth) | `verifyJwt`, `createDeepSpaceAuth`, HMAC primitives |
+| [Bindings](/sdk-reference/worker/bindings) | `runMigrations`, `meterAi`, `meterVectorize`, `meterUsage`, manifest types |
+| [Proxy helpers](/sdk-reference/worker/proxy-helpers) | `apiWorkerFetch`, `platformWorkerFetch`, `authWorkerFetch` |
 
-## Testing (`deepspace/testing`)
+## Testing — `deepspace/testing`
 
-Multi-user Playwright fixture and helpers.
+Multi-user Playwright fixture and account helpers.
 
-<Card title="Testing reference" icon="vial" href="/sdk-reference/testing">
-  `test`, `expect`, `users(N)`, `MultiplayerUser`, account helpers
-</Card>
+- [Testing reference](/sdk-reference/testing) — `test`, `expect`, `users(N)`, `MultiplayerUser`, account helpers.
 
 ## TypeScript signatures
 

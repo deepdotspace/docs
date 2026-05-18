@@ -33,34 +33,11 @@ export const schemas = [
 
 You don't need all five — `CHANNELS_SCHEMA` + `MESSAGES_SCHEMA` is the minimum. Add `REACTIONS_SCHEMA` for reactions, `CHANNEL_MEMBERS_SCHEMA` if you need explicit membership records, and `READ_RECEIPTS_SCHEMA` for unread tracking.
 
-The schemas include sensible RBAC defaults: anyone can read public channels; only members can post; only authors can edit or delete their own messages.
+The schemas include sensible [RBAC](/concepts/permissions) defaults: anyone can read public channels; only members can post; only authors can edit or delete their own messages.
 
-## Create and list channels
+## Channels
 
-```tsx
-import { useChannels } from 'deepspace'
-
-function ChannelList() {
-  const { channels, status, create } = useChannels()
-
-  if (status === 'loading') return <SkeletonList />
-
-  async function newChannel() {
-    await create({ name: 'general', type: 'public' })
-  }
-
-  return (
-    <ul>
-      {channels.map((ch) => (
-        <li key={ch.recordId}>#{ch.data.name}</li>
-      ))}
-      <button onClick={newChannel}>New channel</button>
-    </ul>
-  )
-}
-```
-
-`create({ name, type })` requires both fields. The `type` is one of:
+The [`useChannels`](/sdk-reference/client/messaging#usechannels) hook exposes the four channel operations. Channel `type` is one of:
 
 | Type | Visibility |
 |---|---|
@@ -68,67 +45,158 @@ function ChannelList() {
 | `'private'` | Visible only to channel members |
 | `'dm'` | Direct message between two users |
 
-<Warning>
-**`type` is required.** Passing only `{ name }` returns a channel with `type: undefined`, which silently breaks downstream queries. The TypeScript signature catches this if you don't widen the input.
-</Warning>
+<Tabs>
+  <Tab title="Create">
+    ```tsx
+    import { useChannels } from 'deepspace'
 
-### `useChannels` API
+    function NewChannelButton() {
+      const { create } = useChannels()
 
-| Method | Signature | Notes |
-|---|---|---|
-| `create` | `({ name, type, description? }) => Promise<string>` | Creates a channel and returns its `recordId`. |
-| `update` | `(channelId, patch) => Promise<void>` | Edit channel metadata. |
-| `archive` | `(channelId) => Promise<void>` | Hide without deleting. |
-| `remove` | `(channelId) => Promise<void>` | Permanently delete. |
+      async function newChannel() {
+        const channelId = await create({
+          name: 'general',
+          type: 'public',
+          description: 'Company-wide announcements',
+        })
+        navigate(`/channels/${channelId}`)
+      }
 
-## Send and read messages
+      return <button onClick={newChannel}>New channel</button>
+    }
+    ```
 
-```tsx
-import { useMessages, useAuth } from 'deepspace'
-import { useState } from 'react'
+    <Warning>
+    **`type` is required.** Passing only `{ name }` returns a channel with `type: undefined`, which silently breaks downstream queries.
+    </Warning>
+  </Tab>
 
-function ChannelView({ channelId }: { channelId: string }) {
-  const { messages, status, send, edit, softDelete } = useMessages(channelId)
-  const { userId } = useAuth()
-  const [draft, setDraft] = useState('')
+  <Tab title="List">
+    ```tsx
+    import { useChannels } from 'deepspace'
 
-  if (status === 'loading') return <SkeletonList />
+    function ChannelList() {
+      const { channels, status } = useChannels()
 
-  async function handleSend() {
-    if (!draft.trim()) return
-    await send({ content: draft })
-    setDraft('')
-  }
+      if (status === 'loading') return <SkeletonList />
 
-  return (
-    <div>
-      <ul>
-        {messages.map((m) => (
-          <li key={m.recordId}>
-            <strong>{m.data.authorId}:</strong> {m.data.content}
-            {m.data.authorId === userId && (
-              <button onClick={() => softDelete(m.recordId)}>Delete</button>
-            )}
-          </li>
-        ))}
-      </ul>
-      <input value={draft} onChange={(e) => setDraft(e.target.value)} />
-      <button onClick={handleSend}>Send</button>
-    </div>
-  )
-}
-```
+      return (
+        <ul>
+          {channels.map((ch) => (
+            <li key={ch.recordId}>#{ch.data.name}</li>
+          ))}
+        </ul>
+      )
+    }
+    ```
+  </Tab>
 
-### `useMessages` API
+  <Tab title="Update">
+    ```tsx
+    const { update } = useChannels()
 
-| Method | Signature | Notes |
-|---|---|---|
-| `send` | `({ content, metadata? }) => Promise<string>` | Posts a new message. Returns the message ID. |
-| `edit` | `(messageId, patch) => Promise<void>` | Update message content. |
-| `softDelete` | `(messageId) => Promise<void>` | Sets a tombstone flag — preserves chat continuity. **Preferred.** |
-| `remove` | `(messageId) => Promise<void>` | Hard delete. Use sparingly. |
+    await update(channelId, { description: 'Updated description' })
+    ```
 
-The hook subscribes to all messages in the channel and re-renders on every update.
+    [Merge semantics](/sdk-reference/client/records#usemutations-t-collection) apply — only the fields you pass are changed.
+  </Tab>
+
+  <Tab title="Archive / delete">
+    ```tsx
+    const { archive, remove } = useChannels()
+
+    // Hide without deleting (reversible)
+    await archive(channelId)
+
+    // Permanently delete
+    await remove(channelId)
+    ```
+
+    Prefer `archive` for user-facing flows; `remove` is for cleanup operations.
+  </Tab>
+</Tabs>
+
+## Messages
+
+The [`useMessages(channelId)`](/sdk-reference/client/messaging#usemessages-channelid-options) hook returns the message list plus the four message operations.
+
+<Tabs>
+  <Tab title="Send">
+    Identity (author) is derived from the verified JWT — you don't pass an `authorId`.
+
+    ```tsx
+    import { useMessages } from 'deepspace'
+    import { useState } from 'react'
+
+    function MessageComposer({ channelId }: { channelId: string }) {
+      const { send } = useMessages(channelId)
+      const [draft, setDraft] = useState('')
+
+      async function handleSend() {
+        if (!draft.trim()) return
+        await send({ content: draft })
+        setDraft('')
+      }
+
+      return (
+        <>
+          <input value={draft} onChange={(e) => setDraft(e.target.value)} />
+          <button onClick={handleSend}>Send</button>
+        </>
+      )
+    }
+    ```
+  </Tab>
+
+  <Tab title="List">
+    ```tsx
+    import { useMessages, useAuth } from 'deepspace'
+
+    function MessageList({ channelId }: { channelId: string }) {
+      const { messages, status } = useMessages(channelId)
+      const { userId } = useAuth()
+
+      if (status === 'loading') return <SkeletonList />
+
+      return (
+        <ul>
+          {messages.map((m) => (
+            <li key={m.recordId}>
+              <strong>{m.data.authorId}:</strong> {m.data.content}
+            </li>
+          ))}
+        </ul>
+      )
+    }
+    ```
+
+    The hook subscribes to all messages in the channel and re-renders on every update.
+  </Tab>
+
+  <Tab title="Edit">
+    ```tsx
+    const { edit } = useMessages(channelId)
+
+    await edit(messageId, { content: 'Updated text' })
+    ```
+
+    The default [`MESSAGES_SCHEMA`](/sdk-reference/worker/schemas) allows authors to edit their own messages.
+  </Tab>
+
+  <Tab title="Delete">
+    Two flavors. Prefer `softDelete` — it sets a tombstone flag instead of removing the row, which preserves chat history continuity.
+
+    ```tsx
+    const { softDelete, remove } = useMessages(channelId)
+
+    // Preferred — tombstone flag
+    await softDelete(messageId)
+
+    // Hard delete — use sparingly
+    await remove(messageId)
+    ```
+  </Tab>
+</Tabs>
 
 ## Reactions
 
@@ -272,16 +340,8 @@ function ChannelView({ channelId }: { channelId: string }) {
 }
 ```
 
-## Next
+## Next steps
 
-<CardGroup cols={2}>
-  <Card title="Presence and cursors" icon="users" href="/guides/presence-and-cursors">
-    Add typing indicators and online status.
-  </Card>
-  <Card title="Permissions" icon="lock" href="/concepts/permissions">
-    Make a channel private to specific roles.
-  </Card>
-  <Card title="Messaging reference" icon="code" href="/sdk-reference/client/messaging">
-    Full API for channels, messages, reactions, and read receipts.
-  </Card>
-</CardGroup>
+- [Presence and cursors](/guides/presence-and-cursors) — add typing indicators and online status.
+- [Permissions](/concepts/permissions) — make a channel private to specific roles.
+- [Messaging reference](/sdk-reference/client/messaging) — full API for channels, messages, reactions, and read receipts.

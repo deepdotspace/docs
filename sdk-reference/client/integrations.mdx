@@ -3,6 +3,8 @@ title: "Integrations reference"
 description: "The `integration` client and OAuth helpers."
 ---
 
+The `integration` object fronts 215+ third-party API endpoints through the platform's signed proxy. For discovery, billing, and the full workflow see the [external APIs guide](/guides/external-apis); for the CLI catalog, see [`deepspace integrations`](/cli-reference/commands#integrations-and-invoke).
+
 ```ts
 import { integration } from 'deepspace'
 import type { IntegrationResponse, RequestOptions } from 'deepspace'
@@ -23,6 +25,58 @@ const integration: {
 
 Endpoint names are two segments: `<integration>/<endpoint>` (e.g. `openai/chat-completion`).
 
+<Tabs>
+  <Tab title="POST">
+    The most common verb. Use for actions, completions, lookups, and anything with a request body.
+
+    ```ts
+    const result = await integration.post('openai/chat-completion', {
+      model: 'claude-sonnet-4-6',
+      messages: [{ role: 'user', content: 'Hello' }],
+    })
+
+    if (result.success) {
+      console.log(result.data)
+    } else {
+      console.error(result.error, result.issues)
+    }
+    ```
+  </Tab>
+
+  <Tab title="GET">
+    For idempotent reads. Pass query parameters via the endpoint path or use `post` if the API requires them in the body.
+
+    ```ts
+    const result = await integration.get('finnhub/market-news')
+    ```
+  </Tab>
+
+  <Tab title="PUT">
+    For idempotent updates against REST-style endpoints.
+
+    ```ts
+    const result = await integration.put('notion/update-page', {
+      pageId: 'abc123',
+      properties: { Status: 'Done' },
+    })
+    ```
+  </Tab>
+
+  <Tab title="DELETE">
+    For destructive operations. The platform proxy is signed and rate-limited per integration; OAuth scopes apply if the integration is OAuth-backed.
+
+    ```ts
+    const result = await integration.delete('notion/delete-block', {
+      blockId: 'xyz789',
+    })
+    ```
+  </Tab>
+</Tabs>
+
+<Warning>
+**Auth-gate any UI that calls `integration.post(...)` for `'developer'`-billed endpoints.** The api-worker accepts anonymous callers, so a public endpoint silently bills the owner for every visitor (or bot) hit. Wrap calling components in [`useAuth().isSignedIn`](/sdk-reference/client/auth#useauth-authstate). See the [external APIs guide](/guides/external-apis#billing--developer-vs-user) for billing routing.
+</Warning>
+
 ## `IntegrationResponse<T>`
 
 ```ts
@@ -37,7 +91,7 @@ type ValidationIssue = {
 }
 ```
 
-`issues` appears when the api-worker's Zod validator rejects the body shape. Read it instead of guessing field names.
+`issues` appears when the api-worker's Zod validator rejects the body shape. Read it instead of guessing field names — or run [`deepspace integrations info <endpoint>`](/cli-reference/commands#integrations-and-invoke) to print the schema before you call.
 
 ## `RequestOptions`
 
@@ -46,6 +100,13 @@ type RequestOptions = {
   headers?: Record<string, string>
   timeoutMs?: number   // default 120000 (120s)
 }
+```
+
+```ts
+const r = await integration.post('exa/search', body, {
+  timeoutMs: 30_000,
+  headers: { 'X-Custom': 'value' },
+})
 ```
 
 ## Cross-app platform context
@@ -124,9 +185,10 @@ When a user calls an OAuth endpoint without a connected account:
 { success: false, error: 'requiresOAuth', provider: 'google', connectUrl: '...' }
 ```
 
-Redirect the user to `connectUrl` (or call `/api/integrations/oauth/google/connect` directly).
+Redirect the user to `connectUrl` (or call `/api/integrations/oauth/google/connect` directly), then retry the original call.
 
 ## See also
 
-- [External APIs guide](/guides/external-apis) — patterns, billing, and discovery
-- [CLI integrations command](/cli-reference/commands#integrations) — `list` / `info` / `invoke`
+- [External APIs guide](/guides/external-apis) — patterns, billing routing, and discovery.
+- [CLI integrations command](/cli-reference/commands#integrations-and-invoke) — `list` / `info` / `invoke`.
+- [AI chat guide](/guides/ai-chat) — streamed LLM responses with tool use (uses a different pipeline).

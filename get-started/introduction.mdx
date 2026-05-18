@@ -43,41 +43,13 @@ DeepSpace runs on Cloudflare's global network, so apps are low-latency by defaul
 
 ## Architecture at a glance
 
-Each DeepSpace app is two pieces deployed together:
+Each DeepSpace app is two pieces deployed together. **Your worker** is a Cloudflare Worker that hosts the React SPA, exposes API routes, and owns the per-app Durable Objects that hold records, Yjs documents, canvases, presence, and scheduled jobs. **The DeepSpace platform** is a set of shared workers — auth, billing, integrations, cross-app data — that your worker addresses over service bindings. You write and deploy the first; you never touch the second.
 
-1. **Your Worker** — a Cloudflare Worker hosting the React SPA, the API routes, and per-app Durable Objects (records, Yjs, canvas, presence, cron).
-2. **Platform Workers** — DeepSpace-operated services that handle authentication, payments, integration proxying, and cross-app data sharing. You never deploy these; the SDK talks to them on your behalf.
-
-```
-              ┌──────────────────────────────────────────┐
-              │           Your Worker (deployed)         │
-              │                                          │
-   Browser ──▶│  React SPA  ──▶  Hono routes  ──▶  DOs   │
-              │                                          │
-              └────────┬────────────────────┬────────────┘
-                       │                    │
-                       ▼                    ▼
-                ┌──────────────┐    ┌────────────────────┐
-                │  Auth worker │    │ API / Platform     │
-                │  (platform)  │    │ workers (platform) │
-                └──────────────┘    └────────────────────┘
-```
-
-[Read the full architecture overview →](/concepts/architecture)
+See [Architecture](/concepts/architecture) for the full breakdown.
 
 ## Next steps
 
-<CardGroup cols={2}>
-  <Card title="Quickstart" icon="rocket" href="/get-started/quickstart">
-    Scaffold and deploy your first app.
-  </Card>
-  <Card title="Installation" icon="download" href="/get-started/installation">
-    Prereqs, account setup, and CLI login.
-  </Card>
-  <Card title="Project structure" icon="folder-tree" href="/get-started/project-structure">
-    A tour of the scaffolded files and what each one does.
-  </Card>
-  <Card title="Concepts" icon="book" href="/concepts/architecture">
-    Learn how the SDK is organized before you build.
-  </Card>
-</CardGroup>
+- [Quickstart](/get-started/quickstart) — scaffold and deploy your first app.
+- [Installation](/get-started/installation) — prerequisites, account setup, and CLI login.
+- [Project structure](/get-started/project-structure) — a tour of the scaffolded files.
+- [Architecture](/concepts/architecture) — workers, Durable Objects, and scopes.

@@ -190,16 +190,8 @@ npx deepspace add cron
 
 This installs a heartbeat task and a read-only `/cron-log` page that subscribes via `useCronMonitor(SCOPE_ID)` and renders tasks + history. It does **not** expose `trigger` / `pause` / `resume` — add those yourself with admin gating.
 
-## Next
+## Next steps
 
-<CardGroup cols={2}>
-  <Card title="Worker cron reference" icon="server" href="/sdk-reference/worker/cron">
-    `CronRoom`, `CronTask`, `buildCronContext`.
-  </Card>
-  <Card title="Server actions" icon="shield-halved" href="/guides/server-actions">
-    Privileged on-demand operations.
-  </Card>
-  <Card title="External APIs" icon="plug" href="/guides/external-apis">
-    Calling third-party APIs from your worker.
-  </Card>
-</CardGroup>
+- [Worker cron reference](/sdk-reference/worker/cron) — `CronRoom`, `CronTask`, `buildCronContext`.
+- [Server actions](/guides/server-actions) — privileged on-demand operations.
+- [External APIs](/guides/external-apis) — calling third-party APIs from your worker.

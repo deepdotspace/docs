@@ -3,6 +3,8 @@ title: "Files reference"
 description: "`useR2Files` and file display helpers."
 ---
 
+The `useR2Files` hook handles uploads, listings, deletions, and signed URLs against the app's R2 bucket. All operations route through the platform's file gateway, so end users never touch raw R2 credentials. For patterns and worked examples, see the [file uploads guide](/guides/file-uploads).
+
 ```ts
 import { useR2Files, isImageFile, formatFileSize } from 'deepspace'
 import type { R2FileInfo, R2Scope } from 'deepspace'
@@ -10,20 +12,89 @@ import type { R2FileInfo, R2Scope } from 'deepspace'
 
 ## `useR2Files(options?)`
 
-Returns upload, list, delete, download, and URL-resolution helpers for the app's R2 bucket.
-
 ```ts
 function useR2Files(options?: { scope?: R2Scope }): {
   upload:       (file: File | Blob, opts?: { originalName?: string }) => Promise<{ key: string }>
   uploadBase64: (data: string, opts?: { originalName?: string }) => Promise<{ key: string }>
   deleteFile:   (key: string) => Promise<void>
   downloadFile: (key: string) => Promise<Blob>
-  readFile:     (key: string) => Promise<string>     // text content
+  readFile:     (key: string) => Promise<string>
   list:         () => Promise<R2FileInfo[]>
-  getUrl:       (key: string) => string              // signed URL
+  getUrl:       (key: string) => string
   isUploading:  boolean
 }
 ```
+
+<Tabs>
+  <Tab title="Upload">
+    `upload` accepts a `File` (from `<input type="file">` or a drag-drop event) or a `Blob`. Returns the storage key — a unique string identifying the uploaded file.
+
+    ```tsx
+    const { upload, isUploading } = useR2Files()
+
+    async function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+      const file = e.target.files?.[0]
+      if (!file) return
+      const { key } = await upload(file)
+      console.log('uploaded:', key)
+    }
+    ```
+  </Tab>
+
+  <Tab title="Upload (base64)">
+    Use when you have data as a Base64 string — for example, from `<canvas>` `toDataURL()`.
+
+    ```tsx
+    const { uploadBase64 } = useR2Files()
+
+    const canvas = canvasRef.current!
+    const dataUrl = canvas.toDataURL('image/png')
+    const base64 = dataUrl.split(',')[1]
+
+    const { key } = await uploadBase64(base64, { originalName: 'drawing.png' })
+    ```
+  </Tab>
+
+  <Tab title="List">
+    `list()` is an async function — call it and store the result in component state rather than expecting a reactive array.
+
+    ```tsx
+    import { useState, useEffect } from 'react'
+
+    const { list } = useR2Files()
+    const [files, setFiles] = useState<R2FileInfo[]>([])
+
+    async function refresh() {
+      setFiles(await list())
+    }
+
+    useEffect(() => { refresh() }, [])
+    ```
+  </Tab>
+
+  <Tab title="Delete">
+    Removes the file from R2 and broadcasts the change. There is no recycle bin — deletes are immediate and irreversible.
+
+    ```tsx
+    const { deleteFile } = useR2Files()
+
+    await deleteFile(key)
+    ```
+  </Tab>
+
+  <Tab title="Read / download">
+    `getUrl(key)` returns a signed URL the browser can fetch directly. For programmatic access, use `downloadFile` for binary or `readFile` for text.
+
+    ```tsx
+    const { getUrl, downloadFile, readFile } = useR2Files()
+
+    <img src={getUrl(key)} alt="" />
+
+    const blob = await downloadFile(key)
+    const text = await readFile(key)
+    ```
+  </Tab>
+</Tabs>
 
 `list()` is an async function — call it and store the result in component state rather than reading a reactive array.
 
@@ -33,15 +104,15 @@ function useR2Files(options?: { scope?: R2Scope }): {
 type R2FileInfo = {
   key: string
   size: number
-  uploaded: string         // ISO timestamp
-  url: string              // signed URL valid for retrieval
+  uploaded: string
+  url: string
   originalName?: string
   uploadedBy?: string
 }
 ```
 
 <Note>
-There is no `mimeType` / `contentType` field on `R2FileInfo`. Capture MIME at upload time and store it in a sidecar collection if you need it later.
+There is no `mimeType` / `contentType` field on `R2FileInfo`. Capture the MIME type at upload time and store it in a sidecar [collection](/concepts/data-model) if you need it later. See [storing metadata](/guides/file-uploads#storing-metadata).
 </Note>
 
 ## Scoping — `R2Scope`
@@ -55,7 +126,7 @@ type R2Scope =
 
 | Scope | Files visible to |
 |---|---|
-| `{ type: 'global' }` (default) | All users in the app |
+| `{ type: 'global' }` *(default)* | All users in the app |
 | `{ type: 'user', userId }` | Only the specified user |
 | `{ type: 'room', roomId }` | Only members of the room |
 
@@ -73,9 +144,10 @@ const { upload, list } = useR2Files({ scope: { type: 'user', userId } })
 ## Local dev limitation
 
 <Warning>
-R2 uploads require an `APP_IDENTITY_TOKEN` minted by the deploy worker. The CLI does not provision this token locally, so `upload()` round-trips return 401 from the platform file gateway. In local dev, assert that uploads are *dispatched*; the full flow works only against deployed apps.
+R2 uploads require an `APP_IDENTITY_TOKEN` minted by the deploy worker. The CLI does not provision this token locally, so `upload()` round-trips return 401 from the platform file gateway. In local dev, assert that uploads are *dispatched*; the full flow works only against [deployed apps](/concepts/deployment).
 </Warning>
 
 ## See also
 
-- [File uploads guide](/guides/file-uploads) — patterns and worked examples
+- [File uploads guide](/guides/file-uploads) — patterns and worked examples.
+- [Custom bindings](/guides/custom-bindings) — declare your own R2 bucket with custom permissions.

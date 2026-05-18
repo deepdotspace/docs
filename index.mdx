@@ -1,9 +1,11 @@
 ---
 title: "DeepSpace SDK"
-description: "Build real-time collaborative apps in one package. Auth, storage, multiplayer, payments, and zero-config deploys to your own subdomain."
+description: "Build real-time collaborative apps on Cloudflare Workers. Auth, storage, multiplayer, payments, and one-command deploys."
 ---
 
 DeepSpace is a full-stack SDK for shipping real-time apps on Cloudflare Workers. One package gives you authentication, SQLite-backed data sync, role-based permissions, presence, collaborative editing, channel-based messaging, file storage, AI chat, scheduled jobs, payments, and deploys to `<your-app>.app.space` — or your own custom domain.
+
+## Get started in three commands
 
 ```bash
 npm create deepspace@latest my-app
@@ -11,85 +13,58 @@ cd my-app
 npx deepspace dev
 ```
 
-A new app boots in under a minute with sensible defaults: file-based routing, Tailwind v4, shadcn-style UI primitives, and a starter worker wired to a per-app Durable Object. When you're ready to ship, one command deploys to the edge.
+The scaffold ships a Vite + React frontend, a Hono worker, file-based routing, Tailwind v4, a shadcn-style UI primitives kit, and five Durable Object classes wired into the SDK. Edit `src/` and refresh the browser. When you're ready to ship, run `npx deepspace deploy`.
 
-<CardGroup cols={2}>
-  <Card title="Quickstart" icon="rocket" href="/get-started/quickstart">
-    Scaffold, run, and deploy your first app in five minutes.
-  </Card>
-  <Card title="Architecture" icon="diagram-project" href="/concepts/architecture">
-    How the worker, Durable Objects, and platform fit together.
-  </Card>
-  <Card title="Client hooks" icon="react" href="/sdk-reference/client/records">
-    `useQuery`, `useMutations`, `useAuth`, and the rest.
-  </Card>
-  <Card title="CLI" icon="terminal" href="/cli-reference/overview">
-    `deepspace dev`, `deploy`, `add`, `domain`, and more.
-  </Card>
-</CardGroup>
+[Follow the quickstart →](/get-started/quickstart)
 
-## What you can build
+## The SDK
 
-DeepSpace is opinionated for apps where state is shared. The SDK ships the primitives so you don't have to write them.
+Three entry points cover every surface.
 
-<CardGroup cols={2}>
-  <Card title="Multiplayer apps" icon="users">
-    Live cursors, presence, and per-collection RBAC with no extra plumbing.
-  </Card>
-  <Card title="Collaborative editors" icon="pen-to-square">
-    Yjs-backed text fields and shapes, synced over WebSocket.
-  </Card>
-  <Card title="Messaging products" icon="message">
-    Channels, DMs, reactions, and read receipts as drop-in schemas.
-  </Card>
-  <Card title="AI applications" icon="sparkles">
-    Streamed Claude, GPT, or Cerebras with tool use over your records.
-  </Card>
-  <Card title="SaaS with billing" icon="credit-card">
-    Subscriptions, one-time products, and refunds via Stripe Checkout.
-  </Card>
-  <Card title="Internal tools" icon="screwdriver-wrench">
-    Dashboards, trackers, and admin consoles with auth and storage built in.
-  </Card>
-</CardGroup>
-
-## Two imports
-
-Everything you need lives behind two import paths.
-
-```tsx
+```ts
 // Frontend (React)
 import { RecordProvider, useQuery, useMutations, useAuth } from 'deepspace'
 
 // Worker (Cloudflare Worker)
 import { RecordRoom, verifyJwt, CHANNELS_SCHEMA } from 'deepspace/worker'
+
+// Multi-user Playwright fixture (test files only)
+import { test, expect } from 'deepspace/testing'
 ```
 
-A third entry point, `deepspace/testing`, exposes a Playwright fixture for multiplayer tests. See the [Testing guide](/guides/testing).
+| Entry point | What lives here |
+|---|---|
+| `deepspace` | React hooks, providers, auth UI, theming, payments client, integration client |
+| `deepspace/worker` | Durable Object base classes, schemas, JWT verification, AI helpers, metering |
+| `deepspace/testing` | Playwright fixture and account helpers for multi-user tests |
 
-## How the SDK is organized
+A single CLI ships in the same package: `npx deepspace dev`, `deploy`, `add`, `domain`, and more.
 
-The DeepSpace SDK has three surfaces. Most apps only need the first two.
+## What you can build
 
-| Surface | What lives here | Import from |
-|---|---|---|
-| **Client** | React hooks, providers, auth UI, theming | `deepspace` |
-| **Worker** | Durable Object base classes, schemas, JWT verification, AI helpers | `deepspace/worker` |
-| **CLI** | Project scaffold, dev server, deploy, integration probes | `npx deepspace` |
+DeepSpace is opinionated for apps where state is shared. The SDK ships the primitives so you don't write them yourself.
 
-## Where to next
+- **Multiplayer apps.** Live cursors, presence, and per-collection RBAC out of the box.
+- **Collaborative editors.** Yjs-backed text fields and shapes synced over WebSocket.
+- **Messaging products.** Channels, DMs, reactions, and read receipts as drop-in schemas.
+- **AI applications.** Streamed Claude, GPT, or Cerebras with multi-turn tool use over your records.
+- **SaaS with billing.** Subscriptions, one-time products, and refunds via Stripe Checkout.
+- **Internal tools.** Dashboards, trackers, and admin consoles with auth and storage built in.
 
-<CardGroup cols={2}>
-  <Card title="Get started" icon="play" href="/get-started/introduction">
-    Read the introduction, then run the quickstart.
-  </Card>
-  <Card title="Learn the concepts" icon="book" href="/concepts/architecture">
-    Workers, Durable Objects, scopes, and the data model.
-  </Card>
-  <Card title="Browse guides" icon="map" href="/guides/authentication">
-    Task-shaped walkthroughs — auth, messaging, payments, and more.
-  </Card>
-  <Card title="API reference" icon="code" href="/sdk-reference/overview">
-    Every export, with signatures and examples.
-  </Card>
-</CardGroup>
+## How this site is organized
+
+| Section | What you'll find |
+|---|---|
+| [Get started](/get-started/introduction) | Introduction, quickstart, installation, and a tour of the scaffolded project. |
+| [Core concepts](/concepts/architecture) | The mental model — architecture, the data model, permissions, real-time sync, deployment. |
+| [Build with DeepSpace](/guides/authentication) | Task-shaped walkthroughs for the features you'll use most: auth, messaging, payments, AI chat, and the rest. |
+| [Worker & server](/guides/server-actions) | Server actions, scheduled jobs, external APIs, and custom Cloudflare bindings. |
+| [Going to production](/guides/testing) | Testing patterns, custom domains, and deploy mechanics. |
+| [SDK reference](/sdk-reference/overview) | Every export from `deepspace`, `deepspace/worker`, and `deepspace/testing`. |
+| [CLI reference](/cli-reference/overview) | Every CLI command, every flag. |
+
+## Need help?
+
+- Join the [Discord](https://discord.gg/hcKSav5PpU) to ask questions and share what you've built.
+- Browse the source on [GitHub](https://github.com/deepdotspace).
+- Try the hosted app builder at [deep.space](https://deep.space).

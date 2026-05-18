@@ -3,6 +3,8 @@ title: "Records reference"
 description: "Providers, hooks, and the data layer for reading and writing records."
 ---
 
+The records API is the primary surface for working with [collections](/concepts/data-model). Every hook and provider on this page is imported from `deepspace`.
+
 ```ts
 import {
   RecordProvider, RecordScope, ScopeRegistryProvider,
@@ -10,6 +12,8 @@ import {
   RecordStore,
 } from 'deepspace'
 ```
+
+For schemas and column types, see the [worker schemas reference](/sdk-reference/worker/schemas). For RBAC rules, see [permissions](/concepts/permissions).
 
 ## Providers
 
@@ -21,8 +25,8 @@ Initializes the WebSocket and in-memory record store. Required ancestor of every
 |---|---|---|
 | `roomId` | `string` | Scope ID for the default room (usually `app:<APP_NAME>`). |
 | `schemas` | `CollectionSchema[]` | All collections this provider tree may query. |
-| `wsUrl` | `string` (optional) | Override the WebSocket URL. Defaults to current origin. |
-| `allowAnonymous` | `boolean` | Connect without a JWT (default `false`). Required for public pages. |
+| `wsUrl` | `string` *(optional)* | Override the WebSocket URL. Defaults to current origin. |
+| `allowAnonymous` | `boolean` | Connect without a JWT (default `false`). Required for public pages. See [authentication](/guides/authentication). |
 | `getAuthToken` | `() => Promise<string>` | Custom token fetcher. Defaults to the SDK's. |
 
 ```tsx
@@ -33,16 +37,16 @@ Initializes the WebSocket and in-memory record store. Required ancestor of every
 
 ### `<RecordScope>`
 
-Mounts a specific scope (DO instance). Nest for additional scopes.
+Mounts a specific [scope](/concepts/architecture#scopes) (Durable Object instance). Nest for additional scopes.
 
 | Prop | Type | Description |
 |---|---|---|
 | `roomId` | `string` | Scope ID (e.g. `app:my-app`, `conv:abc123`). |
 | `schemas` | `CollectionSchema[]` | Collections in this scope. |
 | `appId` | `string` | App identifier — used for cross-app routing. |
-| `sharedScopes` | `Array<{ roomId, schemas }>` | Cross-app scopes to mount alongside the primary. |
-| `wsUrl` | `string` (optional) | Override WebSocket URL. |
-| `wsPathPrefix` | `string` (optional) | Override path prefix (default `/ws`). |
+| `sharedScopes` | `Array<{ roomId, schemas }>` | Cross-app scopes to mount alongside the primary. See [cross-app shared scopes](/concepts/architecture#cross-app-shared-scopes). |
+| `wsUrl` | `string` *(optional)* | Override WebSocket URL. |
+| `wsPathPrefix` | `string` *(optional)* | Override path prefix (default `/ws`). |
 | `isolated` | `boolean` | If true, this scope's store is independent of parent stores. |
 
 ### `<ScopeRegistryProvider>`
@@ -51,7 +55,7 @@ Required once near the root if your app uses shared scopes via `sharedScopes`. C
 
 ## `useQuery<T>(collection, options?)`
 
-Subscribes to a collection. Returns a reactive array of envelopes.
+Subscribes to a collection. Returns a reactive array of [envelopes](/concepts/data-model#collections-and-records).
 
 ```ts
 function useQuery<T>(
@@ -69,6 +73,58 @@ function useQuery<T>(
 }
 ```
 
+<Tabs>
+  <Tab title="Basic">
+    Subscribe to every record in a collection. The hook re-renders whenever any user mutates a record visible to the caller's [permissions](/concepts/permissions).
+
+    ```tsx
+    type Note = { title: string; body: string }
+
+    function Notes() {
+      const { records, status } = useQuery<Note>('notes')
+
+      if (status === 'loading') return <Skeleton />
+      return records.map((r) => <li key={r.recordId}>{r.data.title}</li>)
+    }
+    ```
+  </Tab>
+
+  <Tab title="Filter">
+    `where` filters by exact field match. Filtering happens server-side before broadcast, so unauthorized records never leave the worker.
+
+    ```tsx
+    const { records } = useQuery<Note>('notes', {
+      where: { pinned: true },
+    })
+    ```
+  </Tab>
+
+  <Tab title="Sort & limit">
+    `orderBy` accepts any field name including `createdAt` and `updatedAt`. `limit` caps the records sent over the wire.
+
+    ```tsx
+    const { records } = useQuery<Note>('notes', {
+      orderBy: 'updatedAt',
+      orderDir: 'desc',
+      limit: 50,
+    })
+    ```
+  </Tab>
+
+  <Tab title="Status">
+    Gate your UI on `status` rather than `records.length`. An empty array can mean either "loading" or "loaded with no rows".
+
+    ```tsx
+    const { records, status, error } = useQuery<Note>('notes')
+
+    if (status === 'loading') return <SkeletonList />
+    if (status === 'error') return <ErrorBanner message={error} />
+    if (records.length === 0) return <EmptyState />
+    return <NoteList notes={records} />
+    ```
+  </Tab>
+</Tabs>
+
 Envelope shape:
 
 ```ts
@@ -81,51 +137,102 @@ type Envelope<T> = {
 }
 ```
 
-Example:
-
-```tsx
-type Note = { title: string; body: string }
-const { records, status } = useQuery<Note>('notes', { orderBy: 'createdAt', orderDir: 'desc' })
-
-if (status === 'loading') return <Skeleton />
-return records.map((r) => <li key={r.recordId}>{r.data.title}</li>)
-```
-
 <Warning>
-**User fields live under `.data`.** `r.title` returns `undefined` — always `r.data.title`. TypeScript catches this if you pass a row type to `useQuery<T>`.
+**User fields live under `.data`.** `r.title` returns `undefined` — always reach for `r.data.title`. TypeScript catches this if you pass a row type to `useQuery<T>`.
 </Warning>
 
 ## `useMutations<T>(collection)`
 
-Returns mutation functions for the given collection.
+Returns mutation functions for the given collection. Each mutation applies [optimistically](/concepts/realtime-sync#the-optimistic-mutation-pipeline) — the local store updates before the server confirms.
 
 ```ts
 function useMutations<T>(collection: string): {
-  create:          (data: T)             => Promise<string>   // returns new recordId
+  create:          (data: T)                       => Promise<string>
   put:             (id: string, patch: Partial<T>) => Promise<void>
-  remove:          (id: string)          => Promise<void>
-  createConfirmed: (data: T)             => Promise<string>
+  remove:          (id: string)                    => Promise<void>
+  createConfirmed: (data: T)                       => Promise<string>
   putConfirmed:    (id: string, patch: Partial<T>) => Promise<void>
-  removeConfirmed: (id: string)          => Promise<void>
+  removeConfirmed: (id: string)                    => Promise<void>
 }
 ```
 
-| Method | Behavior |
-|---|---|
-| `create` | Optimistic local apply; resolves with the new `recordId`. |
-| `put` | Merge semantics — server applies `{...existing, ...patch}`. Send only changed fields. |
-| `remove` | Hard delete. |
-| `*Confirmed` | Resolves only after the DO acknowledges the write. Use when next step depends on persistence. |
+<Tabs>
+  <Tab title="Create">
+    `create` takes the full row shape and returns the server-generated `recordId`. The local store updates immediately; the server confirms milliseconds later.
 
-Example:
+    ```tsx
+    const { create } = useMutations<Note>('notes')
 
-```ts
-const { create, put, remove } = useMutations<Note>('notes')
+    const id = await create({
+      title: 'Untitled',
+      body: '',
+      pinned: false,
+    })
+    ```
 
-const id = await create({ title: 'New', body: '' })
-await put(id, { title: 'Updated' })
-await remove(id)
-```
+    If you need the `recordId` before navigating, use `createConfirmed` to wait for server acknowledgment:
+
+    ```tsx
+    const id = await createConfirmed({ title: 'New', body: '', pinned: false })
+    navigate(`/notes/${id}`)
+    ```
+  </Tab>
+
+  <Tab title="Update">
+    `put` is **merge semantics** — the server applies `{ ...existing, ...patch }`. Send only the fields you're changing.
+
+    ```tsx
+    const { put } = useMutations<Note>('notes')
+
+    await put(noteId, { pinned: true })          // only updates pinned
+    await put(noteId, { title: 'New title' })    // only updates title
+    ```
+
+    Do not spread the existing record:
+
+    ```tsx
+    // ❌ Wasteful — sends every field
+    await put(noteId, { ...note.data, pinned: true })
+
+    // ✅ Send only what changed
+    await put(noteId, { pinned: true })
+    ```
+  </Tab>
+
+  <Tab title="Delete">
+    `remove` is a hard delete. The record is dropped from the DO's SQLite store and broadcast as `record_removed` to every connected client.
+
+    ```tsx
+    const { remove } = useMutations<Note>('notes')
+
+    await remove(noteId)
+    ```
+
+    There is no soft-delete primitive at the records layer. For chat messages, use [`useMessages().softDelete`](/sdk-reference/client/messaging#usemessages) which sets a tombstone flag instead.
+  </Tab>
+
+  <Tab title="Confirmed variants">
+    `createConfirmed` / `putConfirmed` / `removeConfirmed` resolve only after the DO has acknowledged the write. Use when the next step depends on server persistence — typically before navigation.
+
+    ```tsx
+    const { createConfirmed } = useMutations<Note>('notes')
+
+    const id = await createConfirmed({ title: 'New' })
+    navigate(`/notes/${id}`)   // safe — server has persisted
+    ```
+
+    Plain `create` resolves as soon as the local store is updated, which is usually before the server confirms. If the server then rejects the write (e.g., RBAC denial), the optimistic update [rolls back](/concepts/realtime-sync#the-optimistic-mutation-pipeline).
+  </Tab>
+</Tabs>
+
+| Method | Semantics | Returns |
+|---|---|---|
+| `create` | Optimistic | `Promise<string>` (new `recordId`) |
+| `put` | Optimistic, merge | `Promise<void>` |
+| `remove` | Optimistic | `Promise<void>` |
+| `createConfirmed` | Waits for DO ack | `Promise<string>` |
+| `putConfirmed` | Waits for DO ack | `Promise<void>` |
+| `removeConfirmed` | Waits for DO ack | `Promise<void>` |
 
 ## `useUsers()`
 
@@ -140,20 +247,20 @@ function useUsers(): {
 }
 ```
 
-`setRole` is admin-only — the DO rejects non-admin callers.
+`setRole` is admin-only — the Durable Object rejects non-admin callers. See [permissions](/concepts/permissions#roles) for how roles map onto collection RBAC rules.
 
 ## `useUserLookup()`
 
-O(1) wrapper around `useUsers()` for resolving userIds to display fields.
+O(1) wrapper around `useUsers()` for resolving `userId`s to display fields.
 
 ```ts
 function useUserLookup(): {
   users: User[]
   usersLoaded: boolean
   userMap: Map<string, User>
-  getUser: (userId: string) => User | undefined
+  getUser:  (userId: string) => User | undefined
   getEmail: (userId: string) => string | undefined
-  getName: (userId: string) => string | undefined
+  getName:  (userId: string) => string | undefined
 }
 ```
 
@@ -162,7 +269,7 @@ const { getName } = useUserLookup()
 <p>By {getName(message.authorId) ?? 'unknown'}</p>
 ```
 
-There is no `getRole` or `getImageUrl` — for those, read off `getUser(id)?.role` or `getUser(id)?.imageUrl`.
+There is no `getRole` or `getImageUrl` — read those off `getUser(id)?.role` or `getUser(id)?.imageUrl`.
 
 ## `useRecordContext()`
 
@@ -170,7 +277,8 @@ Low-level access to the underlying `RecordStore`. Useful for building custom hoo
 
 ## See also
 
-- [Data storage guide](/guides/data-storage) — schemas, CRUD, and patterns
-- [Data model concepts](/concepts/data-model) — collections, envelopes, scopes
-- [Permissions concepts](/concepts/permissions) — RBAC rules
-- [Worker schemas reference](/sdk-reference/worker/schemas) — `CollectionSchema` type
+- [Data storage guide](/guides/data-storage) — schemas, CRUD, and patterns.
+- [Data model](/concepts/data-model) — collections, envelopes, scopes.
+- [Permissions](/concepts/permissions) — RBAC rules and the `'own'` / `'shared'` / `'published'` shortcuts.
+- [Real-time sync](/concepts/realtime-sync) — optimistic pipeline and consistency guarantees.
+- [Worker schemas reference](/sdk-reference/worker/schemas) — the `CollectionSchema` type and drop-in collections.

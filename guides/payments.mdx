@@ -125,18 +125,66 @@ const r = await fetch('/api/premium', {
 
 `getSubscription(c)` is the read-only variant that returns the subscription shape without throwing.
 
-## One-time products — `useCheckout`
+## One-time charges — `useCheckout`
 
-```tsx
-import { useCheckout } from 'deepspace'
+The [`useCheckout`](/sdk-reference/client/payments#usecheckout-productid--) hook has two modes — **product mode** for durable entitlements declared in `src/products.ts`, and **ad-hoc mode** for tips and donations.
 
-function ProUnlock() {
-  const co = useCheckout({ productId: 'pro_unlock' })
+<Tabs>
+  <Tab title="Product mode">
+    Pass the same `productId` to the hook and to `chargeOnce`. The hook exposes `owned` so you can gate UI before the user pays.
 
-  if (co.owned) return <ProUI />
-  return <button onClick={() => co.chargeOnce({ productId: 'pro_unlock' })}>Buy</button>
-}
-```
+    ```tsx
+    import { useCheckout } from 'deepspace'
+
+    function ProUnlock() {
+      const co = useCheckout({ productId: 'pro_unlock' })
+
+      if (co.owned) return <ProUI />
+      return (
+        <button onClick={() => co.chargeOnce({ productId: 'pro_unlock' })}>
+          Buy
+        </button>
+      )
+    }
+    ```
+
+    Product entitlements survive across sessions and devices — the platform tracks them per user.
+  </Tab>
+
+  <Tab title="Ad-hoc mode">
+    For tips, donations, and "name your price" surfaces. The caller picks the amount.
+
+    ```tsx
+    const co = useCheckout()
+
+    await co.chargeOnce({
+      amount: 500,
+      name: 'Tip',
+      description: 'Thanks!',
+    })
+    ```
+
+    <Warning>
+    **Ad-hoc charges can't be used to unlock features later.** Ad-hoc purchases have `productId: null`, so `ownsProduct(id)` will never return true for them. Use ad-hoc mode only when the transaction itself is the value. For durable entitlements, declare a row in `src/products.ts`.
+    </Warning>
+  </Tab>
+
+  <Tab title="Inspect purchases">
+    Read the full purchase history off `purchases`, or check ownership by ID.
+
+    ```tsx
+    const co = useCheckout()
+
+    for (const p of co.purchases) {
+      console.log(p.productId, p.amountCents, p.refunded)
+    }
+
+    if (co.ownsProduct('pro_unlock')) {
+      // user owns this product
+    }
+    ```
+  </Tab>
+</Tabs>
 
 ### `useCheckout` API
 
@@ -147,19 +195,6 @@ function ProUnlock() {
 | `owned` | `boolean` | `true` iff `productId` was passed to the hook AND a non-refunded purchase exists. |
 | `ownsProduct(id)` | `(productId) => boolean` | Pure check over `purchases`. |
 | `refresh()` | `() => Promise<void>` | Re-pull. |
-
-## Ad-hoc charges (tips, donations)
-
-`useCheckout` supports an ad-hoc mode for tips and "name your price" surfaces:
-
-```tsx
-const co = useCheckout()
-await co.chargeOnce({ amount: 500, name: 'Tip', description: 'Thanks!' })
-```
-
-<Warning>
-**Ad-hoc charges can't be used to unlock features later.** Ad-hoc purchases have `productId: null`, so `ownsProduct(id)` will never return true for them. Use ad-hoc mode only when the transaction itself is the value (tips, donations). For durable entitlements, declare a row in `src/products.ts`.
-</Warning>
 
 ## Cancellation — `cancelSubscription`
 
@@ -236,16 +271,8 @@ function Pricing() {
 
 Pass an `onCheckout` prop if you want to intercept the click and run analytics or pre-flight logic.
 
-## Next
+## Next steps
 
-<CardGroup cols={2}>
-  <Card title="Payments reference" icon="code" href="/sdk-reference/client/payments">
-    Full `useSubscription` and `useCheckout` API.
-  </Card>
-  <Card title="Authentication" icon="lock" href="/guides/authentication">
-    Gate UI behind sign-in.
-  </Card>
-  <Card title="Server actions" icon="shield-halved" href="/guides/server-actions">
-    Admin-only routes for cancellations and refunds.
-  </Card>
-</CardGroup>
+- [Payments reference](/sdk-reference/client/payments) — full `useSubscription` and `useCheckout` API.
+- [Authentication](/guides/authentication) — gate UI behind sign-in.
+- [Server actions](/guides/server-actions) — admin-only routes for cancellations and refunds.

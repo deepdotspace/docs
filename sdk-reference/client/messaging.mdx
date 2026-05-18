@@ -3,6 +3,8 @@ title: "Messaging reference"
 description: "Channels, messages, reactions, members, and read receipts."
 ---
 
+The messaging API ships as drop-in [schemas](/sdk-reference/worker/schemas) and React hooks. Add the schemas to your app's `RecordRoom`, mount the providers (already wired in the scaffold), and call the hooks.
+
 ```ts
 import {
   useChannels, useMessages, useReactions,
@@ -15,6 +17,8 @@ import {
 ```
 
 Every messaging hook returns `status: 'loading' | 'ready' | 'error'` and `error?: string` alongside its records. Gate skeleton states on `status`.
+
+For an end-to-end walkthrough including UI patterns, see the [messaging guide](/guides/messaging).
 
 ## `useChannels()`
 
@@ -30,7 +34,53 @@ function useChannels(): {
 }
 ```
 
-`create({ name, type })` requires both fields. Passing only `{ name }` returns a channel with `type: undefined` and silently breaks downstream queries.
+<Tabs>
+  <Tab title="Create">
+    `create({ name, type })` requires both fields. Passing only `{ name }` returns a channel with `type: undefined` and silently breaks downstream queries.
+
+    ```tsx
+    const { create } = useChannels()
+
+    const channelId = await create({
+      name: 'general',
+      type: 'public',
+      description: 'Company-wide announcements',
+    })
+    ```
+
+    Channel types: `'public'` (any signed-in user), `'private'` (members only), `'dm'` (two-user direct message).
+  </Tab>
+
+  <Tab title="Update">
+    `update` patches channel metadata — name, description, archived state, custom fields. Uses [merge semantics](/sdk-reference/client/records#usemutations-t-collection).
+
+    ```tsx
+    const { update } = useChannels()
+
+    await update(channelId, { description: 'Updated description' })
+    ```
+  </Tab>
+
+  <Tab title="Archive">
+    Hides the channel from default lists without deleting messages. Reversible — set `archived: false` via `update` to restore.
+
+    ```tsx
+    const { archive } = useChannels()
+
+    await archive(channelId)
+    ```
+  </Tab>
+
+  <Tab title="Delete">
+    Hard delete. The channel record and all associated messages remain in the DO until the messages are also deleted. Prefer `archive` for user-facing flows.
+
+    ```tsx
+    const { remove } = useChannels()
+
+    await remove(channelId)
+    ```
+  </Tab>
+</Tabs>
 
 ## `useMessages(channelId, options?)`
 
@@ -41,12 +91,55 @@ function useMessages(channelId: string, options?: {}): {
   error?: string
   send:        (input: { content: string; metadata?: object }) => Promise<string>
   edit:        (messageId: string, patch: Partial<Message>) => Promise<void>
-  softDelete:  (messageId: string) => Promise<void>  // sets tombstone flag
-  remove:      (messageId: string) => Promise<void>  // hard delete
+  softDelete:  (messageId: string) => Promise<void>
+  remove:      (messageId: string) => Promise<void>
 }
 ```
 
-Prefer `softDelete` over `remove` to preserve chat history continuity.
+<Tabs>
+  <Tab title="Send">
+    Posts a new message to the channel. Returns the new `messageId`. Identity (author) is derived from the [verified JWT](/concepts/architecture#security-model--websocket-identity) — you don't pass an `authorId`.
+
+    ```tsx
+    const { send } = useMessages(channelId)
+
+    const messageId = await send({
+      content: 'Hello, world',
+      metadata: { mentions: ['user_abc'] },
+    })
+    ```
+  </Tab>
+
+  <Tab title="Edit">
+    Patches an existing message. The collection's RBAC determines who can edit; the default `MESSAGES_SCHEMA` allows authors to edit their own.
+
+    ```tsx
+    const { edit } = useMessages(channelId)
+
+    await edit(messageId, { content: 'Updated text' })
+    ```
+  </Tab>
+
+  <Tab title="Soft delete">
+    Sets a tombstone flag instead of removing the row. **Preferred over `remove`** — preserves chat history continuity and lets the UI render a "[deleted]" placeholder.
+
+    ```tsx
+    const { softDelete } = useMessages(channelId)
+
+    await softDelete(messageId)
+    ```
+  </Tab>
+
+  <Tab title="Hard delete">
+    Permanently removes the row. Use sparingly — soft delete is almost always the right choice for chat history.
+
+    ```tsx
+    const { remove } = useMessages(channelId)
+
+    await remove(messageId)
+    ```
+  </Tab>
+</Tabs>
 
 ## `useReactions(channelId)`
 
@@ -55,12 +148,20 @@ function useReactions(channelId: string): {
   reactions: Reaction[]
   status: 'loading' | 'ready' | 'error'
   error?: string
-  getReactionsForMessage: (messageId: string) => Reaction[]   // O(1)
+  getReactionsForMessage: (messageId: string) => Reaction[]
   toggle: (messageId: string, emoji: string) => Promise<void>
 }
 ```
 
-`toggle` adds the caller's reaction or removes it if it already exists.
+`getReactionsForMessage` is an O(1) lookup. `toggle` adds the caller's reaction or removes it if it already exists.
+
+```tsx
+const { getReactionsForMessage, toggle } = useReactions(channelId)
+
+<button onClick={() => toggle(messageId, '👍')}>
+  👍 {getReactionsForMessage(messageId).filter(r => r.data.emoji === '👍').length}
+</button>
+```
 
 ## `useChannelMembers(channelId)`
 
@@ -104,7 +205,7 @@ function useConversation(options?: {}): {
 }
 ```
 
-Different from `useMessages` / `useReactions` / `useChannelMembers` — those target the channel-style collections within your app's main RecordRoom. `useConversation` targets a dedicated DM Durable Object.
+Different from `useMessages` / `useReactions` / `useChannelMembers` — those target the channel-style collections within your app's main `RecordRoom`. `useConversation` targets a dedicated DM Durable Object on a `conv:<id>` [scope](/concepts/architecture#scopes).
 
 ## Record types
 
@@ -143,6 +244,8 @@ type ReadReceipt = Envelope<{
 }>
 ```
 
+The [envelope](/concepts/data-model#collections-and-records) shape (`recordId`, `data`, `createdBy`, `createdAt`, `updatedAt`) wraps every record.
+
 ## Helper functions
 
 | Helper | Signature |
@@ -159,14 +262,15 @@ type ReadReceipt = Envelope<{
 | Helper | Signature |
 |---|---|
 | `getConversationDisplayName(conv)` | Resolves a display string from a conversation record |
-| `getConversationParticipantIds(conv)` | Returns the array of participant userIds |
+| `getConversationParticipantIds(conv)` | Returns the array of participant `userId`s |
 | `isDMConversation(type)` | True if `type === 'dm'` |
 
 ## Directory conversations
 
-For cross-app conversations (the platform's shared `dir:<appHandle>` DO), use the directory hooks instead of `useChannels` / `useMessages`. These hooks support discoverable conversations, communities, and posts spanning multiple DeepSpace apps. See the [worker schemas reference](/sdk-reference/worker/schemas) for `DIRECTORY_SCHEMAS`.
+For cross-app conversations (the platform's shared `dir:<appHandle>` DO), use the directory hooks instead of `useChannels` / `useMessages`. These hooks support discoverable conversations, communities, and posts spanning multiple DeepSpace apps. See the [worker schemas reference](/sdk-reference/worker/schemas#drop-in-schemas--directory-cross-app) for `DIRECTORY_SCHEMAS`.
 
 ## See also
 
-- [Messaging guide](/guides/messaging) — usage patterns and worked examples
+- [Messaging guide](/guides/messaging) — UI patterns and worked examples.
+- [Permissions](/concepts/permissions) — how `'private'` / `'dm'` channel types map to RBAC.
 - [Worker schemas reference](/sdk-reference/worker/schemas) — `CHANNELS_SCHEMA`, `MESSAGES_SCHEMA`, etc.

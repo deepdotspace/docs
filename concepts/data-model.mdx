@@ -5,6 +5,13 @@ description: "Collections, records, the envelope shape, and how data flows from 
 
 DeepSpace stores app data in **collections** — typed tables backed by SQLite inside a Durable Object. Each collection is declared in a schema, baked into your worker at deploy time, and exposed to the client through `useQuery` / `useMutations` hooks.
 
+<Info>
+**Three things to remember:**
+- A collection is a typed table. You declare it in `src/schemas/`, register it in `src/schemas.ts`, and the worker compiles it at deploy time.
+- Every record is an envelope: `{ recordId, data, createdBy, createdAt, updatedAt }`. Your fields live under `.data`.
+- Mutations resolve **optimistically** — the local store updates before the server confirms.
+</Info>
+
 ## Collections and records
 
 A collection is a named table with typed columns. A record is one row, wrapped in an envelope that carries metadata.
@@ -155,29 +162,16 @@ Nesting `<RecordScope>` lets you mount additional rooms — for example, a per-c
 
 ## How writes flow
 
-```
-useMutations.create({ title: 'New' })
-        │
-        ▼
-1. Optimistic local apply (immediate UI update)
-        │
-        ▼
-2. Outbound WebSocket message → AppRecordRoom DO
-        │
-        ▼
-3. DO validates RBAC against the caller's JWT
-        │
-        ▼
-4. DO writes to SQLite
-        │
-        ▼
-5. DO broadcasts the new record to every connected client
-        │
-        ▼
-6. Other clients apply the update (real-time sync)
-```
+When you call `useMutations.create(...)`, the SDK runs through six steps:
 
-If the server rejects the write (RBAC denial, schema validation failure), the optimistic update is rolled back.
+1. **Optimistic local apply.** The new record is added to the in-memory store; React re-renders.
+2. **WebSocket dispatch.** A typed message is sent to the `AppRecordRoom` Durable Object.
+3. **RBAC check.** The DO verifies the caller's JWT against the collection's permissions.
+4. **SQLite write.** The DO persists the record in its local SQLite database.
+5. **Broadcast.** The DO sends the new record to every connected client whose RBAC allows read access.
+6. **Reconcile.** Other clients apply the update; the originating client confirms its optimistic state.
+
+If the server rejects the write — an RBAC denial or a schema validation failure — the optimistic update rolls back automatically.
 
 ## What about big data?
 
@@ -188,19 +182,9 @@ DeepSpace records are tuned for **operational data** — collections of hundreds
 - **Analytics** → declare a custom Analytics Engine binding, or use the auto-provisioned `USAGE_EVENTS` dataset with [`meterUsage`](/sdk-reference/worker/bindings).
 - **External SQL** → declare a custom D1 database (with `runMigrations`) or a Hyperdrive binding to your own Postgres.
 
-## Next
+## Next steps
 
-<CardGroup cols={2}>
-  <Card title="Permissions" icon="lock" href="/concepts/permissions">
-    Role-based access control on collections.
-  </Card>
-  <Card title="Real-time sync" icon="bolt" href="/concepts/realtime-sync">
-    The WebSocket protocol and consistency guarantees.
-  </Card>
-  <Card title="Data storage guide" icon="database" href="/guides/data-storage">
-    Walkthrough — define a schema and wire up CRUD.
-  </Card>
-  <Card title="Records reference" icon="code" href="/sdk-reference/client/records">
-    Full API for `useQuery` and `useMutations`.
-  </Card>
-</CardGroup>
+- [Permissions](/concepts/permissions) — role-based access control on collections.
+- [Real-time sync](/concepts/realtime-sync) — the WebSocket protocol and consistency guarantees.
+- [Data storage guide](/guides/data-storage) — walkthrough for defining a schema and wiring up CRUD.
+- [Records reference](/sdk-reference/client/records) — full API for `useQuery` and `useMutations`.

@@ -98,17 +98,9 @@ The `docId` is any string. Two clients passing the same `docId` connect to the s
 
 The Yjs ecosystem includes bindings for popular editors. The SDK doesn't ship these, but they work seamlessly because `useYjsText` exposes the underlying `Y.Text`:
 
-<CardGroup cols={3}>
-  <Card title="Tiptap" href="https://tiptap.dev/docs/editor/getting-started/install/collaboration">
-    Rich-text editor with Yjs collaboration.
-  </Card>
-  <Card title="ProseMirror" href="https://github.com/yjs/y-prosemirror">
-    `y-prosemirror` binding.
-  </Card>
-  <Card title="Monaco" href="https://github.com/yjs/y-monaco">
-    `y-monaco` for code editors.
-  </Card>
-</CardGroup>
+- [Tiptap](https://tiptap.dev/docs/editor/getting-started/install/collaboration) — rich-text editor with Yjs collaboration.
+- [ProseMirror](https://github.com/yjs/y-prosemirror) — the `y-prosemirror` binding.
+- [Monaco](https://github.com/yjs/y-monaco) — `y-monaco` for code editors.
 
 To integrate, grab the Y.Doc and Y.Text from `useYjsField` and pass to the editor's collaboration extension. Example with Tiptap:
 
@@ -166,16 +158,8 @@ Yjs documents are persisted to the `YjsRoom` Durable Object. The DO stores the f
 
 For large documents (>10MB of accumulated updates), consider periodically calling the Yjs compaction API to reset history. The SDK doesn't run compaction automatically.
 
-## Next
+## Next steps
 
-<CardGroup cols={2}>
-  <Card title="Canvas" icon="brush" href="/guides/canvas">
-    Collaborative shapes and viewports via `useCanvas`.
-  </Card>
-  <Card title="Presence and cursors" icon="users" href="/guides/presence-and-cursors">
-    Live cursors and typing indicators.
-  </Card>
-  <Card title="Real-time sync" icon="bolt" href="/concepts/realtime-sync">
-    How sync works under the hood.
-  </Card>
-</CardGroup>
+- [Canvas](/guides/canvas) — collaborative shapes and viewports via `useCanvas`.
+- [Presence and cursors](/guides/presence-and-cursors) — live cursors and typing indicators.
+- [Real-time sync](/concepts/realtime-sync) — how sync works under the hood.

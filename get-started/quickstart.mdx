@@ -5,9 +5,11 @@ description: "Scaffold, run, and deploy a real-time app in five minutes."
 
 This guide walks you from an empty terminal to a live app at `<your-app>.app.space`. You'll need [Node.js 20 or higher](https://nodejs.org/) and a free GitHub or Google account for sign-in.
 
+For prerequisites and account setup, see [installation](/get-started/installation). For a tour of the files the scaffolder generates, see [project structure](/get-started/project-structure).
+
 ## 1. Scaffold an app
 
-The `create-deepspace` package bootstraps a new project with the SDK preinstalled, a worker wired to a Durable Object, and a Vite-powered React frontend.
+The `create-deepspace` package bootstraps a new project with the SDK preinstalled, a [worker](/concepts/architecture) wired to a [Durable Object](/concepts/architecture#durable-objects), and a Vite-powered React frontend.
 
 ```bash
 npm create deepspace@latest my-app
@@ -60,7 +62,7 @@ Open the project in your editor. The interesting files:
 - `worker.ts` — the Hono worker. Add custom routes here.
 - `index.html` — change the `<title>` and `data-theme` attribute to pick a preset.
 
-Try adding a `todos` collection:
+Try adding a `todos` [collection](/concepts/data-model). For the full schema reference, see [worker schemas](/sdk-reference/worker/schemas).
 
 ```ts
 // src/schemas/todos-schema.ts
@@ -88,7 +90,7 @@ import { settingsSchema } from './schemas/admin-schema'
 export const schemas = [usersSchema, settingsSchema, todosSchema]
 ```
 
-Then read and write from the UI:
+Then read and write from the UI using [`useQuery`](/sdk-reference/client/records#usequery-t-collection-options) and [`useMutations`](/sdk-reference/client/records#usemutations-t-collection):
 
 ```tsx
 // src/pages/(protected)/todos.tsx
@@ -123,7 +125,7 @@ export default function TodosPage() {
 }
 ```
 
-The page lives at `/todos` — generouted picks it up automatically. The `(protected)` route group means it's gated behind sign-in. Save the file; the change is visible in your browser before you can tab back.
+The page lives at `/todos` — generouted picks it up automatically. The `(protected)` route group means it's gated behind sign-in (see [authentication](/guides/authentication)). Save the file; the change is visible in your browser before you can tab back.
 
 ## 5. Deploy
 
@@ -133,7 +135,7 @@ When you're ready:
 npx deepspace deploy
 ```
 
-The CLI bundles the worker, uploads it to Cloudflare Workers for Platforms, syncs any secrets from `.dev.vars`, and registers your subdomain. After 30 seconds, your app is live at:
+The CLI bundles the worker, uploads it to Cloudflare Workers for Platforms, syncs any secrets from `.dev.vars`, and registers your subdomain. The [deployment](/concepts/deployment) reference covers the full pipeline. After 30 seconds, your app is live at:
 
 ```
 https://my-app.app.space
@@ -141,21 +143,11 @@ https://my-app.app.space
 
 Visit the URL, sign in, and add a todo. Data syncs to all open tabs in real-time.
 
-## What's next
+## Next steps
 
-You have a working app. Here's where to go to build it out:
+You have a working app. Where to go from here:
 
-<CardGroup cols={2}>
-  <Card title="Add authentication gates" icon="lock" href="/guides/authentication">
-    Public, gated, or mixed — pick the right model for your app.
-  </Card>
-  <Card title="Add real-time presence" icon="users" href="/guides/presence-and-cursors">
-    Show who's online and broadcast cursor positions.
-  </Card>
-  <Card title="Add a payment flow" icon="credit-card" href="/guides/payments">
-    Subscriptions and one-time products via Stripe.
-  </Card>
-  <Card title="Add AI chat" icon="sparkles" href="/guides/ai-chat">
-    Streamed Claude or GPT with tool use over your records.
-  </Card>
-</CardGroup>
+- [Authentication](/guides/authentication) — pick a public, gated, or mixed model.
+- [Presence and cursors](/guides/presence-and-cursors) — show who's online and broadcast cursor positions.
+- [Payments](/guides/payments) — subscriptions and one-time products via Stripe.
+- [AI chat](/guides/ai-chat) — streamed Claude or GPT with tool use over your records.

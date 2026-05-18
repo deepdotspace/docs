@@ -5,6 +5,10 @@ description: "Role-based access control on collections, evaluated server-side in
 
 DeepSpace enforces permissions in the Durable Object — the server checks every read and write before it broadcasts to clients. Permissions are declared per-collection in the schema, and the rules cover the common cases without custom logic.
 
+<Info>
+Client-side filtering is not a security boundary. The DO drops records the caller can't read **before** sending them over the WebSocket, so anything that arrives on the client is data the caller is allowed to see.
+</Info>
+
 ## Roles
 
 Every user has a role on each app's RecordRoom. The built-in roles are:
@@ -152,13 +156,7 @@ When a record isn't visible when you think it should be:
 
 Add a temporary `console.log` of the full record envelope in a development build to confirm the field values are what you expect.
 
-## Next
+## Next steps
 
-<CardGroup cols={2}>
-  <Card title="Schemas reference" icon="code" href="/sdk-reference/worker/schemas">
-    Full schema and permissions type signatures.
-  </Card>
-  <Card title="Server actions" icon="shield-halved" href="/guides/server-actions">
-    Privileged writes that bypass user RBAC.
-  </Card>
-</CardGroup>
+- [Schemas reference](/sdk-reference/worker/schemas) — full schema and permissions type signatures.
+- [Server actions](/guides/server-actions) — privileged writes that bypass user RBAC.

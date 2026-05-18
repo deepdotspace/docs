@@ -49,14 +49,62 @@ export const schemas = [
 
 ## The four chat endpoints
 
-| Endpoint | Purpose |
-|---|---|
-| `POST /api/ai/chats` | Create a chat row. Body: `{ title? }`. Returns `{ chat: ChatRow }`. |
-| `PATCH /api/ai/chats/:id` | Rename a chat. Body: `{ title? }`. Owner-checked. |
-| `DELETE /api/ai/chats/:id` | Delete a chat and cascade-delete its messages. Owner-checked. |
-| `POST /api/ai/chat` | The streaming turn. Returns `text/event-stream` (Vercel AI SDK v5 chunks). |
+The scaffold registers four endpoints in `src/ai/chat-routes.ts`. The first three manage chat records; the fourth streams a turn.
 
-The streaming endpoint accepts `{ chatId, userMessageId, content, modelId? }` and returns an SSE stream of `UIMessage` chunks. The `X-Asst-Id` response header carries the assistant row's ID for client-side dedup.
+<Tabs>
+  <Tab title="Create chat">
+    ```http
+    POST /api/ai/chats
+    Authorization: Bearer <jwt>
+    Content-Type: application/json
+
+    { "title": "Untitled" }
+    ```
+
+    Returns:
+
+    ```json
+    { "chat": { "recordId": "chat_abc", "userId": "...", "title": "Untitled", ... } }
+    ```
+
+    Creates a chat row owned by the JWT subject. The `title` field is optional.
+  </Tab>
+
+  <Tab title="Rename chat">
+    ```http
+    PATCH /api/ai/chats/:id
+    Authorization: Bearer <jwt>
+    Content-Type: application/json
+
+    { "title": "Renamed" }
+    ```
+
+    Owner-checked — 404 on cross-user.
+  </Tab>
+
+  <Tab title="Delete chat">
+    ```http
+    DELETE /api/ai/chats/:id
+    Authorization: Bearer <jwt>
+    ```
+
+    Deletes the chat row and cascade-deletes its `ai-messages` rows. Owner-checked.
+  </Tab>
+
+  <Tab title="Stream a turn">
+    ```http
+    POST /api/ai/chat
+    Authorization: Bearer <jwt>
+    Content-Type: application/json
+
+    { "chatId": "chat_abc", "userMessageId": "umsg_xyz", "content": "Hello", "modelId": "claude-sonnet-4-6" }
+    ```
+
+    Returns `text/event-stream` of Vercel AI SDK v5 `UIMessage` chunks. The `X-Asst-Id` response header carries the assistant row's ID for client-side dedup.
+
+    For decoding the stream in custom UIs, see [Custom chat UI](#custom-chat-ui).
+  </Tab>
+</Tabs>
 
 ## Streaming pipeline
 
@@ -256,16 +304,8 @@ For the canonical message list, mount `useQuery<AiMessageData>('ai-messages', { 
   </Accordion>
 </AccordionGroup>
 
-## Next
+## Next steps
 
-<CardGroup cols={2}>
-  <Card title="Worker AI reference" icon="server" href="/sdk-reference/worker/ai">
-    `createDeepSpaceAI`, compaction helpers, chat-history wrappers.
-  </Card>
-  <Card title="Server actions" icon="shield-halved" href="/guides/server-actions">
-    Build privileged routes that bypass user RBAC.
-  </Card>
-  <Card title="External APIs" icon="plug" href="/guides/external-apis">
-    Call LLMs and other services through `integration.post`.
-  </Card>
-</CardGroup>
+- [Worker AI reference](/sdk-reference/worker/ai) — `createDeepSpaceAI`, compaction helpers, chat-history wrappers.
+- [Server actions](/guides/server-actions) — privileged routes that bypass user RBAC.
+- [External APIs](/guides/external-apis) — call LLMs and other services through `integration.post`.

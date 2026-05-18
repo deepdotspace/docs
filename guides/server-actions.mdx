@@ -3,16 +3,16 @@ title: "Server actions"
 description: "Privileged worker-side functions that bypass user RBAC for orchestration and admin operations."
 ---
 
-Server actions are app-defined functions called from the client with the user's JWT. They run **as the app** — RBAC checks are bypassed, so they can do things the user themselves can't, like updating two collections atomically or running owner-only operations.
+Server actions are app-defined functions called from the client with the user's JWT. They run **as the app** — [RBAC](/concepts/permissions) checks are bypassed, so they can do things the user themselves can't, like updating two collections atomically or running owner-only operations.
 
 Reach for server actions when you need to:
 
-- Orchestrate writes across multiple collections in one round-trip
+- Orchestrate writes across multiple [collections](/concepts/data-model) in one round-trip
 - Run admin operations (recompute analytics, send notifications, mass-update records)
-- Spend owner credits via an integration on behalf of the user
+- Spend owner credits via an [integration](/guides/external-apis) on behalf of the user
 - Wrap business logic that needs server-side validation
 
-If the operation can be done with the caller's own RBAC, prefer `useMutations` on the client — keep server actions for cases that genuinely need escalation.
+If the operation can be done with the caller's own RBAC, prefer [`useMutations`](/sdk-reference/client/records#usemutations-t-collection) on the client — keep server actions for cases that genuinely need escalation.
 
 ## Define an action
 
@@ -205,16 +205,8 @@ test('inviteAttendee requires auth', async ({ request }) => {
 - **Prefer actions over ad-hoc `fetch` endpoints.** The `tools` API gives you type-safe RBAC bypass; rolling your own endpoint loses that.
 - **Use the caller's userId for audit logs.** `ctx.userId` is the verified caller; record it alongside any privileged write so you can trace who initiated it.
 
-## Next
+## Next steps
 
-<CardGroup cols={2}>
-  <Card title="Server actions reference" icon="server" href="/sdk-reference/worker/server-actions">
-    `ActionHandler`, `ActionContext`, `ActionResult` types.
-  </Card>
-  <Card title="Permissions" icon="lock" href="/concepts/permissions">
-    Collection-level RBAC.
-  </Card>
-  <Card title="External APIs" icon="plug" href="/guides/external-apis">
-    Call third-party services from actions.
-  </Card>
-</CardGroup>
+- [Server actions reference](/sdk-reference/worker/server-actions) — `ActionHandler`, `ActionContext`, `ActionResult` types.
+- [Permissions](/concepts/permissions) — collection-level RBAC.
+- [External APIs](/guides/external-apis) — call third-party services from actions.

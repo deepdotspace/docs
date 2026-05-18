@@ -3,69 +3,69 @@ title: "Authentication"
 description: "Public, gated, and mixed auth configurations for DeepSpace apps."
 ---
 
-DeepSpace authentication is handled by the platform's auth worker — you don't run an OAuth flow, mint JWTs, or manage sessions. The SDK ships React providers and components that wrap [Better Auth](https://www.better-auth.com/) and a verifier for your worker. This guide covers picking an auth model, gating routes, and the most common patterns.
+DeepSpace authentication is handled by the platform's [auth worker](/concepts/architecture#platform-workers) — you don't run an OAuth flow, mint JWTs, or manage sessions. The SDK ships React providers and components that wrap [Better Auth](https://www.better-auth.com/) and a [`verifyJwt`](/sdk-reference/worker/auth#verifyjwt-config-token) helper for your worker. This guide covers picking an auth model, gating routes, and the most common patterns.
 
 ## Auth models
 
-Three configurations cover virtually every app:
+Three configurations cover virtually every app. The scaffold ships the **mixed** model; the `(protected)/_layout.tsx` route group applies [`<AuthGate>`](/sdk-reference/client/auth#authgate-fallback-redirectonsignout) to everything inside it.
 
-| Model | Public pages? | Gated pages? | Use when |
-|---|---|---|---|
-| **Fully public** | Every page | None | Marketing sites, public catalogs |
-| **Fully gated** | None | Every page | Internal tools, paid SaaS |
-| **Mixed** (default) | Landing, pricing, etc. | App routes inside `(protected)/` | Most consumer apps |
+<Tabs>
+  <Tab title="Mixed (default)">
+    Public pages live at `src/pages/<name>.tsx`. Gated pages go inside the `(protected)/` route group, which applies `<AuthGate>` via its layout.
 
-The scaffold ships the mixed model. The `(protected)/_layout.tsx` route group applies `<AuthGate>` to everything inside it.
+    ```
+    src/pages/
+      home.tsx                  ← public (/)
+      pricing.tsx               ← public (/pricing)
+      (protected)/
+        _layout.tsx             ← <AuthGate><Outlet /></AuthGate>
+        dashboard.tsx           ← gated (/dashboard)
+        settings.tsx            ← gated (/settings)
+    ```
 
-## Mixed (default)
+    The folder name `(protected)/` is wrapped in literal parentheses — generouted treats it as a route group that doesn't appear in the URL. Adding a new gated page is a one-file change: drop it inside `(protected)/`.
 
-Public pages live at `src/pages/<name>.tsx`. Gated pages go inside the `(protected)/` route group:
+    **Best for:** consumer apps with a public landing or marketing surface plus an authenticated app behind sign-in.
+  </Tab>
 
-```
-src/pages/
-  home.tsx                  ← public (/)
-  pricing.tsx               ← public (/pricing)
-  (protected)/
-    _layout.tsx             ← <AuthGate><Outlet /></AuthGate>
-    dashboard.tsx           ← gated (/dashboard)
-    settings.tsx            ← gated (/settings)
-```
+  <Tab title="Fully gated">
+    Wrap the entire tree with [`<AuthGate>`](/sdk-reference/client/auth#authgate-fallback-redirectonsignout) in `_app.tsx`, and drop `allowAnonymous` from [`<RecordProvider>`](/sdk-reference/client/records#recordprovider):
 
-The folder name `(protected)/` is wrapped in literal parentheses — generouted treats it as a route group that doesn't appear in the URL. Adding a new gated page is a one-file change: drop it inside `(protected)/`.
+    ```tsx
+    // src/pages/_app.tsx
+    import { DeepSpaceAuthProvider, AuthGate, RecordProvider, RecordScope } from 'deepspace'
 
-## Fully gated
+    export default function App() {
+      return (
+        <DeepSpaceAuthProvider>
+          <AuthGate>
+            <RecordProvider>
+              <RecordScope roomId={SCOPE_ID} schemas={schemas} appId={APP_NAME}>
+                <Navigation />
+                <Outlet />
+              </RecordScope>
+            </RecordProvider>
+          </AuthGate>
+        </DeepSpaceAuthProvider>
+      )
+    }
+    ```
 
-Wrap the entire tree with `<AuthGate>` in `_app.tsx`, and drop `allowAnonymous` from `RecordProvider`:
+    Inside an `<AuthGate>` subtree the user is always signed in, so anonymous WebSocket connections are unnecessary.
 
-```tsx
-// src/pages/_app.tsx
-import { DeepSpaceAuthProvider, AuthGate, RecordProvider, RecordScope } from 'deepspace'
+    **Best for:** internal tools, paid SaaS, anything where every route requires sign-in.
+  </Tab>
 
-export default function App() {
-  return (
-    <DeepSpaceAuthProvider>
-      <AuthGate>
-        <RecordProvider>
-          <RecordScope roomId={SCOPE_ID} schemas={schemas} appId={APP_NAME}>
-            <Navigation />
-            <Outlet />
-          </RecordScope>
-        </RecordProvider>
-      </AuthGate>
-    </DeepSpaceAuthProvider>
-  )
-}
-```
+  <Tab title="Fully public">
+    Don't import `<AuthGate>` anywhere. Rely on `RecordProvider allowAnonymous` (already on by default in the scaffold). All pages render for signed-out visitors; data the user has read access to under the `*` role rule in [permissions](/concepts/permissions) is available.
 
-Inside an `<AuthGate>` subtree the user is always signed in, so anonymous WebSocket connections are unnecessary.
-
-## Fully public
-
-Don't import `<AuthGate>` anywhere. Rely on `RecordProvider allowAnonymous` (already on by default in the scaffold). All pages render for signed-out visitors; data the user has read access to under the `*` role rule is available.
+    **Best for:** marketing sites, public catalogs, read-only directories.
+  </Tab>
+</Tabs>
 
 ## Auth-state checks in components
 
-The canonical "is the user signed in?" check is `useAuth().isSignedIn`. It updates immediately on sign-in / sign-out:
+The canonical "is the user signed in?" check is [`useAuth().isSignedIn`](/sdk-reference/client/auth#useauth-authstate). It updates immediately on sign-in / sign-out:
 
 ```tsx
 import { useAuth } from 'deepspace'
@@ -242,19 +242,9 @@ const isLanding = useLocation().pathname === '/'
   </Accordion>
 </AccordionGroup>
 
-## Next
+## Next steps
 
-<CardGroup cols={2}>
-  <Card title="Permissions" icon="lock" href="/concepts/permissions">
-    How role-based access control works on collections.
-  </Card>
-  <Card title="Server actions" icon="shield-halved" href="/guides/server-actions">
-    Privileged worker code that bypasses user RBAC.
-  </Card>
-  <Card title="Auth reference" icon="code" href="/sdk-reference/client/auth">
-    All auth hooks, providers, and components.
-  </Card>
-  <Card title="Worker auth reference" icon="server" href="/sdk-reference/worker/auth">
-    `verifyJwt` and HMAC primitives.
-  </Card>
-</CardGroup>
+- [Permissions](/concepts/permissions) — how role-based access control works on collections.
+- [Server actions](/guides/server-actions) — privileged worker code that bypasses user RBAC.
+- [Auth reference](/sdk-reference/client/auth) — all auth hooks, providers, and components.
+- [Worker auth reference](/sdk-reference/worker/auth) — `verifyJwt` and HMAC primitives.

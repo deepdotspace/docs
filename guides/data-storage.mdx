@@ -3,9 +3,9 @@ title: "Data storage"
 description: "Define a collection, query it from React, and mutate it with optimistic updates."
 ---
 
-This guide walks through adding a new collection to your app — declaring its schema, querying it from the client, and persisting writes. By the end, you'll have a working CRUD surface backed by a Durable Object that syncs in real time across every connected client.
+This guide walks through adding a new [collection](/concepts/data-model) to your app — declaring its [schema](/sdk-reference/worker/schemas), querying it from the client, and persisting writes. By the end, you'll have a working CRUD surface backed by a [Durable Object](/concepts/architecture#durable-objects) that syncs in real time across every connected client.
 
-For background on the data model, see [Concepts → Data model](/concepts/data-model).
+For the underlying mental model — envelopes, scopes, the optimistic pipeline — see [Data model](/concepts/data-model) and [Real-time sync](/concepts/realtime-sync).
 
 ## Define the schema
 
@@ -47,7 +47,7 @@ Schemas are **baked into your worker at deploy time**. There's no runtime schema
 
 ## Read records — `useQuery`
 
-The `useQuery` hook subscribes to a collection and streams updates over a WebSocket. Each record comes wrapped in an **envelope**:
+The [`useQuery`](/sdk-reference/client/records#usequery-t-collection-options) hook subscribes to a collection and streams updates over a WebSocket. Each record comes wrapped in an **envelope**:
 
 ```ts
 type Envelope<T> = {
@@ -112,29 +112,67 @@ The DO applies the filter server-side before broadcasting, so unauthorized recor
 
 ## Write records — `useMutations`
 
-The `useMutations` hook returns three mutation functions plus their confirmed variants:
+The [`useMutations`](/sdk-reference/client/records#usemutations-t-collection) hook returns three mutation functions plus their confirmed variants. Each mutation applies [optimistically](/concepts/realtime-sync#the-optimistic-mutation-pipeline) — the local store updates before the server confirms.
 
-```tsx
-import { useMutations } from 'deepspace'
+<Tabs>
+  <Tab title="Create">
+    `create` takes the full row shape and returns the server-generated `recordId`. Capture it if you need to navigate to a new resource.
 
-function NoteEditor() {
-  const { create, put, remove } = useMutations<Note>('notes')
+    ```tsx
+    import { useMutations } from 'deepspace'
 
-  async function handleCreate() {
-    const id = await create({ title: 'Untitled', body: '', pinned: false })
-    // create returns the new recordId — capture it for navigation
+    const { create } = useMutations<Note>('notes')
+
+    async function handleCreate() {
+      const id = await create({
+        title: 'Untitled',
+        body: '',
+        pinned: false,
+      })
+      navigate(`/notes/${id}`)
+    }
+    ```
+  </Tab>
+
+  <Tab title="Update">
+    `put` uses **merge semantics** — the server applies `{ ...existing, ...patch }`. Send only the fields you're changing.
+
+    ```tsx
+    const { put } = useMutations<Note>('notes')
+
+    // Update only pinned, leave other fields alone
+    await put(noteId, { pinned: true })
+
+    // Update multiple fields
+    await put(noteId, { title: 'New', body: 'Updated body' })
+    ```
+
+    Don't spread the whole row — it wastes bandwidth and risks overwriting concurrent edits.
+  </Tab>
+
+  <Tab title="Delete">
+    `remove` is a hard delete. The record is dropped from SQLite and broadcast as `record_removed` to every connected client.
+
+    ```tsx
+    const { remove } = useMutations<Note>('notes')
+
+    await remove(noteId)
+    ```
+  </Tab>
+
+  <Tab title="Confirmed">
+    The `*Confirmed` variants resolve only after the Durable Object acknowledges the write. Use when the next step depends on persistence — typically before navigating to a server-generated ID.
+
+    ```tsx
+    const { createConfirmed } = useMutations<Note>('notes')
+
+    const id = await createConfirmed({ title: 'New', body: '', pinned: false })
     navigate(`/notes/${id}`)
-  }
+    ```
 
-  async function handleSave(id: string, patch: Partial<Note>) {
-    await put(id, patch)
-  }
-
-  async function handleDelete(id: string) {
-    await remove(id)
-  }
-}
-```
+    If the server rejects the write (RBAC denial, schema validation), the plain `create` rolls back the optimistic update; `createConfirmed` rejects the promise instead.
+  </Tab>
+</Tabs>
 
 | Method | Signature | Notes |
 |---|---|---|
@@ -144,12 +182,6 @@ function NoteEditor() {
 | `createConfirmed` | `(data: T) => Promise<string>` | Resolves after server acknowledgment. |
 | `putConfirmed` | `(id, patch) => Promise<void>` | Resolves after server acknowledgment. |
 | `removeConfirmed` | `(id) => Promise<void>` | Resolves after server acknowledgment. |
-
-### Optimistic vs confirmed
-
-`create` / `put` / `remove` apply the change to the local store immediately, then send the mutation. They resolve as soon as the local store is updated — usually before the server confirms. If the server rejects the write, the optimistic update is rolled back.
-
-The `*Confirmed` variants resolve only after the DO has acknowledged. Use them when you need a server-generated ID before navigating or when the next step depends on the server having persisted the write.
 
 ## A complete CRUD example
 
@@ -247,19 +279,9 @@ For more advanced rules — published/draft visibility, collaborators, teams —
 - **Avoid mounting the same `useQuery` in many components.** Mount once at the page level and pass records down via props or context. Each mount maintains its own subscription state.
 - **Use `put` with partial patches.** Sending only the changed fields keeps the wire payload small.
 
-## Next
+## Next steps
 
-<CardGroup cols={2}>
-  <Card title="Permissions" icon="lock" href="/concepts/permissions">
-    Role-based access control on collections.
-  </Card>
-  <Card title="Server actions" icon="shield-halved" href="/guides/server-actions">
-    Privileged writes that bypass user RBAC.
-  </Card>
-  <Card title="Records reference" icon="code" href="/sdk-reference/client/records">
-    Full hooks API surface.
-  </Card>
-  <Card title="Schema reference" icon="table" href="/sdk-reference/worker/schemas">
-    Column types and permission rules.
-  </Card>
-</CardGroup>
+- [Permissions](/concepts/permissions) — role-based access control on collections.
+- [Server actions](/guides/server-actions) — privileged writes that bypass user RBAC.
+- [Records reference](/sdk-reference/client/records) — full hooks API surface.
+- [Schema reference](/sdk-reference/worker/schemas) — column types and permission rules.

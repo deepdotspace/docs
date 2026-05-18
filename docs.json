@@ -1,69 +1,70 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
+  "theme": "palm",
   "name": "DeepSpace",
+  "description": "Build real-time collaborative apps on Cloudflare Workers. DeepSpace SDK reference and developer documentation.",
   "colors": {
-    "primary": "#1D4ED8",
-    "light": "#60A5FA",
-    "dark": "#1E3A8A"
+    "primary": "#0A2540",
+    "light": "#635BFF",
+    "dark": "#0A2540"
   },
   "favicon": "/favicon.ico",
   "navigation": {
-    "tabs": [
+    "groups": [
       {
-        "tab": "Documentation",
-        "groups": [
-          {
-            "group": "Get started",
-            "pages": [
-              "index",
-              "get-started/introduction",
-              "get-started/quickstart",
-              "get-started/installation",
-              "get-started/project-structure"
-            ]
-          },
-          {
-            "group": "Concepts",
-            "pages": [
-              "concepts/architecture",
-              "concepts/data-model",
-              "concepts/permissions",
-              "concepts/realtime-sync",
-              "concepts/deployment"
-            ]
-          },
-          {
-            "group": "Guides",
-            "pages": [
-              "guides/authentication",
-              "guides/data-storage",
-              "guides/messaging",
-              "guides/collaborative-editing",
-              "guides/presence-and-cursors",
-              "guides/canvas",
-              "guides/file-uploads",
-              "guides/ai-chat",
-              "guides/payments",
-              "guides/scheduled-jobs",
-              "guides/server-actions",
-              "guides/external-apis",
-              "guides/custom-bindings",
-              "guides/custom-domains",
-              "guides/testing"
-            ]
-          }
+        "group": "Get started",
+        "pages": [
+          "index",
+          "get-started/introduction",
+          "get-started/quickstart",
+          "get-started/installation",
+          "get-started/project-structure"
         ]
       },
       {
-        "tab": "SDK reference",
-        "groups": [
-          {
-            "group": "Overview",
-            "pages": [
-              "sdk-reference/overview"
-            ]
-          },
+        "group": "Core concepts",
+        "pages": [
+          "concepts/architecture",
+          "concepts/data-model",
+          "concepts/permissions",
+          "concepts/realtime-sync",
+          "concepts/deployment"
+        ]
+      },
+      {
+        "group": "Build with DeepSpace",
+        "pages": [
+          "guides/authentication",
+          "guides/data-storage",
+          "guides/messaging",
+          "guides/collaborative-editing",
+          "guides/presence-and-cursors",
+          "guides/canvas",
+          "guides/file-uploads",
+          "guides/ai-chat",
+          "guides/payments"
+        ]
+      },
+      {
+        "group": "Worker & server",
+        "pages": [
+          "guides/server-actions",
+          "guides/scheduled-jobs",
+          "guides/external-apis",
+          "guides/custom-bindings"
+        ]
+      },
+      {
+        "group": "Going to production",
+        "pages": [
+          "guides/custom-domains",
+          "guides/testing"
+        ]
+      },
+      {
+        "group": "SDK reference",
+        "pages": [
+          "sdk-reference/overview",
           {
             "group": "Client",
             "pages": [
@@ -90,24 +91,14 @@
               "sdk-reference/worker/proxy-helpers"
             ]
           },
-          {
-            "group": "Testing",
-            "pages": [
-              "sdk-reference/testing"
-            ]
-          }
+          "sdk-reference/testing"
         ]
       },
       {
-        "tab": "CLI reference",
-        "groups": [
-          {
-            "group": "CLI",
-            "pages": [
-              "cli-reference/overview",
-              "cli-reference/commands"
-            ]
-          }
+        "group": "CLI reference",
+        "pages": [
+          "cli-reference/overview",
+          "cli-reference/commands"
         ]
       }
     ],
@@ -136,12 +127,6 @@
     "dark": "/logo/dark.svg"
   },
   "navbar": {
-    "links": [
-      {
-        "label": "deep.space",
-        "href": "https://deep.space"
-      }
-    ],
     "primary": {
       "type": "button",
       "label": "Get started",

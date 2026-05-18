@@ -5,37 +5,25 @@ description: "How DeepSpace apps are structured, deployed, and connected to the 
 
 A DeepSpace app is a normal Cloudflare Worker. It serves your React SPA, exposes API routes, and owns a set of Durable Objects that hold per-app data. Around your worker, the DeepSpace platform runs a handful of shared services — authentication, payments, integrations, and cross-app data — that your worker talks to over service bindings or HTTPS.
 
+<Info>
+**New to DeepSpace?** You don't need to understand the platform internals to build an app. Skip to the [Quickstart](/get-started/quickstart) and return here when you need to add cross-app data sharing, declare custom bindings, or debug a deploy.
+</Info>
+
 ## The pieces
 
-```mermaid
-flowchart TB
-    Browser([Browser])
+A DeepSpace deployment has two halves: the worker you write, and the platform workers DeepSpace runs.
 
-    subgraph App["Your App Worker"]
-      SPA[React SPA]
-      Routes[Hono routes]
-      DOs[(Durable Objects<br/>RecordRoom · YjsRoom<br/>CanvasRoom · PresenceRoom<br/>CronRoom)]
-    end
+**Your app worker** is a Cloudflare Worker compiled from `worker.ts` and the Vite build of `src/`. It serves the SPA, handles HTTP and WebSocket routes, and owns the per-app Durable Objects. You deploy it with `npx deepspace deploy`; it lives at `<name>.app.space`.
 
-    subgraph Platform["DeepSpace Platform Workers"]
-      Auth[Auth worker<br/>Better Auth · JWT]
-      API[API worker<br/>Stripe · Integrations]
-      Plat[Platform worker<br/>Cross-app DOs · R2]
-      Deploy[Deploy worker<br/>Workers for Platforms]
-    end
+**The platform workers** are shared services run by DeepSpace. Your worker addresses them over Cloudflare service bindings (preferred in production) or HTTPS URLs (fallback in local dev). You never deploy or configure them — they're shared infrastructure.
 
-    Browser -->|HTTPS / WS| App
-    Routes -->|service bindings| Auth
-    Routes -->|service bindings| API
-    Routes -->|service bindings| Plat
-
-    classDef yours fill:#1D4ED8,stroke:#1E3A8A,color:#fff
-    classDef theirs fill:#94a3b8,stroke:#475569,color:#fff
-    class App,SPA,Routes,DOs yours
-    class Platform,Auth,API,Plat,Deploy theirs
-```
-
-You write and deploy the **App Worker** (in blue above). The platform workers are operated by DeepSpace; your worker talks to them via service bindings (preferred) or HTTPS URLs (fallback for local dev). You never deploy or manage the platform workers — they're shared infrastructure.
+| Platform worker | Responsibility |
+|---|---|
+| **Auth worker** | Better Auth integration, OAuth flows, JWT issuance (ES256, 5-minute lifetime). |
+| **API worker** | Stripe billing, the integration proxy (215+ third-party endpoints), user profiles, usage tracking. |
+| **Platform worker** | Shared Durable Objects for `workspace:*`, `dir:*`, `conv:*` scopes; R2 file gateway. |
+| **Deploy worker** | Receives `deepspace deploy` uploads; provisions custom bindings; manages subdomains. |
+| **Dispatch worker** | Routes `*.app.space` traffic to the correct deployed app via Workers for Platforms. |
 
 ## Your worker
 
@@ -83,25 +71,15 @@ The default in the scaffold is `app:<APP_NAME>`, exported as `SCOPE_ID` from `sr
 
 To read or write a cross-app scope, see [Cross-app shared scopes](#cross-app-shared-scopes) below.
 
-## Platform workers
+## Talking to platform workers
 
-You don't deploy these. The SDK and CLI talk to them on your behalf.
-
-| Worker | Responsibility |
-|---|---|
-| **Auth worker** | Better Auth integration, OAuth flows, JWT issuance (ES256, 5-minute lifetime) |
-| **API worker** | Stripe billing, integration proxy, user profiles, OAuth token storage, usage tracking |
-| **Platform worker** | Shared Durable Objects for `workspace:*`, `dir:*`, `conv:*`; R2 file gateway |
-| **Deploy worker** | Receives `deepspace deploy` uploads; provisions custom bindings; manages subdomains |
-| **Dispatch worker** | Routes `*.app.space` traffic to the right deployed app |
-
-The scaffold's `worker.ts` proxies to these via helper functions from `deepspace/worker`:
+The scaffold's `worker.ts` proxies to platform workers via helper functions from `deepspace/worker`:
 
 ```ts
 import { authWorkerFetch, apiWorkerFetch, platformWorkerFetch } from 'deepspace/worker'
 ```
 
-These helpers prefer service bindings (set up automatically on deploy) and fall back to HTTPS URLs in local dev.
+These helpers prefer service bindings (set up automatically on deploy) and fall back to HTTPS URLs in local dev. Replacing them with raw `c.env.X.fetch(...)` calls fails silently in `wrangler dev` because service bindings don't surface cross-process for SDK apps.
 
 ## Security model — WebSocket identity
 
@@ -194,19 +172,9 @@ Without all three edits, `sharedScopes` writes to your app's own DO instead of t
   </Step>
 </Steps>
 
-## Next
+## Next steps
 
-<CardGroup cols={2}>
-  <Card title="Data model" icon="database" href="/concepts/data-model">
-    Collections, records, and how data is shaped.
-  </Card>
-  <Card title="Permissions" icon="lock" href="/concepts/permissions">
-    Role-based access control on collections.
-  </Card>
-  <Card title="Real-time sync" icon="bolt" href="/concepts/realtime-sync">
-    How WebSocket sync works under the hood.
-  </Card>
-  <Card title="Deployment" icon="cloud-arrow-up" href="/concepts/deployment">
-    What happens when you run `deploy`.
-  </Card>
-</CardGroup>
+- [Data model](/concepts/data-model) — collections, records, and how data is shaped.
+- [Permissions](/concepts/permissions) — role-based access control on collections.
+- [Real-time sync](/concepts/realtime-sync) — how WebSocket sync works under the hood.
+- [Deployment](/concepts/deployment) — what happens when you run `deploy`.
