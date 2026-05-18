@@ -1,0 +1,94 @@
+---
+title: "SDK reference"
+description: "All exports from the deepspace package, with signatures and short examples."
+---
+
+DeepSpace exposes three entry points. Each section of this reference documents the surface of one entry point, organized by feature area.
+
+```ts
+import { ... } from 'deepspace'          // React client SDK
+import { ... } from 'deepspace/worker'   // Cloudflare Worker runtime
+import { ... } from 'deepspace/testing'  // Playwright fixture (test files only)
+```
+
+## Client (`deepspace`)
+
+Everything you need on the frontend — providers, hooks, components, and utility functions.
+
+<CardGroup cols={2}>
+  <Card title="Auth" icon="lock" href="/sdk-reference/client/auth">
+    `useAuth`, `useUser`, `AuthGate`, `AuthOverlay`, `signIn`, `signOut`
+  </Card>
+  <Card title="Records" icon="database" href="/sdk-reference/client/records">
+    `useQuery`, `useMutations`, `RecordProvider`, `RecordScope`
+  </Card>
+  <Card title="Messaging" icon="message" href="/sdk-reference/client/messaging">
+    `useChannels`, `useMessages`, `useReactions`, `useReadReceipts`
+  </Card>
+  <Card title="Real-time" icon="bolt" href="/sdk-reference/client/realtime">
+    `usePresence`, `usePresenceRoom`, `useYjsText`, `useCanvas`, `useGameRoom`
+  </Card>
+  <Card title="Files" icon="file" href="/sdk-reference/client/files">
+    `useR2Files`, `formatFileSize`
+  </Card>
+  <Card title="Integrations" icon="plug" href="/sdk-reference/client/integrations">
+    `integration.post`, OAuth helpers
+  </Card>
+  <Card title="Payments" icon="credit-card" href="/sdk-reference/client/payments">
+    `useSubscription`, `useCheckout`, `PricingTable`
+  </Card>
+  <Card title="Theming" icon="palette" href="/sdk-reference/client/theming">
+    `DeepSpaceThemeProvider`, `applyDeepSpaceTheme`, `getUserColor`
+  </Card>
+</CardGroup>
+
+## Worker (`deepspace/worker`)
+
+Everything you need in your Cloudflare Worker — DO base classes, schemas, auth verification, AI helpers.
+
+<CardGroup cols={2}>
+  <Card title="Rooms" icon="server" href="/sdk-reference/worker/rooms">
+    `RecordRoom`, `YjsRoom`, `CanvasRoom`, `PresenceRoom`, `CronRoom`, `GameRoom`
+  </Card>
+  <Card title="Schemas" icon="table" href="/sdk-reference/worker/schemas">
+    `CollectionSchema`, `CHANNELS_SCHEMA`, RBAC types
+  </Card>
+  <Card title="Server actions" icon="shield-halved" href="/sdk-reference/worker/server-actions">
+    `ActionHandler`, `ActionContext`, `ActionResult`
+  </Card>
+  <Card title="AI" icon="sparkles" href="/sdk-reference/worker/ai">
+    `createDeepSpaceAI`, context compaction, chat history
+  </Card>
+  <Card title="Cron" icon="clock" href="/sdk-reference/worker/cron">
+    `CronTask`, `buildCronContext`
+  </Card>
+  <Card title="Auth" icon="key" href="/sdk-reference/worker/auth">
+    `verifyJwt`, HMAC primitives
+  </Card>
+  <Card title="Bindings" icon="plug" href="/sdk-reference/worker/bindings">
+    `runMigrations`, `meterAi`, `meterVectorize`, `meterUsage`
+  </Card>
+  <Card title="Proxy helpers" icon="arrows-right-left" href="/sdk-reference/worker/proxy-helpers">
+    `apiWorkerFetch`, `platformWorkerFetch`, `authWorkerFetch`
+  </Card>
+</CardGroup>
+
+## Testing (`deepspace/testing`)
+
+Multi-user Playwright fixture and helpers.
+
+<Card title="Testing reference" icon="vial" href="/sdk-reference/testing">
+  `test`, `expect`, `users(N)`, `MultiplayerUser`, account helpers
+</Card>
+
+## TypeScript signatures
+
+This reference shows the most common signatures and shapes. For exact type definitions — including generic constraints, optional fields, and discriminated unions — read the bundled `.d.ts` files:
+
+| Module | Location |
+|---|---|
+| `deepspace` | `node_modules/deepspace/dist/index.d.ts` |
+| `deepspace/worker` | `node_modules/deepspace/dist/worker.d.ts` |
+| `deepspace/testing` | `node_modules/deepspace/dist/testing.d.ts` |
+
+If a hook or type isn't documented in this reference, it probably exists in the `.d.ts`. Read the declaration before guessing.

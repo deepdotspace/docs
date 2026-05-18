@@ -1,0 +1,176 @@
+---
+title: "Records reference"
+description: "Providers, hooks, and the data layer for reading and writing records."
+---
+
+```ts
+import {
+  RecordProvider, RecordScope, ScopeRegistryProvider,
+  useQuery, useMutations, useUsers, useUserLookup, useRecordContext,
+  RecordStore,
+} from 'deepspace'
+```
+
+## Providers
+
+### `<RecordProvider>`
+
+Initializes the WebSocket and in-memory record store. Required ancestor of every records hook.
+
+| Prop | Type | Description |
+|---|---|---|
+| `roomId` | `string` | Scope ID for the default room (usually `app:<APP_NAME>`). |
+| `schemas` | `CollectionSchema[]` | All collections this provider tree may query. |
+| `wsUrl` | `string` (optional) | Override the WebSocket URL. Defaults to current origin. |
+| `allowAnonymous` | `boolean` | Connect without a JWT (default `false`). Required for public pages. |
+| `getAuthToken` | `() => Promise<string>` | Custom token fetcher. Defaults to the SDK's. |
+
+```tsx
+<RecordProvider allowAnonymous>
+  <App />
+</RecordProvider>
+```
+
+### `<RecordScope>`
+
+Mounts a specific scope (DO instance). Nest for additional scopes.
+
+| Prop | Type | Description |
+|---|---|---|
+| `roomId` | `string` | Scope ID (e.g. `app:my-app`, `conv:abc123`). |
+| `schemas` | `CollectionSchema[]` | Collections in this scope. |
+| `appId` | `string` | App identifier — used for cross-app routing. |
+| `sharedScopes` | `Array<{ roomId, schemas }>` | Cross-app scopes to mount alongside the primary. |
+| `wsUrl` | `string` (optional) | Override WebSocket URL. |
+| `wsPathPrefix` | `string` (optional) | Override path prefix (default `/ws`). |
+| `isolated` | `boolean` | If true, this scope's store is independent of parent stores. |
+
+### `<ScopeRegistryProvider>`
+
+Required once near the root if your app uses shared scopes via `sharedScopes`. Coordinates routing between cross-app and per-app DOs.
+
+## `useQuery<T>(collection, options?)`
+
+Subscribes to a collection. Returns a reactive array of envelopes.
+
+```ts
+function useQuery<T>(
+  collection: string,
+  options?: {
+    where?: Partial<T>
+    orderBy?: string
+    orderDir?: 'asc' | 'desc'
+    limit?: number
+  },
+): {
+  records: Envelope<T>[]
+  status: 'loading' | 'ready' | 'error'
+  error?: string
+}
+```
+
+Envelope shape:
+
+```ts
+type Envelope<T> = {
+  recordId: string
+  data: T
+  createdBy: string
+  createdAt: string
+  updatedAt: string
+}
+```
+
+Example:
+
+```tsx
+type Note = { title: string; body: string }
+const { records, status } = useQuery<Note>('notes', { orderBy: 'createdAt', orderDir: 'desc' })
+
+if (status === 'loading') return <Skeleton />
+return records.map((r) => <li key={r.recordId}>{r.data.title}</li>)
+```
+
+<Warning>
+**User fields live under `.data`.** `r.title` returns `undefined` — always `r.data.title`. TypeScript catches this if you pass a row type to `useQuery<T>`.
+</Warning>
+
+## `useMutations<T>(collection)`
+
+Returns mutation functions for the given collection.
+
+```ts
+function useMutations<T>(collection: string): {
+  create:          (data: T)             => Promise<string>   // returns new recordId
+  put:             (id: string, patch: Partial<T>) => Promise<void>
+  remove:          (id: string)          => Promise<void>
+  createConfirmed: (data: T)             => Promise<string>
+  putConfirmed:    (id: string, patch: Partial<T>) => Promise<void>
+  removeConfirmed: (id: string)          => Promise<void>
+}
+```
+
+| Method | Behavior |
+|---|---|
+| `create` | Optimistic local apply; resolves with the new `recordId`. |
+| `put` | Merge semantics — server applies `{...existing, ...patch}`. Send only changed fields. |
+| `remove` | Hard delete. |
+| `*Confirmed` | Resolves only after the DO acknowledges the write. Use when next step depends on persistence. |
+
+Example:
+
+```ts
+const { create, put, remove } = useMutations<Note>('notes')
+
+const id = await create({ title: 'New', body: '' })
+await put(id, { title: 'Updated' })
+await remove(id)
+```
+
+## `useUsers()`
+
+Returns the users collection with role-management helpers.
+
+```ts
+function useUsers(): {
+  users: User[]
+  usersLoaded: boolean
+  setRole: (userId: string, role: 'viewer' | 'member' | 'admin') => Promise<void>
+  refresh: () => Promise<void>
+}
+```
+
+`setRole` is admin-only — the DO rejects non-admin callers.
+
+## `useUserLookup()`
+
+O(1) wrapper around `useUsers()` for resolving userIds to display fields.
+
+```ts
+function useUserLookup(): {
+  users: User[]
+  usersLoaded: boolean
+  userMap: Map<string, User>
+  getUser: (userId: string) => User | undefined
+  getEmail: (userId: string) => string | undefined
+  getName: (userId: string) => string | undefined
+}
+```
+
+```tsx
+const { getName } = useUserLookup()
+<p>By {getName(message.authorId) ?? 'unknown'}</p>
+```
+
+There is no `getRole` or `getImageUrl` — for those, read off `getUser(id)?.role` or `getUser(id)?.imageUrl`.
+
+## `useRecordContext()`
+
+Low-level access to the underlying `RecordStore`. Useful for building custom hooks or imperative reads outside React's render cycle. Most apps never need this.
+
+## See also
+
+- [Data storage guide](/guides/data-storage) — schemas, CRUD, and patterns
+- [Data model concepts](/concepts/data-model) — collections, envelopes, scopes
+- [Permissions concepts](/concepts/permissions) — RBAC rules
+- [Worker schemas reference](/sdk-reference/worker/schemas) — `CollectionSchema` type

@@ -1,0 +1,265 @@
+---
+title: "Data storage"
+description: "Define a collection, query it from React, and mutate it with optimistic updates."
+---
+
+This guide walks through adding a new collection to your app — declaring its schema, querying it from the client, and persisting writes. By the end, you'll have a working CRUD surface backed by a Durable Object that syncs in real time across every connected client.
+
+For background on the data model, see [Concepts → Data model](/concepts/data-model).
+
+## Define the schema
+
+Schemas live under `src/schemas/`, one file per collection. Create a new collection called `notes`:
+
+```ts
+// src/schemas/notes-schema.ts
+import type { CollectionSchema } from 'deepspace/worker'
+
+export const notesSchema: CollectionSchema = {
+  name: 'notes',
+  columns: [
+    { name: 'title', storage: 'text', interpretation: 'plain' },
+    { name: 'body', storage: 'text', interpretation: 'plain' },
+    { name: 'pinned', storage: 'integer', interpretation: 'boolean' },
+  ],
+  permissions: {
+    member: { read: true, create: true, update: 'own', delete: 'own' },
+    admin:  { read: true, create: true, update: true, delete: true },
+  },
+}
+```
+
+Register it in `src/schemas.ts`:
+
+```ts
+import { usersSchema } from './schemas/users-schema'
+import { settingsSchema } from './schemas/admin-schema'
+import { notesSchema } from './schemas/notes-schema'
+
+export const schemas = [usersSchema, settingsSchema, notesSchema]
+```
+
+Restart `npx deepspace dev` if it's running — schemas are picked up at worker startup.
+
+<Note>
+Schemas are **baked into your worker at deploy time**. There's no runtime schema registry. To add or change a schema in production, you must redeploy.
+</Note>
+
+## Read records — `useQuery`
+
+The `useQuery` hook subscribes to a collection and streams updates over a WebSocket. Each record comes wrapped in an **envelope**:
+
+```ts
+type Envelope<T> = {
+  recordId: string
+  data: T              // your fields live here
+  createdBy: string
+  createdAt: string
+  updatedAt: string
+}
+```
+
+```tsx
+import { useQuery } from 'deepspace'
+
+type Note = { title: string; body: string; pinned: boolean }
+
+function NotesList() {
+  const { records, status, error } = useQuery<Note>('notes', {
+    orderBy: 'createdAt',
+    orderDir: 'desc',
+  })
+
+  if (status === 'loading') return <SkeletonList />
+  if (status === 'error') return <p>Error: {error}</p>
+
+  return (
+    <ul>
+      {records.map((note) => (
+        <li key={note.recordId}>
+          <h3>{note.data.title}</h3>
+          <p>{note.data.body}</p>
+        </li>
+      ))}
+    </ul>
+  )
+}
+```
+
+<Warning>
+User fields live under `.data`. Reading `note.title` returns `undefined` — always use `note.data.title`. TypeScript catches this if you pass a row type to `useQuery<Note>`.
+</Warning>
+
+### Query options
+
+| Option | Type | Description |
+|---|---|---|
+| `where` | `Partial<T>` | Filter records by exact field match |
+| `orderBy` | `string` | Field to sort by (or `'createdAt'`, `'updatedAt'`) |
+| `orderDir` | `'asc' \| 'desc'` | Sort direction (default `'asc'`) |
+| `limit` | `number` | Maximum records to return |
+
+```tsx
+const { records } = useQuery<Note>('notes', {
+  where: { pinned: true },
+  orderBy: 'updatedAt',
+  orderDir: 'desc',
+  limit: 10,
+})
+```
+
+The DO applies the filter server-side before broadcasting, so unauthorized records never leave the worker.
+
+## Write records — `useMutations`
+
+The `useMutations` hook returns three mutation functions plus their confirmed variants:
+
+```tsx
+import { useMutations } from 'deepspace'
+
+function NoteEditor() {
+  const { create, put, remove } = useMutations<Note>('notes')
+
+  async function handleCreate() {
+    const id = await create({ title: 'Untitled', body: '', pinned: false })
+    // create returns the new recordId — capture it for navigation
+    navigate(`/notes/${id}`)
+  }
+
+  async function handleSave(id: string, patch: Partial<Note>) {
+    await put(id, patch)
+  }
+
+  async function handleDelete(id: string) {
+    await remove(id)
+  }
+}
+```
+
+| Method | Signature | Notes |
+|---|---|---|
+| `create` | `(data: T) => Promise<string>` | Returns the new `recordId`. Requires the full record shape. |
+| `put` | `(id: string, patch: Partial<T>) => Promise<void>` | Server merges: `{ ...existing, ...patch }`. Send only fields that change. |
+| `remove` | `(id: string) => Promise<void>` | Hard delete. |
+| `createConfirmed` | `(data: T) => Promise<string>` | Resolves after server acknowledgment. |
+| `putConfirmed` | `(id, patch) => Promise<void>` | Resolves after server acknowledgment. |
+| `removeConfirmed` | `(id) => Promise<void>` | Resolves after server acknowledgment. |
+
+### Optimistic vs confirmed
+
+`create` / `put` / `remove` apply the change to the local store immediately, then send the mutation. They resolve as soon as the local store is updated — usually before the server confirms. If the server rejects the write, the optimistic update is rolled back.
+
+The `*Confirmed` variants resolve only after the DO has acknowledged. Use them when you need a server-generated ID before navigating or when the next step depends on the server having persisted the write.
+
+## A complete CRUD example
+
+```tsx
+import { useState } from 'react'
+import { useQuery, useMutations } from 'deepspace'
+import { useToast } from '../components/ui'
+
+type Note = { title: string; body: string; pinned: boolean }
+
+export default function NotesPage() {
+  const { records, status } = useQuery<Note>('notes', { orderBy: 'createdAt', orderDir: 'desc' })
+  const { create, put, remove } = useMutations<Note>('notes')
+  const { success, error } = useToast()
+  const [draft, setDraft] = useState('')
+
+  async function addNote() {
+    if (!draft.trim()) return
+    try {
+      await create({ title: draft, body: '', pinned: false })
+      setDraft('')
+      success('Note created')
+    } catch (e) {
+      error('Could not create note', String(e))
+    }
+  }
+
+  if (status === 'loading') return <p>Loading…</p>
+
+  return (
+    <div>
+      <div>
+        <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="New note…" />
+        <button onClick={addNote}>Add</button>
+      </div>
+      <ul>
+        {records.map((note) => (
+          <li key={note.recordId}>
+            <input
+              type="checkbox"
+              checked={note.data.pinned}
+              onChange={(e) => put(note.recordId, { pinned: e.target.checked })}
+            />
+            {note.data.title}
+            <button onClick={() => remove(note.recordId)}>Delete</button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+```
+
+Open the page in two browser windows — changes in one window appear in the other in real time.
+
+## Working with JSON columns
+
+For structured data, use `interpretation: { kind: 'json' }`:
+
+```ts
+{ name: 'tags', storage: 'text', interpretation: { kind: 'json' } }
+```
+
+On write, pass the value directly — the SDK serializes:
+
+```ts
+await create({ title: 'Trip', tags: ['vacation', '2024'] })
+```
+
+On read, the value is already parsed — don't call `JSON.parse`:
+
+```ts
+record.data.tags        // ✓ ['vacation', '2024']
+JSON.parse(record.data.tags)  // ✗ throws (already an object)
+```
+
+## Restricting access
+
+Permissions are enforced server-side. To make notes private per user:
+
+```ts
+permissions: {
+  member: { read: 'own', create: true, update: 'own', delete: 'own' },
+}
+```
+
+Now each user sees only the notes they created. `'own'` resolves against `record.createdBy` by default; override with `ownerField` if you want a different column to determine ownership.
+
+For more advanced rules — published/draft visibility, collaborators, teams — see [Concepts → Permissions](/concepts/permissions).
+
+## Performance tips
+
+- **Filter at the query.** `useQuery('notes', { where: { pinned: true } })` is more efficient than fetching everything and filtering in React.
+- **Use `limit` on long lists.** The DO sends every matching record over the wire on initial subscription. For lists in the thousands, paginate (cursor-based pagination is on the roadmap; for now, slice by date or category).
+- **Avoid mounting the same `useQuery` in many components.** Mount once at the page level and pass records down via props or context. Each mount maintains its own subscription state.
+- **Use `put` with partial patches.** Sending only the changed fields keeps the wire payload small.
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="Permissions" icon="lock" href="/concepts/permissions">
+    Role-based access control on collections.
+  </Card>
+  <Card title="Server actions" icon="shield-halved" href="/guides/server-actions">
+    Privileged writes that bypass user RBAC.
+  </Card>
+  <Card title="Records reference" icon="code" href="/sdk-reference/client/records">
+    Full hooks API surface.
+  </Card>
+  <Card title="Schema reference" icon="table" href="/sdk-reference/worker/schemas">
+    Column types and permission rules.
+  </Card>
+</CardGroup>

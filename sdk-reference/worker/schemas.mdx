@@ -1,0 +1,193 @@
+---
+title: "Schemas reference"
+description: "`CollectionSchema`, RBAC types, and the pre-built drop-in collections."
+---
+
+Schemas describe collections — their columns, indexes, and per-role permissions. They're declared in `src/schemas/`, registered in `src/schemas.ts`, and baked into the worker at deploy time.
+
+```ts
+import type { CollectionSchema, ColumnSpec, ColumnInterpretation, PermissionRule } from 'deepspace/worker'
+import {
+  USERS_COLUMNS, BASE_USERS_SCHEMA,
+  CHANNELS_SCHEMA, MESSAGES_SCHEMA, REACTIONS_SCHEMA,
+  CHANNEL_MEMBERS_SCHEMA, CHANNEL_INVITATIONS_SCHEMA, READ_RECEIPTS_SCHEMA,
+  CONVERSATION_SCHEMAS,
+  DIRECTORY_SCHEMAS, VOTING_SCHEMAS,
+  WORKSPACE_SCHEMAS, workspaceTeamsSchema,
+  SYSTEM_COLLECTIONS,
+  GLOBAL_DO_TYPES, GLOBAL_DO_TYPE_NAMES,
+  getGlobalDOType, getGlobalDOSchemas,
+  RESERVED_COLLECTION_NAMES,
+  ROLES, ROLE_CONFIG, Role,
+  AI_CHATS_SCHEMA, AI_MESSAGES_SCHEMA,
+} from 'deepspace/worker'
+```
+
+## `CollectionSchema`
+
+```ts
+type CollectionSchema = {
+  name: string
+  columns: ColumnSpec[]
+  permissions: Record<string, RolePermissions>
+  visibilityField?:    { field: string; value: unknown }
+  collaboratorsField?: string
+  ownerField?:         string
+  defaultRole?:        string                          // users schema only
+}
+
+type ColumnSpec = {
+  name: string
+  storage: 'text' | 'integer' | 'real' | 'blob'
+  interpretation: ColumnInterpretation
+}
+
+type ColumnInterpretation =
+  | 'plain'
+  | 'number'
+  | 'boolean'
+  | { kind: 'select'; options: string[] }
+  | { kind: 'json' }
+  | { kind: 'date' }
+
+type RolePermissions = {
+  read?:   PermissionRule
+  create?: PermissionRule
+  update?: PermissionRule
+  delete?: PermissionRule
+}
+
+type PermissionRule =
+  | boolean
+  | 'own'
+  | 'published'
+  | 'shared'
+  | 'team'
+  | 'unclaimed-or-own'
+  | 'collaborator'
+  | 'access'
+```
+
+See [Concepts → Permissions](/concepts/permissions) for the semantics of each rule.
+
+## Roles
+
+```ts
+const ROLES: { VIEWER: 'viewer'; MEMBER: 'member'; ADMIN: 'admin' }
+type Role = 'viewer' | 'member' | 'admin'
+
+const ROLE_CONFIG: Record<Role, {
+  title: string
+  badgeVariant: 'default' | 'secondary' | 'outline'
+  description: string
+}>
+```
+
+`ROLES` gives you the three string identifiers used in `permissions` blocks. `ROLE_CONFIG` is display metadata for role-badge UIs.
+
+For unauthenticated users, use the `'*'` key in permissions — there is no `anonymous` role identifier.
+
+## Drop-in schemas — Users
+
+```ts
+const USERS_COLUMNS: ColumnSpec[]      // canonical users columns
+const BASE_USERS_SCHEMA: CollectionSchema  // assembled from USERS_COLUMNS
+```
+
+The scaffold's `usersSchema` extends `BASE_USERS_SCHEMA`. Don't replace; extend if you need extra columns.
+
+## Drop-in schemas — Messaging
+
+| Schema | Collection name | Purpose |
+|---|---|---|
+| `CHANNELS_SCHEMA` | `channels` | Channel definitions (public, private, dm) |
+| `MESSAGES_SCHEMA` | `messages` | Channel messages |
+| `REACTIONS_SCHEMA` | `reactions` | Emoji reactions on messages |
+| `CHANNEL_MEMBERS_SCHEMA` | `channel_members` | Explicit channel membership |
+| `CHANNEL_INVITATIONS_SCHEMA` | `channel_invitations` | Pending invites |
+| `READ_RECEIPTS_SCHEMA` | `read_receipts` | Per-user per-channel read state |
+
+Add to your app's `schemas` array to enable the corresponding hooks (`useChannels`, `useMessages`, etc.).
+
+## Drop-in schemas — Conversations (`conv:<id>` DOs)
+
+```ts
+const CONVERSATION_SCHEMAS: CollectionSchema[]
+```
+
+Array of the `conv_messages` / `conv_reactions` / `conv_members` / `conv_read_cursors` collections. Pass as `schemas` to a conversation-scope `RecordRoom` to enable `useConversation`.
+
+## Drop-in schemas — Directory (cross-app)
+
+```ts
+const DIRECTORY_SCHEMAS: CollectionSchema[]      // conversations, conversation_state, communities, memberships, posts
+const VOTING_SCHEMAS: CollectionSchema[]         // poll-related collections
+```
+
+Hosted on the platform's directory DO. Rarely instantiated by an app directly — apps mount them via `sharedScopes`.
+
+## Drop-in schemas — Workspace (cross-app shared)
+
+```ts
+const WORKSPACE_SCHEMAS: CollectionSchema[]      // email handles, teams, etc.
+const workspaceTeamsSchema: CollectionSchema     // teams collection on its own
+```
+
+Mount via `sharedScopes` for `workspace:default`.
+
+## Drop-in schemas — AI chat
+
+```ts
+const AI_CHATS_SCHEMA: CollectionSchema          // 'ai-chats'
+const AI_MESSAGES_SCHEMA: CollectionSchema       // 'ai-messages'
+```
+
+RBAC: members `read/update/delete: 'own'`, `create: false` — writes only flow through the worker's chat routes. **Don't relax `create` to `'own'`** (see the AI chat guide for why).
+
+## Global DO type registry
+
+```ts
+const GLOBAL_DO_TYPES: GlobalDOType[]
+const GLOBAL_DO_TYPE_NAMES: readonly string[]   // ['workspace', 'dir', 'conv']
+
+function getGlobalDOType(name: string): GlobalDOType | undefined
+function getGlobalDOSchemas(typeName: string): CollectionSchema[]
+```
+
+Runtime lookups for what schemas a given global DO scope expects.
+
+## Reserved names
+
+```ts
+const RESERVED_COLLECTION_NAMES: Set<string>     // names you cannot use in app-defined schemas
+const SYSTEM_COLLECTIONS: Set<string>            // SDK-internal collections (Yjs state, metadata)
+```
+
+Naming a custom collection that collides with either set is rejected at validation time.
+
+## Pattern: a typical schema
+
+```ts
+import type { CollectionSchema } from 'deepspace/worker'
+
+export const itemsSchema: CollectionSchema = {
+  name: 'items',
+  columns: [
+    { name: 'title',  storage: 'text', interpretation: 'plain' },
+    { name: 'status', storage: 'text', interpretation: { kind: 'select', options: ['draft', 'published'] } },
+    { name: 'tags',   storage: 'text', interpretation: { kind: 'json' } },
+  ],
+  visibilityField: { field: 'status', value: 'published' },
+  permissions: {
+    '*':    { read: 'published' },
+    member: { read: true, create: true, update: 'own', delete: 'own' },
+    admin:  { read: true, create: true, update: true, delete: true },
+  },
+}
+```
+
+## See also
+
+- [Data model concepts](/concepts/data-model) — collections and envelopes
+- [Permissions concepts](/concepts/permissions) — rules and visibility
+- [Records reference](/sdk-reference/client/records) — client-side hooks

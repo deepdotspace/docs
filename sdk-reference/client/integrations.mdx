@@ -1,0 +1,132 @@
+---
+title: "Integrations reference"
+description: "The `integration` client and OAuth helpers."
+---
+
+```ts
+import { integration } from 'deepspace'
+import type { IntegrationResponse, RequestOptions } from 'deepspace'
+```
+
+## `integration`
+
+The integration client exposes four HTTP verbs. All return a typed envelope.
+
+```ts
+const integration: {
+  get<T>:    (endpoint: string, options?: RequestOptions) => Promise<IntegrationResponse<T>>
+  post<T>:   (endpoint: string, data?: object, options?: RequestOptions) => Promise<IntegrationResponse<T>>
+  put<T>:    (endpoint: string, data?: object, options?: RequestOptions) => Promise<IntegrationResponse<T>>
+  delete<T>: (endpoint: string, options?: RequestOptions) => Promise<IntegrationResponse<T>>
+}
+```
+
+Endpoint names are two segments: `<integration>/<endpoint>` (e.g. `openai/chat-completion`).
+
+## `IntegrationResponse<T>`
+
+```ts
+type IntegrationResponse<T> =
+  | { success: true; data: T }
+  | { success: false; error: string; issues?: ValidationIssue[] }
+
+type ValidationIssue = {
+  path?: string[]
+  message: string
+  code?: string
+}
+```
+
+`issues` appears when the api-worker's Zod validator rejects the body shape. Read it instead of guessing field names.
+
+## `RequestOptions`
+
+```ts
+type RequestOptions = {
+  headers?: Record<string, string>
+  timeoutMs?: number   // default 120000 (120s)
+}
+```
+
+## Cross-app platform context
+
+These exports support a small set of cross-app surfaces (inbox, platform fetch). The scaffold does **not** include `<PlatformProvider>` — wrap manually if you need this surface.
+
+```ts
+import { PlatformProvider, usePlatform, useInbox, usePlatformWS } from 'deepspace'
+
+<PlatformProvider>{/* tree */}</PlatformProvider>
+```
+
+### `usePlatform()`
+
+```ts
+function usePlatform(): {
+  platformFetch: (path: string, init?: RequestInit) => Promise<Response>
+  inbox: InboxEntry[]
+  subscribeInbox: () => void
+}
+```
+
+`platformFetch` prepends `/platform` and adds the auth header automatically. Throws if no `<PlatformProvider>` is mounted.
+
+### `useInbox()`
+
+```ts
+function useInbox(): InboxEntry[]
+
+type InboxEntry = {
+  conversationId: string
+  scope: string
+  displayName: string
+  muted: boolean
+  joinedAt: string
+  lastMessageAt: string
+  lastMessagePreview: string
+  lastMessageAuthor: string
+  unreadCount: number
+}
+```
+
+The inbox WebSocket activates only when at least one component subscribes via `useInbox()`.
+
+### `usePlatformWS<S>(options)`
+
+Generic platform WebSocket subscription for custom platform-side streams.
+
+```ts
+function usePlatformWS<S>(options: PlatformWSOptions): PlatformWSResult<S>
+```
+
+## OAuth endpoints
+
+For OAuth-backed integrations (currently Google), these REST endpoints manage per-user connections. Call via `fetch` with the session token.
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/integrations/status` | `GET` | Returns connection flags for all OAuth providers |
+| `/api/integrations/oauth/:provider/connect` | `GET` | Initiates OAuth flow (browser navigation) |
+| `/api/integrations/oauth/:provider/disconnect` | `DELETE` | Revokes the current user's stored tokens |
+
+```ts
+const r = await fetch('/api/integrations/status', {
+  headers: { Authorization: `Bearer ${await getAuthToken()}` },
+})
+const { google } = await r.json()
+// { connected: boolean, scopes: string[] }
+```
+
+### `requiresOAuth` response
+
+When a user calls an OAuth endpoint without a connected account:
+
+```ts
+{ success: false, error: 'requiresOAuth', provider: 'google', connectUrl: '...' }
+```
+
+Redirect the user to `connectUrl` (or call `/api/integrations/oauth/google/connect` directly).
+
+## See also
+
+- [External APIs guide](/guides/external-apis) — patterns, billing, and discovery
+- [CLI integrations command](/cli-reference/commands#integrations) — `list` / `info` / `invoke`

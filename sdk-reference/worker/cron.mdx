@@ -1,0 +1,153 @@
+---
+title: "Worker cron reference"
+description: "`CronRoom`, `CronTask`, and `buildCronContext`."
+---
+
+```ts
+import { CronRoom, buildCronContext } from 'deepspace/worker'
+import type { CronTask, CronExecution, CronRoomConfig } from 'deepspace/worker'
+```
+
+## `CronRoom<E>`
+
+See [Rooms reference → CronRoom](/sdk-reference/worker/rooms#cronroom-e) for the class signature. The scaffolded `AppCronRoom` extends this and overrides `onTask`.
+
+## `CronTask`
+
+```ts
+type CronTask = {
+  name: string
+  intervalMinutes?: number     // mutually exclusive with schedule
+  schedule?: string            // 5-field cron expression
+  timezone?: string            // IANA timezone (required with schedule)
+  paused?: boolean             // start disabled
+}
+```
+
+Each task declares **either** `intervalMinutes` OR `schedule` + `timezone`. Declaring both or neither throws at DO construction.
+
+Cron mode is DST-aware — the wall-clock comparison happens after the timezone shift.
+
+## `CronExecution`
+
+```ts
+type CronExecution = {
+  taskName: string
+  startedAt: string
+  completedAt: string
+  success: boolean
+  durationMs: number
+  error?: string
+}
+```
+
+Stored in the DO's history and streamed to `useCronMonitor` subscribers.
+
+## `buildCronContext(env, ownerUserId, roomId?)`
+
+Returns a context for use inside `runTask`. Operations run as the app owner, bypassing RBAC.
+
+```ts
+function buildCronContext(
+  env: Env,
+  ownerUserId: string,
+  roomId?: string,
+): CronContext
+
+type CronContext = {
+  records: {
+    query:  <T>(coll: string, opts?: { where?: object; limit?: number }) => Promise<Envelope<T>[]>
+    get:    <T>(coll: string, id: string) => Promise<Envelope<T> | null>
+    create: <T>(coll: string, data: T) => Promise<{ recordId: string; record: Envelope<T> }>
+    update: <T>(coll: string, id: string, data: Partial<T>) => Promise<{ recordId: string; record: Envelope<T> }>
+    delete: (coll: string, id: string) => Promise<{ deleted: true }>
+  }
+  integrations: {
+    call: <T>(endpoint: string, params: object) => Promise<T>
+  }
+  ownerUserId: string
+}
+```
+
+`roomId` defaults to `'default'`. Pass `app:${env.APP_NAME}` to target the per-app RecordRoom (the scaffold convention).
+
+<Warning>
+**Shapes differ from server actions.** `ctx.records.query` returns the unwrapped array directly (`Envelope[]`), not `ActionResult<{ records, count }>`. The methods throw on failure rather than returning a `{ success: false }` envelope — wrap in `try/catch` if you need to handle denied writes inline.
+</Warning>
+
+## Properties
+
+- `ctx.records.*` — RBAC-bypassing record operations (results already unwrapped from the `ActionResult` envelope).
+- `ctx.integrations.call(endpoint, params)` — proxies through the api-worker via signed internal HMAC, billed to the app owner (uses `INTERNAL_STORAGE_HMAC_SECRET`).
+- `ctx.ownerUserId` — convenience accessor for the owner's user ID.
+
+## Pattern
+
+```ts
+// src/cron.ts
+import type { CronTask } from 'deepspace/worker'
+import { buildCronContext } from 'deepspace/worker'
+
+export const tasks: CronTask[] = [
+  { name: 'heartbeat', intervalMinutes: 1 },
+  { name: 'daily-digest', schedule: '0 9 * * *', timezone: 'America/New_York' },
+]
+
+export async function runTask(name: string, env: Env): Promise<void> {
+  const ctx = buildCronContext(env, env.OWNER_USER_ID, `app:${env.APP_NAME}`)
+
+  if (name === 'heartbeat') {
+    const settings = await ctx.records.query('settings', { where: { key: 'lastHeartbeat' } })
+    if (settings.length > 0) {
+      await ctx.records.update('settings', settings[0].recordId, {
+        value: new Date().toISOString(),
+      })
+    }
+  }
+}
+```
+
+## Worker wiring
+
+```ts
+// worker.ts
+export class AppCronRoom extends CronRoom<Env> {
+  constructor(state: DurableObjectState, env: Env) {
+    super(state, env, { tasks: cronTasks })
+    this.env = env
+  }
+  protected async onTask(name: string): Promise<void> {
+    await runCronTask(name, this.env)
+  }
+}
+```
+
+Don't edit the WebSocket route or DO binding wiring — add tasks in `src/cron.ts` and the DO picks them up at construction.
+
+## Outbound calls
+
+Use `ctx.integrations.call(...)` for third-party APIs (billed to the owner):
+
+```ts
+const data = await ctx.integrations.call('resend/send-email', {
+  to: user.data.email,
+  subject: 'Your digest',
+  text: '...',
+})
+```
+
+For autonomous LLM calls via the AI SDK, use `createDeepSpaceAI` without `authToken`:
+
+```ts
+import { createDeepSpaceAI } from 'deepspace/worker'
+import { generateText } from 'ai'
+
+const ai = createDeepSpaceAI(env, 'anthropic')   // owner pays
+const { text } = await generateText({ model: ai('claude-haiku-4-5'), prompt: '...' })
+```
+
+## See also
+
+- [Scheduled jobs guide](/guides/scheduled-jobs) — patterns and worked examples
+- [Rooms reference](/sdk-reference/worker/rooms#cronroom-e) — class signature
+- [Real-time reference](/sdk-reference/client/realtime#usecronmonitor-roomid) — client-side monitor

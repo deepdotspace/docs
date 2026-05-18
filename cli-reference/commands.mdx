@@ -1,0 +1,248 @@
+---
+title: "Command reference"
+description: "Every `deepspace` CLI command, with flags and examples."
+---
+
+This page documents every CLI command. For an overview and the dev loop, see [CLI overview](/cli-reference/overview).
+
+```bash
+npx deepspace <command> [options]
+```
+
+All commands support `--help` (or `-h`) and `--version` (or `-v`).
+
+## `dev`
+
+Run the app locally with Vite + worker in-process. HMR on `localhost:5173`.
+
+```bash
+npx deepspace dev
+npx deepspace dev --port 5180         # parallel apps
+npx deepspace dev --prod              # UI local, workers point at production
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--port <n>` | `5173` | Listening port. Vite uses `--strictPort` — fails loudly if held. |
+| `--prod` | off | Point the local UI at production workers (read-only smoke testing). |
+
+`dev` rewrites the 9 SDK-managed keys in `.dev.vars` on every run. User-added secrets (below the divider) are preserved.
+
+## `deploy`
+
+Deploy to Workers for Platforms.
+
+```bash
+npx deepspace deploy                  # live at <wrangler.name>.app.space
+```
+
+The subdomain comes from the `name` field in `wrangler.toml`. To change it, edit `wrangler.toml` before deploying — `deploy` doesn't accept a name override.
+
+User secrets below the `.dev.vars` divider are uploaded as `secret_text` bindings. Custom bindings declared in `wrangler.toml` are validated and auto-provisioned if `id = "auto"`.
+
+## `undeploy`
+
+Tear down a deployed app, its subdomain, and its provisioned resources.
+
+```bash
+npx deepspace undeploy
+npx deepspace undeploy --yes          # skip the confirmation prompt
+```
+
+R2 buckets with files are **not** auto-deleted (preserves user uploads). Hyperdrive is never auto-provisioned and never auto-deleted.
+
+## `login`
+
+Authenticate via GitHub or Google OAuth. Opens a browser tab and polls up to 10 minutes.
+
+```bash
+npx deepspace login
+```
+
+The session is stored at `~/.deepspace/session` and is shared across all DeepSpace apps on the machine.
+
+<Warning>
+**Don't wrap in `timeout N` or `sleep N && kill`.** OAuth needs the full polling window. Ctrl-C is safe — server-side state is preserved. Re-login only when `whoami` reports not signed in or the session has expired.
+</Warning>
+
+## `logout`
+
+Clear the local session.
+
+```bash
+npx deepspace logout
+```
+
+## `whoami`
+
+Print the current login state. The canonical login-state probe — it refreshes the JWT in the same call path that `dev` / `test` / `deploy` use.
+
+```bash
+npx deepspace whoami
+npx deepspace whoami --json
+```
+
+On not-signed-in: prints `Not logged in. Run `deepspace login`.` to stderr, exits 1.
+
+## `add`
+
+Install a scaffold feature into the current app.
+
+```bash
+npx deepspace add --list              # discover available features
+npx deepspace add --info <name>       # inspect what a feature installs
+npx deepspace add <feature>           # install
+```
+
+Available features (subject to change — run `--list` for the current set):
+
+`admin-page`, `ai-chat`, `canvas`, `cron`, `docs`, `file-attachments`, `file-manager`, `integration-test`, `items`, `kanban`, `landing`, `leaderboard`, `messaging`, `presence-test`, `sidebar`, `tasks`, `testing`, `topbar`, `tree`
+
+Each feature installs source files, registers schemas, and runs `npm install` for any new dependencies.
+
+## `test`
+
+Run tests against the dev workers. Auto-installs Playwright + Chromium on first run.
+
+```bash
+npx deepspace test                    # default = smoke + api
+npx deepspace test smoke              # smoke only
+npx deepspace test api                # api only
+npx deepspace test e2e                # all Playwright specs
+npx deepspace test unit               # vitest
+npx deepspace test all                # vitest + Playwright
+npx deepspace test tests/foo.spec.ts  # one file
+npx deepspace test --port 5180        # match a parallel `dev`
+```
+
+The runner regenerates `.dev.vars` against dev workers and forwards `$DEEPSPACE_PORT` to the Playwright child.
+
+## `screenshot`
+
+Capture a Playwright screenshot of any URL. Shares the same Chromium install as `test`.
+
+```bash
+npx deepspace screenshot http://localhost:5173/ out.png
+npx deepspace screenshot http://localhost:5173/ out.png --full-page
+npx deepspace screenshot http://localhost:5173/ out.png --wait-for-timeout 500
+```
+
+## `kill`
+
+Stop leaked workerd / wrangler / vite processes from prior `dev` runs.
+
+```bash
+npx deepspace kill                    # default port 5173
+npx deepspace kill --port 5180
+npx deepspace kill --all              # sweep every workerd/wrangler/vite
+```
+
+<Warning>
+**Don't kill a parallel session's processes.** If a sibling session is on 5173, run yours on `--port 5174` instead.
+</Warning>
+
+## `integrations` and `invoke`
+
+Discover and call third-party integration endpoints. The two parent commands are interchangeable — `integrations list/info/invoke` is an alias for `invoke --list/--info/<target> --body`.
+
+### Discovery (no login required)
+
+```bash
+npx deepspace integrations list                                  # full catalog
+npx deepspace integrations list --json
+npx deepspace integrations info openai/chat-completion           # schema + example body
+npx deepspace integrations info openai/chat-completion --json
+```
+
+### Calling endpoints (login required, billed to caller)
+
+```bash
+npx deepspace invoke openai/chat-completion --body '{"model":"claude-sonnet-4-6","messages":[...]}'
+npx deepspace invoke openai/chat-completion --body-file req.json
+cat req.json | npx deepspace invoke openai/chat-completion --body-file -
+```
+
+| Flag | Description |
+|---|---|
+| `--body '<json>'` | JSON request body inline |
+| `--body-file <path>` | Read body from file (or `-` for stdin) |
+| `--json` | Machine-readable output |
+
+## `domain`
+
+Buy, attach, and manage custom domains.
+
+```bash
+# Search and buy
+npx deepspace domain search <query>
+npx deepspace domain buy <domain>
+npx deepspace domain buy <domain> --app <name> --yes
+npx deepspace domain buy <domain> --no-open    # print URL instead of opening
+npx deepspace domain buy <domain> --no-wait    # exit after Checkout session
+
+# List and inspect
+npx deepspace domain list
+npx deepspace domain status <domain>
+
+# Manage
+npx deepspace domain attach <domain> --app <new-app-name>
+npx deepspace domain detach <domain> --yes
+npx deepspace domain renew <domain> --auto on|off
+```
+
+Most subcommands support `--json` for machine-readable output. `buy` and `detach` require `--yes` in non-TTY contexts.
+
+Provisioning time varies by TLD: Cloudflare Registrar TLDs (`.com`, `.dev`, `.app`) take ~60–90 seconds; Porkbun TLDs (`.ai`, `.io`, `.me`) take 15–60 minutes.
+
+## `test-accounts`
+
+Manage `@deepspace.test` accounts for Playwright multi-user tests. The pool is global per developer, hard cap of 10.
+
+```bash
+# List
+npx deepspace test-accounts list
+
+# Create
+npx deepspace test-accounts create --email alice-1@deepspace.test --password Pass123! --name "Alice"
+
+# Delete
+npx deepspace test-accounts delete --email alice-1@deepspace.test
+npx deepspace test-accounts clear                # delete all
+npx deepspace test-accounts clear --label e2e    # delete labeled subset
+npx deepspace test-accounts clear --yes          # skip confirmation
+```
+
+| Flag | Notes |
+|---|---|
+| `--email` | Must end `@deepspace.test`. |
+| `--password` | Strong password. Stored in `~/.deepspace/test-accounts.json` (mode 0600). |
+| `--name` | Display name. |
+| `--label` | Optional tag for grouping (used by `clear --label`). |
+
+Public sign-up is intentionally disabled; these accounts are the only way to obtain signed-in browser contexts for tests.
+
+## Global flags
+
+| Flag | Available on | Purpose |
+|---|---|---|
+| `--help`, `-h` | every command | Print help (ANSI-free) |
+| `--version`, `-v` | every command | Print CLI version |
+| `--json` | discovery + status commands | Machine-readable output |
+| `--yes` | `undeploy`, `domain buy/detach`, `test-accounts clear` | Skip confirmation |
+
+## Environment
+
+The CLI reads a small set of environment variables:
+
+| Variable | Used by | Purpose |
+|---|---|---|
+| `DEEPSPACE_PORT` | `test`, `dev` | Override port |
+| `DEEPSPACE_SESSION_FILE` | login flow | Override session location (advanced) |
+| `DEBUG=deepspace:*` | every command | Verbose tracing |
+
+## See also
+
+- [CLI overview](/cli-reference/overview) — dev loop summary
+- [Quickstart](/get-started/quickstart) — first-time walkthrough
+- [Custom domains guide](/guides/custom-domains) — purchase and attach flow
+- [Testing guide](/guides/testing) — the test runner in context

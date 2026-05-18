@@ -1,0 +1,194 @@
+---
+title: "AI reference"
+description: "Provider routing, context compaction, chat-history wrappers, and built-in tools."
+---
+
+```ts
+import {
+  // Provider
+  createDeepSpaceAI,
+  // Compaction
+  prepareMessagesWithCompaction, truncateOldToolResults, applySlidingWindow,
+  capToolResultSize, totalChars,
+  turnsToCoreMessages, buildUiParts, unwrapToolOutput,
+  makeDefaultSummarizer,
+  DEFAULT_CONTEXT_CONFIG,
+  // Chat history (DO tools API wrappers)
+  getChat, createChat, updateChat, deleteChatCascade,
+  loadMessages, appendMessage,
+  // Schemas
+  AI_CHATS_SCHEMA, AI_MESSAGES_SCHEMA,
+  // Built-in tools
+  BUILT_IN_TOOLS, ToolSchema,
+} from 'deepspace/worker'
+
+import type {
+  DeepSpaceAIEnv, DeepSpaceAIOptions,
+  ChatContextConfig, ChatTurn, Summarizer,
+  ChatRow, ChatMessageRow,
+} from 'deepspace/worker'
+```
+
+## `createDeepSpaceAI(env, provider, options?)`
+
+Returns a Vercel AI SDK v5 provider routed through the DeepSpace API worker.
+
+```ts
+function createDeepSpaceAI(
+  env: DeepSpaceAIEnv,
+  provider: 'anthropic' | 'openai' | 'cerebras',
+  options?: { authToken?: string },
+): AIProvider
+```
+
+| Option | Effect |
+|---|---|
+| `authToken` (passed) | Caller pays — JWT subject is billed |
+| `authToken` (omitted) | Owner pays — falls back to `env.APP_OWNER_JWT` |
+
+Use the returned provider with `streamText` / `generateText` from the `ai` package:
+
+```ts
+import { streamText } from 'ai'
+const ai = createDeepSpaceAI(env, 'anthropic', { authToken })
+const result = await streamText({
+  model: ai('claude-sonnet-4-6'),
+  messages,
+  tools,
+})
+```
+
+## Context compaction
+
+### `prepareMessagesWithCompaction(messages, config, { summarizer, cachedSummary? })`
+
+Pre-stream pipeline that keeps the conversation under the context budget.
+
+```ts
+function prepareMessagesWithCompaction(
+  messages: ChatTurn[],
+  config: ChatContextConfig,
+  helpers: { summarizer: Summarizer; cachedSummary?: string },
+): Promise<{ messages: ChatTurn[]; newSummary?: string }>
+```
+
+Order of operations:
+
+1. `truncateOldToolResults` — replace old tool-result payloads with a small marker
+2. Apply `cachedSummary` if provided
+3. Summarize the older half if still over budget
+4. Fall back to `applySlidingWindow` on summarizer error
+
+### `truncateOldToolResults(messages, keepRecent)`
+
+Replaces old tool-result payloads with markers; preserves errors (`success: false`) and the `keepRecent` most recent assistant turns intact.
+
+### `applySlidingWindow(messages, charCap, minKept)`
+
+Drops oldest messages until under `charCap`, never below `minKept`. System messages are pinned.
+
+### `capToolResultSize(result, byteCap)`
+
+Caps individual tool-result payloads with a structured "result too large; narrow your query" error. Preserves a 2KB preview.
+
+### `totalChars(messages)`
+
+Sum of `content` + `JSON.stringify(parts)` lengths.
+
+### `DEFAULT_CONTEXT_CONFIG`
+
+```ts
+const DEFAULT_CONTEXT_CONFIG: ChatContextConfig = {
+  contextBudget: 240_000,       // chars ≈ 60–80K tokens
+  toolResultCap: 30_000,        // bytes per tool result
+  keepRecentToolResults: 5,
+  minKept: 10,                  // sliding-window floor
+}
+```
+
+Sized for 200K+ context models (Claude Sonnet/Opus, GPT-4.1). Lower for shorter-context models.
+
+## Format conversions
+
+```ts
+function turnsToCoreMessages(turns: ChatTurn[]): ModelMessage[]
+function buildUiParts(responseMessages: ModelMessage[]): unknown[]
+function unwrapToolOutput(output: unknown): unknown
+```
+
+`turnsToCoreMessages` converts persisted UI-shape `ChatTurn` rows into Vercel AI SDK v5 `ModelMessage`s, splitting assistant rows at each tool-call boundary so Anthropic's `tool_use → tool_result` pairing is preserved.
+
+`buildUiParts` is the inverse — converts `onFinish` response messages into the flat UI-shape `parts` array we persist on `ai-messages` rows.
+
+`unwrapToolOutput` unwraps v5's tagged `output` (`{ type: 'json' | 'text' | ..., value }`) into the flat shape we persist.
+
+## Summarizers
+
+### `makeDefaultSummarizer(env, { authToken? })`
+
+Returns a Claude Haiku 4.5 summarizer.
+
+```ts
+function makeDefaultSummarizer(env: Env, opts?: { authToken?: string }): Summarizer
+```
+
+Omit `authToken` to bill the owner (compaction as infrastructure cost). Pass the caller's JWT to bill the user (compaction as part of chat cost).
+
+The default summary anchors on the last real message ID in the older half (skipping prior-summary system rows so re-summarization doesn't loop) — preserve that anchoring if you replace it.
+
+### `Summarizer` type
+
+```ts
+type Summarizer = (messages: ChatTurn[]) => Promise<string>
+```
+
+Roll your own implementation if you want a different model or strategy.
+
+## Chat history helpers (DO tools API wrappers)
+
+These read and write the `ai-chats` and `ai-messages` collections with `X-App-Action: 'true'` (bypassing user RBAC). **The worker is the trust boundary** — callers MUST verify chat ownership before invoking write helpers.
+
+```ts
+function getChat(stub: DurableObjectStub, chatId: string, userId: string): Promise<ChatRow | null>
+function createChat(stub: DurableObjectStub, userId: string, opts: { title?: string; model?: string }): Promise<ChatRow>
+function updateChat(stub: DurableObjectStub, chatId: string, userId: string, patch: Partial<ChatRow>): Promise<void>
+function deleteChatCascade(stub: DurableObjectStub, chatId: string, userId: string): Promise<void>
+function loadMessages(stub: DurableObjectStub, chatId: string, userId: string): Promise<ChatMessageRow[]>
+function appendMessage(stub: DurableObjectStub, row: ChatMessageRow): Promise<void>
+```
+
+| Type | Shape |
+|---|---|
+| `ChatRow` | `{ recordId, userId, title, model?, compactedSummary?, compactedThroughId?, createdAt, updatedAt }` |
+| `ChatMessageRow` | `{ recordId, chatId, userId, role, content, parts?, createdAt }` |
+
+<Note>
+Use `recordId`, not `id`. `id` is kept as a deprecated alias for backward compatibility and may be removed.
+</Note>
+
+## Built-in tools
+
+```ts
+const BUILT_IN_TOOLS: Record<string, ToolSchema>
+type ToolSchema = { name: string; description: string; inputSchema: ZodSchema; execute: (input: object) => Promise<unknown> }
+```
+
+The catalog (all read-only by default — the scaffold ships these plus the write tools):
+
+| Tool | Purpose |
+|---|---|
+| `schema.list` | Enumerate collection names |
+| `schema.describe` | Describe one collection's columns and permissions |
+| `records.query` | Filter and list records |
+| `records.get` | Fetch one record |
+| `records.create` | Create a record (write) |
+| `records.update` | Patch a record (write) |
+| `records.delete` | Delete a record (write) |
+| `user.current` | Look up the caller's user record |
+
+See `src/ai/tools.ts` in the scaffold for `buildSystemPrompt(appName, schemas)` and `buildReadOnlyTools(executor)` — both are app-local references you can edit to customize the assistant's tool surface and system prompt.
+
+## See also
+
+- [AI chat guide](/guides/ai-chat) — end-to-end usage
+- [Server actions reference](/sdk-reference/worker/server-actions) — `tools.integration` for non-streamed calls

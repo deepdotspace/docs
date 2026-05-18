@@ -1,0 +1,205 @@
+---
+title: "Scheduled jobs"
+description: "Run cron tasks in a per-app Durable Object."
+---
+
+DeepSpace apps include a per-app `CronRoom` Durable Object for scheduled work — digests, cleanups, periodic syncs. Tasks run on the DO's alarm, so there's no separate scheduler service to manage. You declare tasks in `src/cron.ts`; the SDK runs them and exposes a monitor hook.
+
+## Define tasks
+
+```ts
+// src/cron.ts
+import type { CronTask } from 'deepspace/worker'
+import { buildCronContext } from 'deepspace/worker'
+
+export const tasks: CronTask[] = [
+  { name: 'heartbeat', intervalMinutes: 1 },
+  { name: 'daily-digest', schedule: '0 9 * * *', timezone: 'America/New_York' },
+]
+
+export async function runTask(name: string, env: Env): Promise<void> {
+  const ctx = buildCronContext(env, env.OWNER_USER_ID, `app:${env.APP_NAME}`)
+
+  if (name === 'heartbeat') {
+    await ctx.records.update('settings', 'global', { lastHeartbeat: new Date().toISOString() })
+  }
+
+  if (name === 'daily-digest') {
+    const users = await ctx.records.query('users', { where: { wantsDigest: true } })
+    for (const user of users) {
+      const data = await ctx.integrations.call('resend/send-email', {
+        to: user.data.email,
+        subject: 'Your daily digest',
+        text: '...',
+      })
+    }
+  }
+}
+```
+
+Each task declares **either** `intervalMinutes` (every N minutes) **or** `schedule` + `timezone` (a 5-field cron expression evaluated against an IANA timezone). Declaring both, or neither, throws at DO construction time.
+
+| Field | Type | Description |
+|---|---|---|
+| `name` | `string` | Unique task name; passed to `runTask`. |
+| `intervalMinutes` | `number` | Fire every N minutes. |
+| `schedule` | `string` | 5-field cron expression. |
+| `timezone` | `string` | IANA timezone (DST-aware). |
+| `paused` | `boolean` | Start disabled. Toggle via `useCronMonitor`. |
+
+## The cron context
+
+`buildCronContext(env, ownerUserId, roomId?)` returns a context that runs as the app owner — RBAC is bypassed:
+
+| Property | Type | Description |
+|---|---|---|
+| `records` | object | `query`, `create`, `update`, `delete` operations. |
+| `integrations` | object | `call(endpoint, params)` — proxies through the api-worker with HMAC auth, billed to the owner. |
+| `ownerUserId` | `string` | The owner's user ID. |
+
+The records API differs slightly from server actions — methods return their data directly rather than wrapping in `{ success, data }`:
+
+```ts
+await ctx.records.query('users', { where: { active: true } })
+// → Envelope[]  (array of records, already unwrapped)
+
+await ctx.records.create('notifications', { userId, message })
+// → { recordId, record: Envelope }
+```
+
+Throws on failure; wrap in `try/catch` if you need to handle a denied write inline.
+
+## Worker wiring
+
+The scaffolded `worker.ts` already wires `AppCronRoom`:
+
+```ts
+export class AppCronRoom extends CronRoom {
+  constructor(state: DurableObjectState, env: Env) {
+    super(state, env, { tasks: cronTasks })
+    this.env = env
+  }
+  protected async onTask(taskName: string): Promise<void> {
+    await runCronTask(taskName, this.env)
+  }
+}
+```
+
+Don't edit those bindings — add tasks to `src/cron.ts` and the DO picks them up at construction.
+
+## Monitor and trigger from the UI — `useCronMonitor`
+
+```tsx
+import { useCronMonitor, useUser } from 'deepspace'
+import { SCOPE_ID } from '../constants'
+
+function CronAdmin() {
+  const { tasks, history, connected, trigger, pause, resume } = useCronMonitor(SCOPE_ID)
+  const { user } = useUser()
+  const isAdmin = user?.role === 'admin'
+
+  if (!connected) return <p>Connecting…</p>
+
+  return (
+    <div>
+      <h2>Tasks</h2>
+      <ul>
+        {tasks.map((t) => (
+          <li key={t.name}>
+            <strong>{t.name}</strong> — next: {t.nextRunAt}
+            {isAdmin && (
+              <>
+                <button onClick={() => trigger(t.name)}>Run now</button>
+                <button onClick={() => (t.paused ? resume(t.name) : pause(t.name))}>
+                  {t.paused ? 'Resume' : 'Pause'}
+                </button>
+              </>
+            )}
+          </li>
+        ))}
+      </ul>
+      <h2>History</h2>
+      <ul>
+        {history.map((h, i) => (
+          <li key={i}>
+            {h.taskName} — {h.success ? 'ok' : 'failed'} — {h.durationMs}ms
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+```
+
+| Return | Type | Description |
+|---|---|---|
+| `tasks` | `CronTaskState[]` | Live state of each task. |
+| `history` | `CronHistoryEntry[]` | Recent runs (with success, duration, error). |
+| `connected` | `boolean` | WebSocket connection status. |
+| `trigger(name)` | `(name) => Promise<void>` | Fire `onTask` immediately — same code path as the alarm. |
+| `pause(name)` | `(name) => Promise<void>` | Disable a task. |
+| `resume(name)` | `(name) => Promise<void>` | Re-enable a task. |
+
+<Warning>
+**Auth-gate any page that exposes `trigger` / `pause` / `resume`.** The Durable Object does not enforce a role on these methods — without a client-side check, any signed-in user can trigger owner-billed tasks. Gate by `user?.role === 'admin'`.
+</Warning>
+
+## Outbound calls in handlers
+
+`runTask` runs as the app owner. Use `ctx.integrations.call(...)` for third-party APIs (billed to `APP_OWNER_JWT`):
+
+```ts
+const data = await ctx.integrations.call('openai/chat-completion', {
+  model: 'gpt-5.4-mini',
+  messages: [{ role: 'user', content: 'Summarize today\'s activity' }],
+})
+```
+
+For autonomous LLM calls via the AI SDK:
+
+```ts
+import { createDeepSpaceAI } from 'deepspace/worker'
+import { generateText } from 'ai'
+
+const ai = createDeepSpaceAI(env, 'anthropic') // no authToken → owner pays
+const { text } = await generateText({
+  model: ai('claude-haiku-4-5'),
+  prompt: '…',
+})
+```
+
+## Testing without waiting for the schedule
+
+`trigger(taskName)` runs `onTask` immediately via the same code path as the alarm. Use it in tests:
+
+```ts
+test('daily-digest fires when triggered', async ({ page }) => {
+  await page.goto('/cron-admin')
+  await page.getByRole('button', { name: /run now: daily-digest/i }).click()
+  await expect(page.locator('[data-testid="cron-history-row"]')).toBeVisible()
+})
+```
+
+Don't wait for `intervalMinutes: 1` to tick in tests — it's slow and flaky. Trigger explicitly.
+
+## A ready-made admin page
+
+```bash
+npx deepspace add cron
+```
+
+This installs a heartbeat task and a read-only `/cron-log` page that subscribes via `useCronMonitor(SCOPE_ID)` and renders tasks + history. It does **not** expose `trigger` / `pause` / `resume` — add those yourself with admin gating.
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="Worker cron reference" icon="server" href="/sdk-reference/worker/cron">
+    `CronRoom`, `CronTask`, `buildCronContext`.
+  </Card>
+  <Card title="Server actions" icon="shield-halved" href="/guides/server-actions">
+    Privileged on-demand operations.
+  </Card>
+  <Card title="External APIs" icon="plug" href="/guides/external-apis">
+    Calling third-party APIs from your worker.
+  </Card>
+</CardGroup>

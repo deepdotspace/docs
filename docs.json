@@ -4,36 +4,108 @@
   "name": "DeepSpace",
   "colors": {
     "primary": "#1D4ED8",
-    "light": "#2563EB",
-    "dark": "#BAE6FD"
+    "light": "#60A5FA",
+    "dark": "#1E3A8A"
   },
   "favicon": "/favicon.ico",
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting Started",
+            "group": "Get started",
             "pages": [
-              "getting-started/overview",
-              "getting-started/library",
-              "getting-started/building-widgets",
-              "getting-started/ai-tips",
-              "getting-started/integrations",
-              "getting-started/sharing",
-              "getting-started/whats-next"
+              "index",
+              "get-started/introduction",
+              "get-started/quickstart",
+              "get-started/installation",
+              "get-started/project-structure"
             ]
           },
           {
-            "group": "Developers",
+            "group": "Concepts",
             "pages": [
-              "developers/overview",
-              "developers/local-development",
-              "developers/storage",
-              "developers/hooks",
-              "developers/integrations-api",
-              "developers/theming"
+              "concepts/architecture",
+              "concepts/data-model",
+              "concepts/permissions",
+              "concepts/realtime-sync",
+              "concepts/deployment"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/authentication",
+              "guides/data-storage",
+              "guides/messaging",
+              "guides/collaborative-editing",
+              "guides/presence-and-cursors",
+              "guides/canvas",
+              "guides/file-uploads",
+              "guides/ai-chat",
+              "guides/payments",
+              "guides/scheduled-jobs",
+              "guides/server-actions",
+              "guides/external-apis",
+              "guides/custom-bindings",
+              "guides/custom-domains",
+              "guides/testing"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "SDK reference",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "sdk-reference/overview"
+            ]
+          },
+          {
+            "group": "Client",
+            "pages": [
+              "sdk-reference/client/auth",
+              "sdk-reference/client/records",
+              "sdk-reference/client/messaging",
+              "sdk-reference/client/realtime",
+              "sdk-reference/client/files",
+              "sdk-reference/client/integrations",
+              "sdk-reference/client/payments",
+              "sdk-reference/client/theming"
+            ]
+          },
+          {
+            "group": "Worker",
+            "pages": [
+              "sdk-reference/worker/rooms",
+              "sdk-reference/worker/schemas",
+              "sdk-reference/worker/server-actions",
+              "sdk-reference/worker/ai",
+              "sdk-reference/worker/cron",
+              "sdk-reference/worker/auth",
+              "sdk-reference/worker/bindings",
+              "sdk-reference/worker/proxy-helpers"
+            ]
+          },
+          {
+            "group": "Testing",
+            "pages": [
+              "sdk-reference/testing"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "CLI reference",
+        "groups": [
+          {
+            "group": "CLI",
+            "pages": [
+              "cli-reference/overview",
+              "cli-reference/commands"
             ]
           }
         ]
@@ -41,6 +113,16 @@
     ],
     "global": {
       "anchors": [
+        {
+          "anchor": "deep.space",
+          "href": "https://deep.space",
+          "icon": "globe"
+        },
+        {
+          "anchor": "GitHub",
+          "href": "https://github.com/deepdotspace",
+          "icon": "github"
+        },
         {
           "anchor": "Discord",
           "href": "https://discord.gg/hcKSav5PpU",
@@ -56,14 +138,20 @@
   "navbar": {
     "links": [
       {
-        "label": "Discover more",
+        "label": "deep.space",
         "href": "https://deep.space"
       }
-    ]
+    ],
+    "primary": {
+      "type": "button",
+      "label": "Get started",
+      "href": "/get-started/quickstart"
+    }
   },
   "footer": {
     "socials": {
-      "discord": "https://discord.gg/hcKSav5PpU"
+      "discord": "https://discord.gg/hcKSav5PpU",
+      "github": "https://github.com/deepdotspace"
     }
   }
 }

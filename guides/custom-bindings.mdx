@@ -1,0 +1,182 @@
+---
+title: "Custom bindings"
+description: "Declare Vectorize, R2, KV, D1, Queues, and other Cloudflare resources for your app."
+---
+
+DeepSpace deploys to Cloudflare Workers for Platforms, which means your app can use the full Cloudflare resource catalog. Declare bindings in `wrangler.toml` the same way you would for a stand-alone worker; set the ID to `"auto"` and the deploy worker provisions the resource on your first deploy.
+
+## Declaring bindings
+
+Add entries to `wrangler.toml`:
+
+```toml
+# Vectorize
+[[vectorize]]
+binding = "VEC"
+index_name = "auto"
+dimensions = 768
+metric = "cosine"
+
+# R2
+[[r2_buckets]]
+binding = "FILES"
+bucket_name = "auto"
+
+# KV
+[[kv_namespaces]]
+binding = "CACHE"
+id = "auto"
+title = "my-cache"
+
+# D1
+[[d1_databases]]
+binding = "MY_DB"
+database_id = "auto"
+database_name = "my-app-db"
+
+# Queue producer
+[[queues.producers]]
+binding = "MAILER"
+queue = "auto"
+
+# Workers AI (no provisioning needed)
+[ai]
+binding = "AI"
+
+# Browser Rendering
+[browser]
+binding = "BROWSER"
+
+# Hyperdrive (cannot use "auto" — provision in CF dashboard first)
+[[hyperdrive]]
+binding = "PG"
+id = "<your-hyperdrive-config-id>"
+
+# Analytics Engine (rare; USAGE_EVENTS is auto-attached)
+[[analytics_engine_datasets]]
+binding = "EVENTS"
+dataset = "my_events"
+```
+
+Allowed binding types: `vectorize`, `ai`, `r2_bucket`, `kv_namespace`, `d1`, `queue`, `browser_rendering`, `analytics_engine`, `hyperdrive`. The deploy validator rejects anything else.
+
+## `"auto"` autoprovisioning
+
+When the ID field is the literal string `"auto"`, the deploy worker creates the resource on the platform Cloudflare account on first deploy, persists the ID, and reuses it on subsequent deploys.
+
+| Type | Sentinel field | Required companion | CF-side name |
+|---|---|---|---|
+| `d1` | `database_id = "auto"` | `database_name` | The `database_name` you supplied |
+| `kv_namespace` | `id = "auto"` | `title` | The `title` you supplied |
+| `vectorize` | `index_name = "auto"` | `dimensions`, `metric` | `app-<appName>-<binding.toLowerCase()>` |
+| `r2_bucket` | `bucket_name = "auto"` | — | `app-<appName>-<binding.toLowerCase()>` |
+| `queue` | `queue = "auto"` | — | `app-<appName>-<binding.toLowerCase()>` |
+| `hyperdrive` | not supported | — | — |
+
+Vectorize / R2 / Queue resources get an `app-<appName>-` prefix to avoid collisions across apps. D1 and KV use the supplied name verbatim — choose unique names yourself.
+
+Provisioned IDs persist in `app-resources/<appName>.json` on the platform R2 bucket. If the registry is missing but the resource exists on CF (e.g., a prior failed deploy), the deploy worker adopts on conflict — it looks up the resource by name and writes the ID back into the registry.
+
+## Reserved names
+
+Twelve binding names are owned by the SDK and cannot be redeclared:
+
+```
+ASSETS, PLATFORM_WORKER, API_WORKER, APP_NAME, OWNER_USER_ID,
+AUTH_JWT_PUBLIC_KEY, AUTH_JWT_ISSUER, AUTH_WORKER_URL,
+APP_IDENTITY_TOKEN, APP_OWNER_JWT, INTERNAL_STORAGE_HMAC_SECRET,
+USAGE_EVENTS
+```
+
+The deploy validator rejects custom bindings using any of these names. It does **not** check against your `__DO_MANIFEST__` DO class names — picking `RECORD_ROOMS` as a custom binding name fails silently at deploy and shadows the DO at runtime.
+
+## D1 bootstrap — `runMigrations`
+
+Auto-provisioned D1 starts empty. Use `runMigrations` to create your tables idempotently on worker startup:
+
+```ts
+import { runMigrations } from 'deepspace/worker'
+
+// Inside fetch handler or at module init:
+await runMigrations(env.MY_DB, [
+  `CREATE TABLE notes (
+     id TEXT PRIMARY KEY,
+     body TEXT NOT NULL,
+     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+   );
+   CREATE INDEX idx_notes_created ON notes(created_at);`,
+
+  `ALTER TABLE notes ADD COLUMN tags TEXT;`,
+])
+```
+
+Contract:
+
+- Each array entry is one migration; the runner tracks applied indexes in a `_dpc_migrations` meta-table.
+- Each migration string can contain multiple `;`-separated statements. **Don't put `;` inside string literals** — the split is naive.
+- Idempotent: re-running with the same array is a no-op.
+- **Append new migrations to the end. Never reorder or delete entries.**
+- Returns `{ fromVersion, toVersion, applied }`.
+- Throws on any individual migration failure; the failed row is not inserted, so the next deploy retries.
+
+## Per-tenant metering
+
+Every deployed app gets a `USAGE_EVENTS` Analytics Engine binding automatically. Use the metering helpers to roll cost up per app owner:
+
+```ts
+import { meterAi, meterVectorize, meterUsage } from 'deepspace/worker'
+
+// Workers AI usage
+meterAi(env, '@cf/meta/llama-3.1-8b', { inputChars, outputChars })
+
+// Vectorize usage
+meterVectorize(env, 'docs', 'query', { vectors: 1, dims: 768, storedCount })
+
+// Generic fallback (Browser Rendering, Hyperdrive, custom kinds)
+meterUsage(env, 'browser', { id: 'render', units: 1, count: 1 })
+```
+
+Each helper returns `boolean` — `false` when `USAGE_EVENTS` is absent or AnalyticsEngine throws. **Metering never breaks the calling code path.**
+
+Cost rollup multipliers live in `COST_RATES` (exported from `deepspace/worker`).
+
+## Undeploy
+
+`npx deepspace undeploy` removes the worker and cleans up resources:
+
+| Resource | Cleanup |
+|---|---|
+| D1 / KV / Vectorize / Queues | Deleted via CF API; registry updated |
+| **R2 buckets** | Deleted only if empty (preserves user uploads on non-empty buckets) |
+| Hyperdrive | Never auto-deleted (never auto-provisioned) |
+
+## Pitfalls
+
+<AccordionGroup>
+  <Accordion title="Vectorize dimension changes aren't caught at deploy">
+    If you change `dimensions` from 768 → 1536 after the index was created, the adoption succeeds and the failure surfaces at first-vector-insert at runtime. Delete the index and redeploy if you really need to change shape.
+  </Accordion>
+  <Accordion title="`auto` is platform-side only">
+    Local dev does not provision auto resources. The binding only resolves at `npx deepspace deploy`. For local dev against a real CF resource, point the binding at a manually-created resource by ID.
+  </Accordion>
+  <Accordion title="User-secret name collisions">
+    Secret names cannot collide with custom-binding names or DO class names. The deploy worker rejects with 400 before forwarding to Workers for Platforms.
+  </Accordion>
+  <Accordion title="R2 + Vectorize CF-side names differ from binding names">
+    When debugging in the CF dashboard, look for `app-<appName>-<bindingLower>`. The friendly binding name is only what your worker sees in `env.VEC` etc.
+  </Accordion>
+</AccordionGroup>
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="Worker bindings reference" icon="server" href="/sdk-reference/worker/bindings">
+    Full type signatures for `runMigrations`, `meter*`, manifest exports.
+  </Card>
+  <Card title="Custom domains" icon="globe" href="/guides/custom-domains">
+    Attach a real domain to your app.
+  </Card>
+  <Card title="Deployment" icon="cloud-arrow-up" href="/concepts/deployment">
+    What happens during a deploy.
+  </Card>
+</CardGroup>

@@ -1,0 +1,81 @@
+---
+title: "Files reference"
+description: "`useR2Files` and file display helpers."
+---
+
+```ts
+import { useR2Files, isImageFile, formatFileSize } from 'deepspace'
+import type { R2FileInfo, R2Scope } from 'deepspace'
+```
+
+## `useR2Files(options?)`
+
+Returns upload, list, delete, download, and URL-resolution helpers for the app's R2 bucket.
+
+```ts
+function useR2Files(options?: { scope?: R2Scope }): {
+  upload:       (file: File | Blob, opts?: { originalName?: string }) => Promise<{ key: string }>
+  uploadBase64: (data: string, opts?: { originalName?: string }) => Promise<{ key: string }>
+  deleteFile:   (key: string) => Promise<void>
+  downloadFile: (key: string) => Promise<Blob>
+  readFile:     (key: string) => Promise<string>     // text content
+  list:         () => Promise<R2FileInfo[]>
+  getUrl:       (key: string) => string              // signed URL
+  isUploading:  boolean
+}
+```
+
+`list()` is an async function — call it and store the result in component state rather than reading a reactive array.
+
+## `R2FileInfo`
+
+```ts
+type R2FileInfo = {
+  key: string
+  size: number
+  uploaded: string         // ISO timestamp
+  url: string              // signed URL valid for retrieval
+  originalName?: string
+  uploadedBy?: string
+}
+```
+
+<Note>
+There is no `mimeType` / `contentType` field on `R2FileInfo`. Capture MIME at upload time and store it in a sidecar collection if you need it later.
+</Note>
+
+## Scoping — `R2Scope`
+
+```ts
+type R2Scope =
+  | { type: 'global' }
+  | { type: 'user'; userId: string }
+  | { type: 'room'; roomId: string }
+```
+
+| Scope | Files visible to |
+|---|---|
+| `{ type: 'global' }` (default) | All users in the app |
+| `{ type: 'user', userId }` | Only the specified user |
+| `{ type: 'room', roomId }` | Only members of the room |
+
+```tsx
+const { upload, list } = useR2Files({ scope: { type: 'user', userId } })
+```
+
+## Display helpers
+
+| Helper | Signature |
+|---|---|
+| `isImageFile(mimeType: string)` | Returns true for `image/*` MIMEs |
+| `formatFileSize(bytes: number)` | Returns `'1.2 MB'`, `'456 KB'`, etc. |
+
+## Local dev limitation
+
+<Warning>
+R2 uploads require an `APP_IDENTITY_TOKEN` minted by the deploy worker. The CLI does not provision this token locally, so `upload()` round-trips return 401 from the platform file gateway. In local dev, assert that uploads are *dispatched*; the full flow works only against deployed apps.
+</Warning>
+
+## See also
+
+- [File uploads guide](/guides/file-uploads) — patterns and worked examples

@@ -1,0 +1,287 @@
+---
+title: "Messaging"
+description: "Channels, direct messages, reactions, and read receipts with drop-in schemas and hooks."
+---
+
+DeepSpace ships a complete messaging layer as a set of pre-built schemas and React hooks. You add the schemas to your app's `RecordRoom`, and the SDK gives you channel-style chat — public channels, private channels, DMs, reactions, members, and read receipts — without writing a single message-routing line.
+
+## Add the schemas
+
+```ts
+// src/schemas.ts
+import {
+  CHANNELS_SCHEMA,
+  MESSAGES_SCHEMA,
+  REACTIONS_SCHEMA,
+  CHANNEL_MEMBERS_SCHEMA,
+  READ_RECEIPTS_SCHEMA,
+} from 'deepspace/worker'
+
+import { usersSchema } from './schemas/users-schema'
+import { settingsSchema } from './schemas/admin-schema'
+
+export const schemas = [
+  usersSchema,
+  settingsSchema,
+  CHANNELS_SCHEMA,
+  MESSAGES_SCHEMA,
+  REACTIONS_SCHEMA,
+  CHANNEL_MEMBERS_SCHEMA,
+  READ_RECEIPTS_SCHEMA,
+]
+```
+
+You don't need all five — `CHANNELS_SCHEMA` + `MESSAGES_SCHEMA` is the minimum. Add `REACTIONS_SCHEMA` for reactions, `CHANNEL_MEMBERS_SCHEMA` if you need explicit membership records, and `READ_RECEIPTS_SCHEMA` for unread tracking.
+
+The schemas include sensible RBAC defaults: anyone can read public channels; only members can post; only authors can edit or delete their own messages.
+
+## Create and list channels
+
+```tsx
+import { useChannels } from 'deepspace'
+
+function ChannelList() {
+  const { channels, status, create } = useChannels()
+
+  if (status === 'loading') return <SkeletonList />
+
+  async function newChannel() {
+    await create({ name: 'general', type: 'public' })
+  }
+
+  return (
+    <ul>
+      {channels.map((ch) => (
+        <li key={ch.recordId}>#{ch.data.name}</li>
+      ))}
+      <button onClick={newChannel}>New channel</button>
+    </ul>
+  )
+}
+```
+
+`create({ name, type })` requires both fields. The `type` is one of:
+
+| Type | Visibility |
+|---|---|
+| `'public'` | Visible to all signed-in users in the app |
+| `'private'` | Visible only to channel members |
+| `'dm'` | Direct message between two users |
+
+<Warning>
+**`type` is required.** Passing only `{ name }` returns a channel with `type: undefined`, which silently breaks downstream queries. The TypeScript signature catches this if you don't widen the input.
+</Warning>
+
+### `useChannels` API
+
+| Method | Signature | Notes |
+|---|---|---|
+| `create` | `({ name, type, description? }) => Promise<string>` | Creates a channel and returns its `recordId`. |
+| `update` | `(channelId, patch) => Promise<void>` | Edit channel metadata. |
+| `archive` | `(channelId) => Promise<void>` | Hide without deleting. |
+| `remove` | `(channelId) => Promise<void>` | Permanently delete. |
+
+## Send and read messages
+
+```tsx
+import { useMessages, useAuth } from 'deepspace'
+import { useState } from 'react'
+
+function ChannelView({ channelId }: { channelId: string }) {
+  const { messages, status, send, edit, softDelete } = useMessages(channelId)
+  const { userId } = useAuth()
+  const [draft, setDraft] = useState('')
+
+  if (status === 'loading') return <SkeletonList />
+
+  async function handleSend() {
+    if (!draft.trim()) return
+    await send({ content: draft })
+    setDraft('')
+  }
+
+  return (
+    <div>
+      <ul>
+        {messages.map((m) => (
+          <li key={m.recordId}>
+            <strong>{m.data.authorId}:</strong> {m.data.content}
+            {m.data.authorId === userId && (
+              <button onClick={() => softDelete(m.recordId)}>Delete</button>
+            )}
+          </li>
+        ))}
+      </ul>
+      <input value={draft} onChange={(e) => setDraft(e.target.value)} />
+      <button onClick={handleSend}>Send</button>
+    </div>
+  )
+}
+```
+
+### `useMessages` API
+
+| Method | Signature | Notes |
+|---|---|---|
+| `send` | `({ content, metadata? }) => Promise<string>` | Posts a new message. Returns the message ID. |
+| `edit` | `(messageId, patch) => Promise<void>` | Update message content. |
+| `softDelete` | `(messageId) => Promise<void>` | Sets a tombstone flag — preserves chat continuity. **Preferred.** |
+| `remove` | `(messageId) => Promise<void>` | Hard delete. Use sparingly. |
+
+The hook subscribes to all messages in the channel and re-renders on every update.
+
+## Reactions
+
+```tsx
+import { useReactions } from 'deepspace'
+
+function MessageActions({ messageId, channelId }: { messageId: string; channelId: string }) {
+  const { getReactionsForMessage, toggle } = useReactions(channelId)
+  const reactions = getReactionsForMessage(messageId)
+
+  return (
+    <div>
+      {reactions.map((r) => (
+        <button key={r.emoji} onClick={() => toggle(messageId, r.emoji)}>
+          {r.emoji} {r.count}
+        </button>
+      ))}
+      <button onClick={() => toggle(messageId, '👍')}>+👍</button>
+    </div>
+  )
+}
+```
+
+`getReactionsForMessage` is an O(1) lookup. `toggle` adds the caller's reaction or removes it if it already exists.
+
+## Direct messages
+
+Pass `type: 'dm'` to `create`. By convention, DMs include the two participant IDs in metadata:
+
+```tsx
+const { create } = useChannels()
+
+async function startDM(otherUserId: string) {
+  const channelId = await create({
+    name: `dm:${userId}:${otherUserId}`,
+    type: 'dm',
+  })
+  navigate(`/messages/${channelId}`)
+}
+```
+
+For richer DM and conversation flows that span apps (cross-app inbox, group DMs), see [Directory conversations](/sdk-reference/client/messaging#directory-conversations).
+
+## Channel membership
+
+For private channels, use `useChannelMembers` to manage who has access:
+
+```tsx
+import { useChannelMembers } from 'deepspace'
+
+const { members, join, leave, isMember } = useChannelMembers(channelId)
+
+if (!isMember(currentUserId)) {
+  return <button onClick={() => join()}>Join channel</button>
+}
+```
+
+## Read receipts
+
+Track which messages each user has seen:
+
+```tsx
+import { useReadReceipts } from 'deepspace'
+
+const { markAsRead, getUnreadCount } = useReadReceipts()
+
+useEffect(() => {
+  if (messages.length > 0) {
+    markAsRead(channelId, messages[messages.length - 1].recordId)
+  }
+}, [messages, channelId])
+
+const unread = getUnreadCount(channelId)
+```
+
+## Display helpers
+
+The SDK exports formatting helpers for common UI tasks:
+
+```ts
+import {
+  formatMessageTime,           // "3:42 PM"
+  formatFullTimestamp,         // "Today at 3:42 PM"
+  shouldGroupMessages,         // Group consecutive messages from same author
+  getThreadCounts,             // Count replies per parent message
+  groupReactionsForMessage,    // Aggregate reactions by emoji
+} from 'deepspace'
+```
+
+## Complete chat surface
+
+A minimal but production-shaped chat component:
+
+```tsx
+import { useState } from 'react'
+import { useChannels, useMessages, useReactions, formatMessageTime } from 'deepspace'
+
+export default function ChatApp() {
+  const { channels } = useChannels()
+  const [activeId, setActiveId] = useState<string | null>(null)
+
+  return (
+    <div className="grid grid-cols-[240px_1fr] h-screen">
+      <aside>
+        {channels.map((ch) => (
+          <button key={ch.recordId} onClick={() => setActiveId(ch.recordId)}>
+            #{ch.data.name}
+          </button>
+        ))}
+      </aside>
+      <main>
+        {activeId && <ChannelView channelId={activeId} />}
+      </main>
+    </div>
+  )
+}
+
+function ChannelView({ channelId }: { channelId: string }) {
+  const { messages, send } = useMessages(channelId)
+  const { toggle, getReactionsForMessage } = useReactions(channelId)
+  const [draft, setDraft] = useState('')
+
+  return (
+    <>
+      <ul>
+        {messages.map((m) => (
+          <li key={m.recordId}>
+            <span>{m.data.authorId}</span>
+            <span>{formatMessageTime(m.data.createdAt)}</span>
+            <p>{m.data.content}</p>
+            <button onClick={() => toggle(m.recordId, '❤️')}>❤️</button>
+          </li>
+        ))}
+      </ul>
+      <form onSubmit={(e) => { e.preventDefault(); send({ content: draft }); setDraft('') }}>
+        <input value={draft} onChange={(e) => setDraft(e.target.value)} />
+        <button>Send</button>
+      </form>
+    </>
+  )
+}
+```
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="Presence and cursors" icon="users" href="/guides/presence-and-cursors">
+    Add typing indicators and online status.
+  </Card>
+  <Card title="Permissions" icon="lock" href="/concepts/permissions">
+    Make a channel private to specific roles.
+  </Card>
+  <Card title="Messaging reference" icon="code" href="/sdk-reference/client/messaging">
+    Full API for channels, messages, reactions, and read receipts.
+  </Card>
+</CardGroup>

@@ -1,0 +1,138 @@
+---
+title: "Testing reference"
+description: "The Playwright fixture and account helpers from `deepspace/testing`."
+---
+
+```ts
+import {
+  test, expect,
+  loadAllTestAccounts, pickTestAccounts, findTestAccountByName,
+  ensureStorageState, newSignedInContext,
+  getStatePathForEmail, readCachedState,
+} from 'deepspace/testing'
+
+import type {
+  MultiplayerUser, UsersFixture, TestAccount, EnsureStorageStateOptions,
+} from 'deepspace/testing'
+```
+
+Imported only inside Playwright spec files.
+
+## `test` and `expect`
+
+Re-exports from Playwright with the `users` fixture pre-installed:
+
+```ts
+import { test, expect } from 'deepspace/testing'
+
+test('A sends, B sees', async ({ users }) => {
+  const [alice, bob] = await users(2)
+  // ...
+})
+```
+
+The fixture caches `storageState` per account, so each test account signs in once per machine — not once per test.
+
+**Requires `baseURL`** in `tests/playwright.config.ts`. The scaffold sets this; tests error with `users fixture requires a baseURL` if it's missing.
+
+## `users(N | string[])` — the fixture
+
+```ts
+type UsersFixture = (n: number | string[]) => Promise<MultiplayerUser[]>
+
+type MultiplayerUser = {
+  context: BrowserContext
+  page: Page
+  email: string
+  name: string
+  userId?: string
+}
+```
+
+```ts
+// First N accounts by createdAt
+const [a, b] = await users(2)
+
+// Specific accounts by name
+const [alice, bob] = await users(['Alice', 'Bob'])
+```
+
+Contexts auto-close when the test finishes — no manual cleanup needed for contexts. You still need to clean up records you create during the test (see [Testing guide → Test data cleanup](/guides/testing#test-data-cleanup)).
+
+## Escape hatches
+
+When the fixture is too high-level, import the underlying helpers directly:
+
+| Helper | Signature |
+|---|---|
+| `loadAllTestAccounts()` | `() => Promise<TestAccount[]>` — every cached account |
+| `pickTestAccounts(n, opts?)` | `(n: number, opts?: { label?: string }) => Promise<TestAccount[]>` — first N, optionally filtered by label |
+| `findTestAccountByName(name)` | `(name: string) => Promise<TestAccount \| undefined>` |
+| `ensureStorageState(browser, account, baseURL)` | Sign in once and return the cached `storageState` path |
+| `newSignedInContext(email, browser)` | One-liner for a signed-in `BrowserContext` |
+| `getStatePathForEmail(email)` | Direct cache lookup |
+| `readCachedState(path)` | Direct cache read |
+
+### `TestAccount`
+
+```ts
+type TestAccount = {
+  email: string
+  password: string
+  name: string
+  label?: string
+  createdAt: string
+}
+```
+
+Loaded from `~/.deepspace/test-accounts.json`, populated by `npx deepspace test-accounts create`.
+
+### `EnsureStorageStateOptions`
+
+```ts
+type EnsureStorageStateOptions = {
+  signInUrl?: string         // override the sign-in path
+  forceFresh?: boolean       // bypass cache and re-sign in
+}
+```
+
+## Patterns
+
+### Multiplayer test
+
+```ts
+import { test, expect } from 'deepspace/testing'
+
+test('shared state syncs', async ({ users }) => {
+  const [a, b] = await users(2)
+  await a.page.goto('/board')
+  await b.page.goto('/board')
+
+  await a.page.getByTestId('add-card-btn').click()
+  await a.page.getByTestId('card-title-input').fill('Hello')
+  await a.page.getByTestId('save-card-btn').click()
+
+  await expect(b.page.getByText('Hello')).toBeVisible()
+})
+```
+
+### Reusing a signed-in context outside the fixture
+
+```ts
+import { test } from '@playwright/test'
+import { ensureStorageState, loadAllTestAccounts } from 'deepspace/testing'
+
+test('custom flow', async ({ browser }) => {
+  const accounts = await loadAllTestAccounts()
+  const statePath = await ensureStorageState(browser, accounts[0], 'http://localhost:5173')
+  const context = await browser.newContext({ storageState: statePath })
+  // ... use context.newPage(), etc.
+  await context.close()
+})
+```
+
+## See also
+
+- [Testing guide](/guides/testing) — full workflow, test extension checklist, debugging
+- [CLI test command](/cli-reference/commands#test) — runner flags
+- [CLI test-accounts command](/cli-reference/commands#test-accounts) — provisioning the account pool

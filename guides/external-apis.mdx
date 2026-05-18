@@ -1,0 +1,227 @@
+---
+title: "External APIs"
+description: "Call third-party APIs through the platform's integration proxy."
+---
+
+DeepSpace fronts 215+ third-party API endpoints — LLMs (Claude, GPT, Cerebras), search (Exa, Tavily), media (LiveKit, Resend), finance (Finnhub, Alpha Vantage), social (Discord, Slack), Google Workspace, weather, and more — through a single signed proxy. You don't store API keys, configure webhooks, or build per-vendor SDKs. You call `integration.post(...)`, the platform handles billing, rate-limiting, and provider routing.
+
+## Calling an integration
+
+```ts
+import { integration } from 'deepspace'
+
+const result = await integration.post('openweathermap/geocoding', { q: 'Brooklyn' })
+
+if (result.success) {
+  console.log(result.data)
+} else {
+  console.error(result.error)
+}
+```
+
+Endpoint names are always two segments: `<integration>/<endpoint>`. The response is a discriminated envelope:
+
+```ts
+type IntegrationResponse<T> =
+  | { success: true; data: T }
+  | { success: false; error: string; issues?: ValidationIssue[] }
+```
+
+When the api-worker's Zod validator rejects a body, `issues` carries field-level errors:
+
+```ts
+if (!result.success && result.issues) {
+  for (const issue of result.issues) {
+    console.log(issue.path, issue.message)
+  }
+}
+```
+
+## Discover endpoints — `deepspace integrations`
+
+The CLI exposes the full catalog without requiring login:
+
+```bash
+# Full catalog (215 endpoints)
+npx deepspace integrations list
+
+# Schema and example body for one endpoint
+npx deepspace integrations info openai/chat-completion
+
+# Machine-readable
+npx deepspace integrations list --json
+npx deepspace integrations info openai/chat-completion --json
+```
+
+For interactive testing (login required, billed to caller):
+
+```bash
+npx deepspace invoke openai/chat-completion --body '{
+  "model": "claude-sonnet-4-6",
+  "messages": [{"role": "user", "content": "Hello"}]
+}'
+
+# Or via stdin:
+cat request.json | npx deepspace invoke openai/chat-completion --body-file -
+```
+
+<Tip>
+**Discovery is free; calls are billed.** `list` and `info` work without authentication, so you can scope integration work before deciding whether to log in. Only `invoke` actually calls the endpoint.
+</Tip>
+
+## Billing — developer vs user
+
+Every integration has a billing setting in `src/integrations.ts`:
+
+```ts
+// src/integrations.ts
+export const integrations: Record<string, { billing: 'developer' | 'user' }> = {
+  google: { billing: 'user' },        // already in scaffold (OAuth requires user-pays)
+  openai: { billing: 'developer' },   // owner pays
+  exa: { billing: 'developer' },
+}
+```
+
+| Setting | Who pays | Anonymous callers |
+|---|---|---|
+| `'developer'` (default) | The app owner via `APP_OWNER_JWT` | Allowed |
+| `'user'` | The signed-in caller | Blocked with 401 |
+
+<Warning>
+**Auth-gate any UI that calls `integration.post(...)`** for `'developer'`-billed endpoints. The api-worker accepts anonymous callers for developer-billed integrations, so a public endpoint silently bills the owner for every visitor (or bot) hit. Wrap calling components in `useAuth().isSignedIn`.
+</Warning>
+
+## Response shapes
+
+`data` shape varies by endpoint. Common patterns:
+
+```ts
+// List endpoint
+const r = await integration.post('exa/search', { query: 'climate change papers' })
+if (r.success) {
+  for (const result of r.data.results) {
+    console.log(result.title, result.url)
+  }
+}
+
+// Detail endpoint
+const r = await integration.post('finnhub/stock-quote', { symbol: 'AAPL' })
+if (r.success) {
+  console.log(r.data.c, r.data.h, r.data.l)  // current, high, low
+}
+```
+
+<Note>
+**Empty results are not errors.** Some endpoints return `success: true` with empty data when the upstream has no matches. Check for empty state explicitly. For example, `finnhub/stock-price` returns an all-zero quote for an invalid symbol — the call "succeeds" but the data is meaningless.
+</Note>
+
+## Calling from your worker
+
+Inside server actions and cron tasks, use `tools.integration` or `ctx.integrations.call`:
+
+```ts
+// Server action
+export const summarizeDay: ActionHandler<Env> = async ({ tools }) => {
+  const r = await tools.integration('openai/chat-completion', {
+    model: 'gpt-5.4-mini',
+    messages: [{ role: 'user', content: 'Summarize today\'s activity' }],
+  })
+  // ...
+}
+
+// Cron task
+export async function runTask(name: string, env: Env) {
+  const ctx = buildCronContext(env, env.OWNER_USER_ID, `app:${env.APP_NAME}`)
+  const r = await ctx.integrations.call('resend/send-email', { to, subject, text })
+}
+```
+
+Both routes go through the api-worker proxy. Billing follows `src/integrations.ts` — when called from a server action, `'user'` integrations bill the caller and `'developer'` ones bill the owner.
+
+## Request options
+
+The `post`, `get`, `put`, and `delete` methods accept an options object:
+
+```ts
+const r = await integration.post('exa/search', body, {
+  timeoutMs: 30_000,                          // default 120s
+  headers: { 'X-Custom': 'value' },
+})
+```
+
+## OAuth integrations
+
+A handful of integrations require per-user OAuth (Google Workspace, Gmail, Calendar, Drive). These are always billed as `'user'`. The scaffold ships Google with `billing: 'user'`.
+
+When a user calls an OAuth endpoint without a connected account, the response includes a `requiresOAuth` flag:
+
+```ts
+const r = await integration.post('google/gmail-send', { to, subject, body })
+
+if (!r.success && r.error === 'requiresOAuth') {
+  // Redirect to the OAuth connect URL
+  window.location.href = `/api/integrations/oauth/google/connect?return=${encodeURIComponent(location.pathname)}`
+}
+```
+
+After connecting, retry the original call. Disconnect via:
+
+```ts
+await fetch('/api/integrations/oauth/google/disconnect', {
+  method: 'DELETE',
+  headers: { Authorization: `Bearer ${await getAuthToken()}` },
+})
+```
+
+Check connection status:
+
+```ts
+const r = await fetch('/api/integrations/status', {
+  headers: { Authorization: `Bearer ${await getAuthToken()}` },
+})
+const { google } = await r.json()
+// { connected: boolean, scopes: string[] }
+```
+
+## Testing integrations
+
+Integration calls hit real third-party services and **cost real money**. Keep integration assertions minimal:
+
+- One `integration.post(...)` per endpoint per test run, not a matrix
+- Never put integration calls inside `for` loops or retry-until-success polls
+- Skip `'user'`-billed endpoint calls in `api.spec.ts` — test accounts have no credits and will 402
+
+For the integration call itself, assert the envelope shape — not the upstream provider's exact response:
+
+```ts
+test('weather lookup returns coords', async ({ request }) => {
+  const token = await signInAndGetToken(request)
+  const r = await request.post('/api/integrations/openweathermap/geocoding', {
+    headers: { Authorization: `Bearer ${token}` },
+    data: { q: 'Brooklyn' },
+  })
+  const body = await r.json()
+  expect(body.success).toBe(true)
+  expect(body.data[0]).toMatchObject({ lat: expect.any(Number), lon: expect.any(Number) })
+})
+```
+
+## Tips
+
+- **Run `info` before guessing a body shape.** The Zod schemas the api-worker validates against are the source of truth — `npx deepspace integrations info <endpoint>` prints them with an example body.
+- **Use `tools.integration` from server actions for owner-pays endpoints.** Keeps the JWT scope correct and centralizes routing.
+- **For LLM streaming**, use the AI chat pipeline (see [AI chat](/guides/ai-chat)) rather than `integration.post`. The proxy returns the full response; the AI helpers stream it.
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="AI chat" icon="sparkles" href="/guides/ai-chat">
+    Streamed LLM responses with tool use.
+  </Card>
+  <Card title="Server actions" icon="shield-halved" href="/guides/server-actions">
+    Call integrations from worker code.
+  </Card>
+  <Card title="Integrations reference" icon="code" href="/sdk-reference/client/integrations">
+    Full `integration` API.
+  </Card>
+</CardGroup>

@@ -1,0 +1,114 @@
+---
+title: "Proxy helpers reference"
+description: "Helpers for fetching the auth, API, and platform workers."
+---
+
+The scaffolded `worker.ts` already uses these for every cross-worker call. They prefer service bindings (set up automatically on deploy) and fall back to HTTPS URLs in local dev.
+
+```ts
+import {
+  apiWorkerFetch, platformWorkerFetch, authWorkerFetch,
+  createScopedR2Handler,
+} from 'deepspace/worker'
+
+import type {
+  ApiWorkerEnv, PlatformWorkerEnv, AuthWorkerEnv,
+} from 'deepspace/worker'
+```
+
+<Warning>
+**Do not replace these with raw `c.env.X.fetch(...)`.** `wrangler dev` doesn't surface service bindings cross-process for SDK apps — the binding is `undefined` locally and the raw fetch silently fails. The helpers paper over the dev/prod mismatch.
+</Warning>
+
+## `apiWorkerFetch(env, path, init?)`
+
+Fetch the api-worker (Stripe, integrations, profiles, OAuth, usage tracking).
+
+```ts
+function apiWorkerFetch(
+  env: ApiWorkerEnv,
+  path: string,
+  init?: RequestInit,
+): Promise<Response>
+
+interface ApiWorkerEnv {
+  API_WORKER?: Fetcher       // service binding (preferred in prod)
+  API_WORKER_URL?: string    // HTTPS fallback (used in dev)
+}
+```
+
+Prefers the `API_WORKER` service binding; falls back to `API_WORKER_URL`. Throws an actionable Error if neither is configured.
+
+## `platformWorkerFetch(env, pathOrRequest, init?)`
+
+Fetch the platform-worker (cross-app DOs, R2 file gateway, WebSocket multiplexing).
+
+```ts
+function platformWorkerFetch(
+  env: PlatformWorkerEnv,
+  pathOrRequest: string | Request,
+  init?: RequestInit,
+): Promise<Response>
+
+interface PlatformWorkerEnv {
+  PLATFORM_WORKER?: Fetcher
+  PLATFORM_WORKER_URL?: string
+}
+```
+
+Accepts either a path string or a full `Request`, so you can hand off `c.req.raw` derivatives with method/headers/body intact:
+
+```ts
+app.get('/ws/:roomId', async (c) => {
+  const roomId = c.req.param('roomId')
+  if (/^(workspace|dir|conv):/.test(roomId)) {
+    return platformWorkerFetch(c.env, c.req.raw)
+  }
+  return wsRoute((env) => env.RECORD_ROOMS)(c)
+})
+```
+
+## `authWorkerFetch(env, path, init?)`
+
+Fetch the auth-worker (Better Auth, JWT issuance, OAuth flows).
+
+```ts
+function authWorkerFetch(
+  env: AuthWorkerEnv,
+  path: string,
+  init?: RequestInit,
+): Promise<Response>
+
+interface AuthWorkerEnv {
+  AUTH_WORKER_URL: string    // required — no service binding by design
+}
+```
+
+URL-only by design — the auth-worker has no service binding, which keeps `Set-Cookie` headers verbatim over plain HTTPS. (Service bindings strip some headers in transit.)
+
+## Production note
+
+Cross-worker calls over plain `*.workers.dev` URLs return Cloudflare error 1042 in production. The service binding is the only working transport for deployed apps; the URL fallback is a dev-only convenience the CLI writes into `.dev.vars`.
+
+If a deployed app needs `apiWorkerFetch` or `platformWorkerFetch`, the corresponding `[[services]]` binding must be in `wrangler.toml`:
+
+```toml
+[[services]]
+binding = "API_WORKER"
+service = "deepspace-api"
+
+[[services]]
+binding = "PLATFORM_WORKER"
+service = "deepspace-platform"
+```
+
+## R2 helpers
+
+### `createScopedR2Handler(...)`
+
+Route handler for scoped R2 reads/writes. The scaffold uses this implicitly via the `useR2Files` client hook — most apps don't call it directly.
+
+## See also
+
+- [Architecture concepts](/concepts/architecture#cross-app-shared-scopes) — when to add the platform binding
+- [File uploads guide](/guides/file-uploads)

@@ -1,0 +1,248 @@
+---
+title: "Real-time reference"
+description: "Presence, Yjs, canvas, game rooms, and cursor color helpers."
+---
+
+The real-time hooks beyond records and messaging — presence, collaborative editing, canvas, game rooms, and helpers.
+
+```ts
+import {
+  // Yjs
+  useYjsText, useYjsField, useYjsRoom,
+  // Canvas
+  useCanvas,
+  // Presence
+  usePresence, usePresenceRoom,
+  // Game rooms
+  useGameRoom,
+  // Cron monitor
+  useCronMonitor,
+  // User colors
+  DEFAULT_USER_COLORS, getUserColor,
+  // Low-level sync primitives
+  createEncoder, createDecoder, encodeSyncStep1, encodeSyncStep2, encodeUpdate,
+  handleSyncMessage, Awareness, encodeAwarenessMessage, handleAwarenessMessage,
+} from 'deepspace'
+```
+
+## Yjs hooks
+
+### `useYjsText(collection, recordId, fieldName)`
+
+Collaborative plain text bound to a record field.
+
+```ts
+function useYjsText(
+  collection: string,
+  recordId: string,
+  fieldName: string,
+): {
+  text: string
+  setText: (value: string) => void
+  synced: boolean
+  canWrite: boolean
+}
+```
+
+### `useYjsField<T>(collection, recordId, fieldName)`
+
+Direct access to a Yjs `Y.Map` or `Y.Array` on a record field. Use for structured collab data.
+
+```ts
+function useYjsField<T extends Y.AbstractType<any>>(
+  collection: string,
+  recordId: string,
+  fieldName: string,
+): {
+  value: T extends Y.Array<infer U> ? U[] : T extends Y.Map<infer V> ? Record<string, V> : unknown
+  doc: Y.Doc | null
+  synced: boolean
+}
+```
+
+### `useYjsRoom(docId, fieldName)`
+
+Standalone Yjs document not tied to a record. Useful for ephemeral collaboration sessions.
+
+```ts
+function useYjsRoom(docId: string, fieldName: string): {
+  doc: Y.Doc | null
+  synced: boolean
+}
+```
+
+## `useCanvas(roomId)`
+
+Connects to a `CanvasRoom` DO.
+
+```ts
+function useCanvas(roomId: string): {
+  shapes: CanvasShapeClient[]
+  viewports: Map<string, ViewportClient>
+  connected: boolean
+  addShape:    (shape: Omit<CanvasShapeClient, 'shapeId'>) => Promise<string>
+  moveShape:   (shapeId: string, position: { x: number; y: number }) => Promise<void>
+  resizeShape: (shapeId: string, size: { width: number; height: number }) => Promise<void>
+  updateShape: (shapeId: string, patch: Partial<CanvasShapeClient>) => Promise<void>
+  deleteShape: (shapeId: string) => Promise<void>
+  setViewport: (viewport: { x: number; y: number; zoom: number }) => void
+  undo:        () => void
+  redo:        () => void
+}
+```
+
+Each shape:
+
+```ts
+type CanvasShapeClient = {
+  shapeId: string
+  type: string         // free-form: 'rect', 'circle', 'text', etc.
+  x: number
+  y: number
+  width: number
+  height: number
+  data?: object        // app-specific payload
+  createdBy: string
+  createdAt: string
+}
+```
+
+## Presence hooks
+
+### `usePresence(options?)`
+
+Online/offline status derived from `lastSeenAt` heartbeats on the users collection.
+
+```ts
+function usePresence(options?: { timeoutMs?: number }): {
+  users: User[]
+  isOnline:    (userId: string) => boolean
+  getLastSeen: (userId: string) => string | null
+}
+```
+
+The hook also sends a heartbeat every 60 seconds so the server refreshes the caller's `lastSeenAt`. Default `timeoutMs` is 5 minutes.
+
+### `usePresenceRoom(scopeId)`
+
+High-frequency ephemeral state (cursors, typing, viewport). Connects to a dedicated `PresenceRoom` DO.
+
+```ts
+function usePresenceRoom(scopeId: string): {
+  peers: PresencePeerClient[]   // excludes self
+  connected: boolean
+  updateState: (state: object) => void   // merges
+}
+
+type PresencePeerClient = {
+  userId: string
+  userName: string
+  userEmail: string
+  userImageUrl?: string
+  joinedAt: string
+  state: Record<string, unknown>
+}
+```
+
+`scopeId` is any string. Common patterns: `canvas:${canvasId}`, `thread:${channelId}`, `doc:${docId}`.
+
+## `useGameRoom(roomId)`
+
+Turn-tick or sim-tick game loop DO.
+
+```ts
+function useGameRoom<S, A>(roomId: string): {
+  state: S | null
+  tick: number
+  players: Player[]
+  running: boolean
+  connected: boolean
+  sendInput:  (action: string, data?: A) => void
+  setReady:   () => void
+  startGame:  () => void
+  endGame:    () => void
+}
+
+type Player = {
+  userId: string
+  userName: string
+  ready: boolean
+  connectedAt: string
+  data?: object
+}
+```
+
+State migration on schema bumps lives in the worker — override `onHydrateState(stored)` on your `GameRoom` subclass.
+
+## `useCronMonitor(roomId)`
+
+Admin/monitor stream for the `CronRoom` DO. Pass `app:<APP_NAME>` for the app's default cron room.
+
+```ts
+function useCronMonitor(roomId: string): {
+  tasks: CronTaskState[]
+  history: CronHistoryEntry[]
+  connected: boolean
+  trigger: (name: string) => Promise<void>
+  pause:   (name: string) => Promise<void>
+  resume:  (name: string) => Promise<void>
+}
+
+type CronTaskState = {
+  name: string
+  intervalMinutes?: number
+  schedule?: string
+  timezone?: string
+  paused: boolean
+  lastRunAt: string | null
+  nextRunAt: string | null
+}
+
+type CronHistoryEntry = {
+  taskName: string
+  startedAt: string
+  completedAt: string
+  success: boolean
+  durationMs: number
+  error?: string
+}
+```
+
+<Warning>
+The Cron DO does **not** enforce a role on `trigger` / `pause` / `resume`. Gate the admin UI by `useUser().user?.role === 'admin'`.
+</Warning>
+
+## User colors
+
+```ts
+// 12-color palette of cursor/avatar tints
+const DEFAULT_USER_COLORS: readonly string[]
+
+// Deterministic hash: same userId → same color
+function getUserColor(userId: string, palette?: string[]): string
+```
+
+Use for cursor dots in `usePresence` / `usePresenceRoom`, avatar fallbacks, and "who's typing" pills.
+
+## Low-level sync primitives
+
+For building custom hooks against a DeepSpace Yjs DO (rare):
+
+```ts
+createEncoder, createDecoder
+toUint8Array, writeVarUint, writeVarUint8Array, readVarUint, readVarUint8Array
+encodeSyncStep1, encodeSyncStep2, encodeUpdate
+handleSyncMessage
+Awareness, encodeAwarenessMessage, handleAwarenessMessage
+getMessageType
+MSG_SYNC, MSG_AWARENESS, MSG_SYNC_STEP1, MSG_SYNC_STEP2, MSG_SYNC_UPDATE
+```
+
+Most apps never use these directly. Use the higher-level hooks (`useYjsText`, etc.) unless you're building a custom binding.
+
+## See also
+
+- [Collaborative editing guide](/guides/collaborative-editing)
+- [Presence and cursors guide](/guides/presence-and-cursors)
+- [Canvas guide](/guides/canvas)
+- [Scheduled jobs guide](/guides/scheduled-jobs)

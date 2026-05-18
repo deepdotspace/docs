@@ -1,0 +1,210 @@
+---
+title: "Testing"
+description: "Playwright specs, the multi-user fixture, and how to test against real services."
+---
+
+Every scaffolded app ships with Playwright tests in `tests/`. The CLI's `test` command bootstraps Playwright (downloads Chromium on first run), regenerates dev secrets, and runs the suite against the dev workers. Tests use **real services** — no mocking of internal hooks.
+
+## Three spec files
+
+| File | Covers |
+|---|---|
+| `smoke.spec.ts` | App boots, navigation renders, page titles, auth UI present |
+| `api.spec.ts` | API routes return expected shapes; auth gating; integration calls |
+| `collab.spec.ts` | Multi-user real-time sync — two users connect and see each other |
+
+Installing a feature (`docs`, `kanban`, `messaging`, …) does not add a new spec file. Extend these three.
+
+## Running tests
+
+```bash
+# Default — smoke + api
+npx deepspace test
+
+# All Playwright specs
+npx deepspace test e2e
+
+# Subset
+npx deepspace test smoke
+npx deepspace test api
+npx deepspace test tests/checkout.spec.ts
+
+# Vitest unit tests
+npx deepspace test unit
+
+# Match a parallel dev server port
+npx deepspace test --port 5180
+
+# Plain Playwright (skips .dev.vars regen — useful for iterating)
+npx playwright test
+npx playwright test --ui
+```
+
+No separate dev server is required — the scaffolded `tests/playwright.config.ts` starts Vite if it's not already running and reuses it if it is.
+
+## Multi-user testing — the `users` fixture
+
+The SDK ships a Playwright fixture from `'deepspace/testing'` that returns N signed-in browser contexts:
+
+```ts
+import { test, expect } from 'deepspace/testing'
+
+test('A sends, B sees', async ({ users }) => {
+  const [alice, bob] = await users(2)
+  await alice.page.goto('/chat')
+  await bob.page.goto('/chat')
+  await alice.page.getByTestId('send-btn').click()
+  await expect(bob.page.getByText('hi')).toBeVisible()
+})
+```
+
+Each `MultiplayerUser` is `{ context, page, email, name, userId? }`. Contexts auto-close when the test finishes.
+
+The fixture caches `storageState` per account, so each test account signs in once per machine — not once per test. This sidesteps Better Auth's per-IP rate limit on `/api/auth/sign-in/email` and is materially faster as the suite grows.
+
+Pick specific accounts by name:
+
+```ts
+const [alice, bob] = await users(['Alice', 'Bob'])
+```
+
+## Provisioning test accounts
+
+The fixture reads from `~/.deepspace/test-accounts.json`, populated via the CLI:
+
+```bash
+# Check what you already have
+npx deepspace test-accounts list
+
+# Create new accounts as needed (max 10 total per machine)
+npx deepspace test-accounts create --email alice-1@deepspace.test --password Pass123! --name "Alice"
+npx deepspace test-accounts create --email bob-1@deepspace.test --password Pass123! --name "Bob"
+```
+
+The account pool is global per developer and shared across apps. Emails must end `@deepspace.test`. **Don't bake the app name into the email** — the same accounts work for every app.
+
+<Note>
+**Cap is 10 accounts per machine.** Reuse what you have. If `collab.spec.ts` ships with `await users(['Collab A', 'Collab B'])` and your pool doesn't have those exact names, change the call to `await users(2)` to grab the first N accounts by `createdAt` regardless of name.
+</Note>
+
+## The test extension checklist
+
+Run tests only after a runtime-affecting code change (`src/`, `worker.ts`, etc.). Skip them for conversation, planning, or pure documentation edits.
+
+| Trigger | Required test |
+|---|---|
+| Added a schema | `smoke.spec.ts` — CRUD happy path for a signed-in user |
+| Added/edited a route, page, nav item, or top-level UI | `smoke.spec.ts` — page-load with real-content assertion |
+| Schema with `visibilityField` or `'public'/'shared'/'team'/'own'` permissions | `collab.spec.ts` — two-user assertion (A acts, B sees) |
+| Used `useYjs*` / `useMessages` / `useReactions` / `usePresence` / `useCanvas` | `collab.spec.ts` — two-user assertion |
+| Added/edited worker route, server action, AI chat, cron, integration call, or auth-gated UI | `api.spec.ts` — status codes + shape + auth gating |
+| Fixing a bug | Write a failing test first, then fix. Leave the test in place. |
+
+For integration calls specifically, POST to `/api/integrations/<endpoint>` and assert `success: true` with the data shape your UI consumes. This catches wrong endpoint names — the most common integration-heavy-app failure.
+
+## Test data cleanup
+
+Tests run against the same local Durable Object the dev server uses, so anything you create persists. Two conventions to keep the dev DB clean:
+
+<Steps>
+  <Step title="Prefix test records">
+    Every record a test creates should start with `__test-${Date.now()}__` in its human-visible field (title, name, question).
+  </Step>
+  <Step title="Clean up in afterEach / afterAll">
+    Track created `recordId`s and delete them after the test. Don't add a blanket "wipe the DB" step — it would destroy real dev data.
+  </Step>
+</Steps>
+
+```ts
+test('user A posts a message', async ({ users }) => {
+  const [alice] = await users(1)
+  const created: string[] = []
+  try {
+    const title = `__test-${Date.now()}__ Hello`
+    // ... create, capture recordId ...
+  } finally {
+    for (const id of created.reverse()) {
+      try { /* delete via your endpoint */ } catch { /* swallow */ }
+    }
+  }
+})
+```
+
+## Auth-state assertions
+
+The scaffold ships the **mixed** auth config. Every route falls into one of three buckets:
+
+| Route | Smoke assertion |
+|---|---|
+| Public (`src/pages/<name>.tsx`) | Signed-out visitor sees real content; `[data-testid="auth-overlay"]` count is `0`. |
+| Gated (`src/pages/(protected)/<name>.tsx`) | Signed-out: overlay visible **and** content not in DOM. Signed-in: content visible, no overlay. |
+| After sign-out from gated | URL navigates to `redirectOnSignOut` (default `/`). Overlay does not appear. |
+
+The `[data-testid="auth-overlay"]` attribute is on the SDK's `<AuthOverlay/>` — more reliable than text matching.
+
+## Route coverage
+
+Every reachable route must have a test that:
+
+1. Navigates to it (for dynamic routes, create a record first and use its ID)
+2. Waits for real content to appear (a specific element with real data — not just "no crash")
+3. Fails loudly on empty/not-found states when there shouldn't be one
+
+```ts
+test('/polls/:id renders the question', async ({ page }) => {
+  const id = await createTestPoll('Favorite color?')
+  await page.goto(`/polls/${id}`)
+  await expect(page.getByTestId('poll-question')).toContainText('Favorite color?')
+})
+```
+
+A "page loads without JS errors" assertion is **not** sufficient. Assert that the data that should be there *is* there.
+
+## Self-diagnosis with tests
+
+When something isn't working, don't start with console logs. Start with:
+
+<Steps>
+  <Step title="Write or tighten a test that expresses the expected behavior">
+    Describe the assertion you'd run if the feature worked.
+  </Step>
+  <Step title="Run it">
+    Read the failure message and the failing selector or assertion.
+  </Step>
+  <Step title="Fix the code until the test passes">
+    The test tells you what was expected and what was observed.
+  </Step>
+  <Step title="Leave the test in place">
+    It now guards against regression.
+  </Step>
+</Steps>
+
+A failing test tells you more than a log ever will: what was expected, what was observed, where in the flow it diverged.
+
+## Screenshots for visual debugging
+
+```bash
+npx deepspace screenshot http://localhost:5173/ out.png
+npx deepspace screenshot http://localhost:5173/dashboard out.png --full-page
+npx deepspace screenshot http://localhost:5173/ out.png --wait-for-timeout 500
+```
+
+Shares the same Chromium install as `test`. Use it for "what does this page actually render right now" workflows — not as a substitute for Playwright assertions.
+
+## Tips
+
+- **All tests use real services.** No mocking of internal hooks. The whole point is exercising the real auth, storage, and integration pipelines end-to-end.
+- **Re-run after every follow-up change.** Apply the extension checklist each turn — tests are a living contract.
+- **Don't weaken tests to make them green.** Write a more specific assertion, or fix the underlying behavior.
+- **Avoid `console.log`-driven debugging.** A tighter assertion gives better signal than a log ever will.
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="Testing reference" icon="code" href="/sdk-reference/testing">
+    `users` fixture, `loadAllTestAccounts`, `ensureStorageState`.
+  </Card>
+  <Card title="CLI test command" icon="terminal" href="/cli-reference/commands#test">
+    Flags and environment variables.
+  </Card>
+</CardGroup>

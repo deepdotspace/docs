@@ -1,0 +1,207 @@
+---
+title: "Canvas"
+description: "Real-time collaborative canvases with shapes, viewports, and undo/redo."
+---
+
+The `useCanvas` hook gives you a complete collaborative canvas surface: add and move shapes, broadcast viewports across peers, undo and redo, all synchronized over a `CanvasRoom` Durable Object. Use it for whiteboards, mood boards, diagram tools, and any "shapes on an infinite plane" UI.
+
+## Connect to a canvas
+
+```tsx
+import { useCanvas } from 'deepspace'
+
+function Whiteboard({ canvasId }: { canvasId: string }) {
+  const {
+    shapes,
+    viewports,
+    connected,
+    addShape,
+    moveShape,
+    resizeShape,
+    updateShape,
+    deleteShape,
+    setViewport,
+    undo,
+    redo,
+  } = useCanvas(canvasId)
+
+  // shapes is an array of CanvasShapeClient
+  // viewports maps peer userId → their current viewport
+}
+```
+
+`canvasId` is any string. Two clients passing the same `canvasId` connect to the same `CanvasRoom`.
+
+## Shape lifecycle
+
+A shape is an object with a position, size, and arbitrary `data` payload. Add one with:
+
+```tsx
+async function onAddRect(x: number, y: number) {
+  const id = await addShape({
+    type: 'rect',
+    x, y,
+    width: 100,
+    height: 60,
+    data: { color: 'blue', label: 'New' },
+  })
+}
+```
+
+The `type` is a free-form string — define your own vocabulary (`rect`, `circle`, `arrow`, `text`, `image`). The `data` field holds whatever metadata you need.
+
+Update operations are merge-semantics:
+
+```ts
+moveShape(shapeId, { x: 200, y: 150 })
+resizeShape(shapeId, { width: 200, height: 120 })
+updateShape(shapeId, { data: { color: 'red' } })  // patch data
+deleteShape(shapeId)
+```
+
+## Rendering shapes
+
+`shapes` is a flat array of `CanvasShapeClient` records. Render them however you like — SVG, canvas, DOM:
+
+```tsx
+<svg width={800} height={600}>
+  {shapes.map((s) => {
+    if (s.type === 'rect') {
+      return (
+        <rect
+          key={s.shapeId}
+          x={s.x}
+          y={s.y}
+          width={s.width}
+          height={s.height}
+          fill={s.data?.color ?? 'gray'}
+        />
+      )
+    }
+    if (s.type === 'circle') {
+      return (
+        <circle key={s.shapeId} cx={s.x} cy={s.y} r={s.width / 2} />
+      )
+    }
+    return null
+  })}
+</svg>
+```
+
+When any peer adds, moves, or deletes a shape, the `shapes` array re-renders.
+
+## Viewports
+
+Each connected peer broadcasts a viewport (position, zoom). Use it to show "where everyone is looking" in minimap-style UIs:
+
+```tsx
+const { viewports, setViewport } = useCanvas(canvasId)
+
+function onPan(x: number, y: number, zoom: number) {
+  setViewport({ x, y, zoom })
+}
+
+// viewports is a Map<userId, ViewportClient>
+for (const [userId, vp] of viewports) {
+  console.log(`${userId} is at (${vp.x}, ${vp.y}) zoomed ${vp.zoom}`)
+}
+```
+
+Viewports are ephemeral — they're not persisted. When a peer disconnects, their viewport disappears.
+
+## Undo and redo
+
+Each peer has an independent undo stack:
+
+```tsx
+const { undo, redo } = useCanvas(canvasId)
+
+<button onClick={undo}>Undo</button>
+<button onClick={redo}>Redo</button>
+```
+
+Undo applies inverse operations on the peer's recent edits — it doesn't undo other users' actions.
+
+## Worker setup
+
+The scaffold already wires `AppCanvasRoom`:
+
+```ts
+// worker.ts
+export class AppCanvasRoom extends CanvasRoom<Env> {}
+
+const app = new Hono<{ Bindings: Env }>()
+app.get('/ws/canvas/:docId', wsRoute((env) => env.CANVAS_ROOMS))
+```
+
+You don't need to edit either side unless you're customizing shape persistence or adding server-side validation.
+
+## A complete whiteboard
+
+```tsx
+import { useState } from 'react'
+import { useCanvas } from 'deepspace'
+
+export default function Whiteboard({ canvasId }: { canvasId: string }) {
+  const { shapes, addShape, moveShape, deleteShape } = useCanvas(canvasId)
+  const [selected, setSelected] = useState<string | null>(null)
+
+  function onCanvasClick(e: React.MouseEvent<SVGSVGElement>) {
+    const rect = e.currentTarget.getBoundingClientRect()
+    addShape({
+      type: 'rect',
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+      width: 80,
+      height: 50,
+      data: { color: '#1D4ED8' },
+    })
+  }
+
+  return (
+    <svg width="100%" height="100vh" onClick={onCanvasClick}>
+      {shapes.map((s) => (
+        <g key={s.shapeId} onClick={(e) => { e.stopPropagation(); setSelected(s.shapeId) }}>
+          <rect
+            x={s.x}
+            y={s.y}
+            width={s.width}
+            height={s.height}
+            fill={s.data?.color}
+            stroke={selected === s.shapeId ? '#000' : 'none'}
+          />
+        </g>
+      ))}
+    </svg>
+  )
+}
+```
+
+Open the page in two tabs. Click in each tab to add shapes; both surfaces stay in sync.
+
+## When to use canvas vs Yjs
+
+Both can model "shapes that multiple users edit." Pick based on the merging needs:
+
+| Use canvas when… | Use Yjs when… |
+|---|---|
+| Shapes are independent units | Shapes form a unified document |
+| Last-write-wins per shape is fine | You need CRDT merging of overlapping edits |
+| You need a built-in undo stack | You need fine-grained operation-log merging |
+| Viewports / cursors are part of the surface | You want to use a third-party editor binding |
+
+Canvas is the right pick for whiteboards, mood boards, and most diagram tools. Yjs is the right pick when you're integrating Tiptap, ProseMirror, or a similar collaborative document editor.
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="Collaborative editing" icon="pen-to-square" href="/guides/collaborative-editing">
+    Yjs-backed text and structured documents.
+  </Card>
+  <Card title="Presence and cursors" icon="users" href="/guides/presence-and-cursors">
+    Live cursors with `usePresenceRoom`.
+  </Card>
+  <Card title="Real-time sync" icon="bolt" href="/concepts/realtime-sync">
+    How updates propagate.
+  </Card>
+</CardGroup>

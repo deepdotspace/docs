@@ -1,0 +1,101 @@
+---
+title: "Installation"
+description: "Set up your environment, create an account, and log in to the CLI."
+---
+
+You don't install DeepSpace globally. The CLI ships inside the `deepspace` package, which is added to every new app by the scaffolder. The only thing you need on your machine ahead of time is Node.js.
+
+## Prerequisites
+
+- **Node.js 20 or later.** Verify with `node --version`. If you need to upgrade, use [nvm](https://github.com/nvm-sh/nvm) or download an installer from [nodejs.org](https://nodejs.org/).
+- **npm, pnpm, or yarn.** Examples in these docs use npm; substitute your favorite if you prefer.
+- **A GitHub or Google account.** Used for signing in to the CLI and your deployed apps. There's no separate DeepSpace account.
+
+You do **not** need a Cloudflare account. DeepSpace deploys to a shared Workers for Platforms namespace operated by the platform. If you want a custom domain, you'll buy it through the CLI (Cloudflare Registrar or Porkbun under the hood) — no DNS setup on your side.
+
+## Create a new app
+
+```bash
+npm create deepspace@latest my-app
+cd my-app
+```
+
+This:
+
+1. Downloads the latest `create-deepspace` package on demand (no global install).
+2. Scaffolds a Vite + React app with the worker and Durable Objects pre-wired.
+3. Installs `deepspace` and a small set of peer dependencies.
+4. Initializes a git repository.
+
+The scaffold takes about 30 seconds. When it finishes, you have a working app you can `npm run dev` (or `npx deepspace dev`) immediately, even before logging in.
+
+### Scaffold options
+
+```bash
+# Interactive prompt-driven mode
+npm create deepspace@latest -- --interactive
+
+# Scaffold into the current directory (must be near-empty)
+mkdir my-app && cd my-app
+npm create deepspace@latest .
+
+# Print help
+npm create deepspace@latest -- --help
+```
+
+"Near-empty" means the target directory contains only boilerplate (`.git`, `.gitignore`, `LICENSE`, any `*.md`, etc.). Anything else triggers a guardrail to prevent overwriting an existing project.
+
+## Log in to the CLI
+
+You can develop locally without logging in. You'll need to log in once before you can deploy, manage test accounts, or invoke billable integration endpoints.
+
+```bash
+npx deepspace login
+```
+
+This opens your default browser for OAuth and waits for up to 10 minutes. After you authorize, the CLI writes a session file to `~/.deepspace/session`. The same session covers every DeepSpace app on the machine — you don't log in per project.
+
+Check your login state:
+
+```bash
+npx deepspace whoami
+npx deepspace whoami --json   # machine-readable
+```
+
+If the JWT has expired, `whoami` prints `Not logged in.` and exits with code 1 — re-run `login`.
+
+<Warning>
+The session file holds a long-lived refresh token. Treat `~/.deepspace/session` and your app's `.dev.vars` file as secret. Never commit either to version control.
+</Warning>
+
+## Update the SDK
+
+DeepSpace ships frequently. To pull in the latest SDK and CLI, run:
+
+```bash
+npm install deepspace@latest
+```
+
+The CLI and the SDK are the same package — bumping the version updates both.
+
+## Verify your setup
+
+You're ready to build when all of these succeed:
+
+```bash
+node --version             # v20.x or higher
+npm create deepspace --help
+npx deepspace --version
+npx deepspace whoami       # prints your account, after `login`
+```
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/get-started/quickstart">
+    Build and deploy your first app.
+  </Card>
+  <Card title="Project structure" icon="folder-tree" href="/get-started/project-structure">
+    Tour of the scaffolded files.
+  </Card>
+</CardGroup>

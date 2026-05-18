@@ -1,0 +1,189 @@
+---
+title: "Client auth reference"
+description: "Hooks, providers, and components for authentication in React."
+---
+
+The auth surface is exported from `deepspace`. The Better Auth client is wrapped in a React provider, with hooks and components for everything you'd build by hand.
+
+```ts
+import {
+  DeepSpaceAuthProvider,
+  AuthGate, AuthOverlay,
+  SignedIn, SignedOut, GuestBanner,
+  useAuth, useAuthUser, useUser, useDisplayName,
+  signIn, signOut, getAuthToken, clearAuthToken,
+  authClient, useSession,
+} from 'deepspace'
+```
+
+## Providers
+
+### `DeepSpaceAuthProvider`
+
+Wraps the tree and initializes the Better Auth client. Required as an ancestor of every auth hook and component.
+
+```tsx
+<DeepSpaceAuthProvider>
+  <App />
+</DeepSpaceAuthProvider>
+```
+
+The scaffolded `_app.tsx` already mounts this provider at the root. You don't normally render it yourself.
+
+## Hooks
+
+### `useAuth(): AuthState`
+
+Primary auth-state hook. Session-based; updates immediately on sign-in / sign-out.
+
+| Field | Type | Description |
+|---|---|---|
+| `isLoaded` | `boolean` | `true` once the Better Auth session has resolved. |
+| `isSignedIn` | `boolean` | The canonical signed-in check. |
+| `userId` | `string \| null` | JWT subject; null when signed out. |
+| `sessionId` | `string \| null` | Better Auth session ID. |
+
+```tsx
+const { isLoaded, isSignedIn, userId } = useAuth()
+if (!isLoaded) return <Skeleton />
+if (!isSignedIn) return <SignInPrompt />
+```
+
+### `useAuthUser(): { isLoaded, isSignedIn, user }`
+
+Returns the auth-layer user from Better Auth's session — `{ id, fullName, firstName, primaryEmailAddress, ... } | null`. Use when you need fields from the OAuth provider's profile.
+
+Different from `useUser()`, which merges in storage-layer fields like role and karma.
+
+### `useUser(): { user, isLoading, refetch }`
+
+Returns the storage-layer user, merged with role and credits from the app's users collection.
+
+```ts
+type StorageUser = {
+  id: string
+  name: string
+  email: string
+  role: 'viewer' | 'member' | 'admin'
+  karma?: number
+  credits?: number
+  imageUrl?: string
+}
+```
+
+```tsx
+const { user, isLoading } = useUser()
+if (isLoading) return null
+if (user?.role !== 'admin') return <p>Admins only</p>
+```
+
+<Warning>
+Destructure as `const { user } = useUser()` and read fields off `user`. **Don't** write `const { id } = useUser()` — `id` is not at the top level of the return.
+</Warning>
+
+### `useDisplayName(): string | null`
+
+Resolves the best available display name (full name → first name → email username). Returns `null` while loading or signed out.
+
+### `useSession()` and `authClient`
+
+Re-exports from Better Auth for advanced flows (custom OAuth providers, magic links, etc.).
+
+## Components
+
+### `<AuthOverlay providers={...} />`
+
+Modal sign-in UI. Render without an `onClose` prop and gate on `!isSignedIn`; auto-hides when signed in.
+
+| Prop | Type | Description |
+|---|---|---|
+| `providers` | `('google' \| 'github' \| 'email')[]` | Restrict available sign-in methods. Default shows all. |
+| `onClose` | `() => void` | If provided, renders a close button. Omit for non-dismissible. |
+
+```tsx
+<AuthOverlay providers={['google', 'github']} />
+```
+
+### `<AuthGate fallback={...} redirectOnSignOut={...} />`
+
+Renders `children` when signed in; renders `fallback` (default: `<AuthOverlay />`) otherwise.
+
+| Prop | Type | Description |
+|---|---|---|
+| `fallback` | `ReactNode` | UI shown to signed-out users. Defaults to non-dismissible `<AuthOverlay />`. |
+| `redirectOnSignOut` | `string` | Where the user lands on sign-out. Default `'/'`. Triggers a full reload. |
+
+```tsx
+<AuthGate fallback={<TeaserPage />}>
+  <ProtectedContent />
+</AuthGate>
+```
+
+### `<SignedIn>` and `<SignedOut>`
+
+Conditional rendering helpers:
+
+```tsx
+<SignedIn><UserMenu /></SignedIn>
+<SignedOut><SignInButton /></SignedOut>
+```
+
+### `<GuestBanner />`
+
+A small inline banner prompting sign-in for anonymous visitors.
+
+## Functions
+
+### `signIn` / `signOut`
+
+Re-exports from Better Auth.
+
+```ts
+import { signOut } from 'deepspace'
+await signOut()
+```
+
+### `getAuthToken(): Promise<string | null>`
+
+Returns the current JWT, refreshing it from the auth worker if necessary. Attach to outbound `fetch` calls:
+
+```ts
+const r = await fetch('/api/premium', {
+  headers: { Authorization: `Bearer ${await getAuthToken()}` },
+})
+```
+
+### `clearAuthToken(): void`
+
+Clears the cached JWT. Forces the next `getAuthToken()` call to fetch a fresh one. Useful in tests or after explicit session changes.
+
+## Patterns
+
+### Auth-state checks
+
+```tsx
+const { isLoaded, isSignedIn } = useAuth()
+if (!isLoaded) return <Skeleton />
+return isSignedIn ? <App /> : <Landing />
+```
+
+### Profile access
+
+```tsx
+const { user, isLoading } = useUser()
+if (isLoading) return null
+return user ? <Hi name={user.name} /> : <SignInPrompt />
+```
+
+### Sign-out button
+
+```tsx
+import { signOut } from 'deepspace'
+
+<button onClick={() => signOut()}>Sign out</button>
+```
+
+## See also
+
+- [Authentication guide](/guides/authentication) — public, gated, and mixed configurations
+- [Worker auth reference](/sdk-reference/worker/auth) — `verifyJwt` for custom routes

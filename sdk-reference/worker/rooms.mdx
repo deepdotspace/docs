@@ -1,0 +1,232 @@
+---
+title: "Rooms reference"
+description: "Durable Object base classes — RecordRoom, YjsRoom, CanvasRoom, PresenceRoom, CronRoom, GameRoom."
+---
+
+The SDK ships six Durable Object base classes. Subclass them in `worker.ts`, declare them in `__DO_MANIFEST__`, and the SDK handles WebSocket upgrades, RBAC, persistence, and broadcast.
+
+```ts
+import {
+  BaseRoom, RecordRoom, YjsRoom, CanvasRoom,
+  PresenceRoom, CronRoom, GameRoom,
+} from 'deepspace/worker'
+import type {
+  RecordRoomConfig, CronRoomConfig, GameRoomConfig,
+  CronTask, CronExecution, CanvasShape, Viewport,
+  PresencePeer, Player, GameInput, UserAttachment,
+} from 'deepspace/worker'
+```
+
+Each base class is parameterized over your `Env` interface so `this.env.<binding>` is typed inside overrides.
+
+## `BaseRoom<E>`
+
+Abstract parent of all rooms. Provides WebSocket plumbing, JWT verification, and the connection lifecycle. Subclass directly only when none of the specialized rooms fit — rare in practice.
+
+```ts
+abstract class BaseRoom<E = Record<string, unknown>> {
+  constructor(state: DurableObjectState, env: E)
+  // Lifecycle hooks subclasses override
+  onConnect?(attachment: UserAttachment): Promise<void>
+  onDisconnect?(attachment: UserAttachment): Promise<void>
+  onMessage?(attachment: UserAttachment, data: unknown): Promise<void>
+}
+```
+
+## `RecordRoom<E>`
+
+Primary data DO — backs every record collection your app declares.
+
+```ts
+class RecordRoom<E = Record<string, unknown>> extends BaseRoom<E> {
+  constructor(
+    state: DurableObjectState,
+    env: E,
+    schemas: CollectionSchema[],
+    config?: RecordRoomConfig,
+  )
+}
+
+type RecordRoomConfig = {
+  ownerUserId?: string                    // owner for 'own' RBAC checks
+  // ...additional flags for specialized behavior
+}
+```
+
+Scaffold pattern:
+
+```ts
+export class AppRecordRoom extends RecordRoom<Env> {
+  constructor(state: DurableObjectState, env: Env) {
+    super(state, env, schemas, { ownerUserId: env.OWNER_USER_ID })
+  }
+}
+```
+
+## `YjsRoom<E>`
+
+Per-document collaborative state (Y.Text, Y.Map, Y.Array).
+
+```ts
+class YjsRoom<E = Record<string, unknown>> extends BaseRoom<E> {
+  constructor(state: DurableObjectState, env: E)
+}
+```
+
+Connected to via `/ws/yjs/:docId`. The DO persists the full Yjs update history in SQLite.
+
+## `CanvasRoom<E>`
+
+Collaborative canvas — shapes and viewports.
+
+```ts
+class CanvasRoom<E = Record<string, unknown>> extends BaseRoom<E> {
+  constructor(state: DurableObjectState, env: E)
+}
+
+type CanvasShape = {
+  shapeId: string
+  type: string
+  x: number; y: number
+  width: number; height: number
+  data?: object
+  createdBy: string
+  createdAt: string
+}
+
+type Viewport = { x: number; y: number; zoom: number }
+```
+
+Connected to via `/ws/canvas/:docId`.
+
+## `PresenceRoom<E>`
+
+Ephemeral peer state — cursors, typing indicators, viewports. **Not persisted.**
+
+```ts
+class PresenceRoom<E = Record<string, unknown>> extends BaseRoom<E> {
+  constructor(state: DurableObjectState, env: E)
+}
+
+type PresencePeer = {
+  userId: string
+  userName: string
+  userEmail: string
+  userImageUrl?: string
+  joinedAt: string
+  state: Record<string, unknown>
+}
+```
+
+Connected to via `/ws/presence/:scopeId`.
+
+## `CronRoom<E>`
+
+Scheduled-task DO. Declare tasks in the constructor config and override `onTask`.
+
+```ts
+class CronRoom<E = Record<string, unknown>> extends BaseRoom<E> {
+  constructor(state: DurableObjectState, env: E, config: CronRoomConfig)
+  protected abstract onTask(taskName: string): Promise<void>
+}
+
+type CronRoomConfig = { tasks: CronTask[] }
+
+type CronTask = {
+  name: string
+  intervalMinutes?: number     // mutually exclusive with schedule
+  schedule?: string            // 5-field cron expression
+  timezone?: string            // IANA timezone (required with schedule)
+  paused?: boolean             // start disabled
+}
+
+type CronExecution = {
+  taskName: string
+  startedAt: string
+  completedAt: string
+  success: boolean
+  durationMs: number
+  error?: string
+}
+```
+
+Scaffold pattern:
+
+```ts
+export class AppCronRoom extends CronRoom<Env> {
+  constructor(state: DurableObjectState, env: Env) {
+    super(state, env, { tasks: cronTasks })
+  }
+  protected async onTask(name: string) {
+    await runCronTask(name, this.env)
+  }
+}
+```
+
+Connected to via `/ws/cron/:roomId` (admin/monitor stream).
+
+## `GameRoom<E>`
+
+Turn-tick or sim-tick game loop DO.
+
+```ts
+class GameRoom<E = Record<string, unknown>> extends BaseRoom<E> {
+  constructor(state: DurableObjectState, env: E, config?: GameRoomConfig)
+  // Override to migrate persisted state on schema bumps
+  protected onHydrateState?(stored: unknown): unknown
+}
+
+type Player = {
+  userId: string
+  userName: string
+  ready: boolean
+  connectedAt: string
+  data?: object
+}
+
+type GameInput<A = unknown> = {
+  action: string
+  data?: A
+  playerId: string
+  tick: number
+}
+```
+
+Connected to via `/ws/game/:roomId`.
+
+> Audio/video rooms have no SDK DO class. Use LiveKit via the `livekit/*` integration endpoints instead.
+
+## The DO manifest
+
+```ts
+import type { DOManifest, DOBindings } from 'deepspace/worker'
+```
+
+| Export | Type | Description |
+|---|---|---|
+| `DOManifest` | type | Shape of `__DO_MANIFEST__`. |
+| `DOManifestEntry` | type | Entry shape: `{ class: string; sqlite: true }`. |
+| `DOBindings<typeof __DO_MANIFEST__>` | type | Derives the `Env` interface's DO bindings from the manifest. |
+| `DEFAULT_DO_MANIFEST` | const | Two-class fallback (`RECORD_ROOMS` + `YJS_ROOMS`) used when an app doesn't export `__DO_MANIFEST__`. |
+
+The scaffold's pattern:
+
+```ts
+export const __DO_MANIFEST__ = {
+  RECORD_ROOMS:   { class: 'AppRecordRoom',   sqlite: true },
+  YJS_ROOMS:      { class: 'AppYjsRoom',      sqlite: true },
+  CANVAS_ROOMS:   { class: 'AppCanvasRoom',   sqlite: true },
+  PRESENCE_ROOMS: { class: 'AppPresenceRoom', sqlite: true },
+  CRON_ROOMS:     { class: 'AppCronRoom',     sqlite: true },
+} as const satisfies DOManifest
+
+interface Env extends DOBindings<typeof __DO_MANIFEST__> {
+  // ...secrets and custom bindings
+}
+```
+
+## See also
+
+- [Architecture concepts](/concepts/architecture) — how DOs fit into the system
+- [Get started → Project structure](/get-started/project-structure) — the DO manifest in context
+- [Cron guide](/guides/scheduled-jobs) — patterns for `CronRoom`

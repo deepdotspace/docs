@@ -1,0 +1,168 @@
+---
+title: "Deployment"
+description: "How DeepSpace deploys your app to Cloudflare Workers for Platforms."
+---
+
+`npx deepspace deploy` takes you from local source to a live `<name>.app.space` URL in about 30 seconds. This page covers what happens during a deploy, how state and secrets carry over, and what to expect when adding custom bindings or domains.
+
+## Deploy lifecycle
+
+A deploy runs through seven steps:
+
+1. **Build the frontend** with Vite.
+2. **Build the worker** with esbuild — the SDK and your code are bundled together.
+3. **Validate the binding manifest** against allowed types and reserved names.
+4. **Auto-provision resources** (D1, KV, R2, Vectorize, Queues) whose IDs are set to `"auto"`.
+5. **Upload to Workers for Platforms** — the worker is registered in the platform's dispatch namespace.
+6. **Sync user secrets** from `.dev.vars` to `secret_text` bindings.
+7. **Register the subdomain** — your app is live at `<name>.app.space`.
+
+Each step is idempotent. Re-running `deploy` with no source changes is safe — already-provisioned resources are reused, and unchanged code is uploaded as a no-op.
+
+## Subdomains
+
+The `name` field in `wrangler.toml` is your subdomain:
+
+```toml
+name = "my-app"
+# → deploys to https://my-app.app.space
+```
+
+Rules:
+
+- Must match `^[a-z0-9](?:-?[a-z0-9])+$` — lowercase, 2–63 chars, no leading / trailing / double dashes
+- Names that don't conform are sanitized at deploy time; a warning surfaces in the CLI
+- Renaming `name` after deploy and re-deploying gives you a new subdomain — the old one becomes orphaned (still accessible until explicitly undeployed)
+
+To attach a real domain to your app, see [Custom domains](/guides/custom-domains).
+
+## State preservation
+
+A deploy **does not** wipe Durable Object state. Your records, conversations, files, and cron history persist across deploys. Three caveats:
+
+| What persists | What's reset |
+|---|---|
+| Durable Object SQLite tables (records) | Worker module-level globals |
+| R2 bucket contents | In-memory caches |
+| Auto-provisioned bindings (D1, KV, etc.) | DO instances reload on the next request |
+| User secrets in `.dev.vars` | — |
+
+If you change a schema in a way that's not backwards-compatible (e.g., removing a column), you're responsible for the migration. The SDK does not run schema migrations on DO data.
+
+## Secrets and `.dev.vars`
+
+The `.dev.vars` file holds two zones, separated by a divider the CLI writes itself:
+
+```bash
+# --- SDK-managed (rewritten on every `dev` / `test` / `deploy`) ---
+AUTH_JWT_PUBLIC_KEY=...
+AUTH_JWT_ISSUER=...
+AUTH_WORKER_URL=...
+API_WORKER_URL=...
+PLATFORM_WORKER_URL=...
+OWNER_USER_ID=...
+APP_OWNER_JWT=...
+INTERNAL_STORAGE_HMAC_SECRET=...
+ALLOW_DEBUG_ROUTES=...
+
+# --- not managed by the SDK; preserved across dev/test runs ---
+STRIPE_SECRET_KEY=sk_test_...
+OPENAI_API_KEY=sk-...
+MY_FEATURE_FLAG=true
+```
+
+Anything **below** the divider:
+
+- Is preserved verbatim across `dev` / `test` / `deploy` runs
+- Becomes a `secret_text` binding on deploy (`env.STRIPE_SECRET_KEY` in worker code)
+- Never appears in compiled assets or client bundles
+
+<Warning>
+**Never commit `.dev.vars`.** The scaffold's `.gitignore` covers it. To rotate a secret, edit the file and redeploy.
+</Warning>
+
+### Secret constraints
+
+| Limit | Value |
+|---|---|
+| Name pattern | `^[A-Za-z_][A-Za-z0-9_]*$` |
+| Per-value size | 32 KB |
+| Total across all secrets | 128 KB |
+| Raw deploy payload | 1 MB |
+
+A secret name cannot collide with any reserved binding name, custom binding, or DO class name. The deploy worker rejects the deploy with HTTP 400 before forwarding to Workers for Platforms.
+
+## Custom bindings
+
+Add Vectorize, R2, KV, D1, Queues, Browser Rendering, Hyperdrive, or Analytics Engine bindings by declaring them in `wrangler.toml`. Set the ID to `"auto"` to auto-provision:
+
+```toml
+[[vectorize]]
+binding = "VEC"
+index_name = "auto"
+dimensions = 768
+metric = "cosine"
+
+[[d1_databases]]
+binding = "MY_DB"
+database_id = "auto"
+database_name = "my-app-db"
+```
+
+The deploy worker provisions the resource the first time you deploy, persists the ID, and reuses it on every subsequent deploy. See [Custom bindings](/guides/custom-bindings) for the full list of types and gotchas.
+
+## Undeploy
+
+To take an app down:
+
+```bash
+npx deepspace undeploy
+```
+
+This removes the subdomain registration, tears down auto-provisioned resources (with one exception), and cleans up bindings. The exception:
+
+- **R2 buckets with files in them are not auto-deleted.** This protects against accidental user-content loss. Empty the bucket manually if you want it gone.
+
+Durable Object data **is** removed when the worker is undeployed. Back up anything you want to keep.
+
+## Pre-deploy checklist
+
+Before your first deploy, walk through this list:
+
+<Steps>
+  <Step title="Pick a theme">
+    Edit `<html data-theme="...">` in `index.html`. Don't ship `slate` (the scaffold default).
+  </Step>
+  <Step title="Replace placeholder content">
+    `src/pages/home.tsx` ships with placeholder copy ("Your DeepSpace app is running"). Replace with real content.
+  </Step>
+  <Step title="Set the page title and favicon">
+    Update `<title>` in `index.html`; replace the default favicon files.
+  </Step>
+  <Step title="Confirm secrets are in place">
+    Anything below the `# --- not managed` divider in `.dev.vars` ships with the deploy.
+  </Step>
+  <Step title="Run tests">
+    `npx deepspace test` — at minimum, smoke + api specs should pass.
+  </Step>
+  <Step title="Deploy">
+    `npx deepspace deploy`. The CLI prints the live URL when it's done.
+  </Step>
+</Steps>
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="Deploy command reference" icon="terminal" href="/cli-reference/commands#deploy">
+    Flags, environment variables, and edge cases.
+  </Card>
+  <Card title="Custom bindings" icon="plug" href="/guides/custom-bindings">
+    Declare Vectorize, R2, D1, and more.
+  </Card>
+  <Card title="Custom domains" icon="globe" href="/guides/custom-domains">
+    Buy and attach a real domain from the CLI.
+  </Card>
+  <Card title="Testing" icon="vial" href="/guides/testing">
+    Run Playwright specs before you ship.
+  </Card>
+</CardGroup>

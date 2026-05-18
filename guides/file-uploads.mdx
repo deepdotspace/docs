@@ -1,0 +1,192 @@
+---
+title: "File uploads"
+description: "Upload, list, and serve files backed by Cloudflare R2."
+---
+
+DeepSpace apps get a per-app R2 bucket out of the box. The `useR2Files` hook handles uploads, listings, deletions, and signed URLs — all routed through the platform's file gateway so users never touch raw R2 credentials.
+
+## Upload a file
+
+```tsx
+import { useR2Files } from 'deepspace'
+
+function FileUploader() {
+  const { upload, isUploading } = useR2Files()
+
+  async function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const result = await upload(file)
+    console.log('uploaded:', result.key)
+  }
+
+  return (
+    <input type="file" onChange={onFileChange} disabled={isUploading} />
+  )
+}
+```
+
+`upload` accepts a `File` (from `<input type="file">` or a drag-drop event) or a `Blob`. It returns the storage key — a unique string identifying the uploaded file.
+
+## List files
+
+`useR2Files` exposes an async `list()` function rather than a reactive array. Call it and store the result in component state:
+
+```tsx
+import { useState, useEffect } from 'react'
+import { useR2Files, formatFileSize } from 'deepspace'
+import type { R2FileInfo } from 'deepspace'
+
+function Gallery() {
+  const { upload, deleteFile, list, getUrl } = useR2Files()
+  const [files, setFiles] = useState<R2FileInfo[]>([])
+
+  async function refresh() {
+    setFiles(await list())
+  }
+
+  useEffect(() => { refresh() }, [])
+
+  return (
+    <div>
+      {files.map((f) => (
+        <div key={f.key}>
+          <img src={getUrl(f.key)} alt="" />
+          <p>{f.originalName ?? f.key} — {formatFileSize(f.size)}</p>
+          <button onClick={async () => { await deleteFile(f.key); refresh() }}>
+            Delete
+          </button>
+        </div>
+      ))}
+    </div>
+  )
+}
+```
+
+### `R2FileInfo` shape
+
+| Field | Type | Description |
+|---|---|---|
+| `key` | `string` | Storage key, unique within the bucket |
+| `size` | `number` | Bytes |
+| `uploaded` | `string` | ISO timestamp |
+| `url` | `string` | Signed URL valid for retrieval |
+| `originalName` | `string \| undefined` | Original filename captured at upload time |
+| `uploadedBy` | `string \| undefined` | userId of the uploader |
+
+<Note>
+`R2FileInfo` does **not** include a `mimeType` field. If you need MIME-aware logic (e.g., distinguish images from documents), capture the type at upload time and store it in a sidecar collection. See [Storing metadata](#storing-metadata) below.
+</Note>
+
+## Serve a file
+
+`getUrl(key)` returns a signed URL the browser can fetch directly. For images, drop it into `<img src>`:
+
+```tsx
+<img src={getUrl(f.key)} alt="" referrerPolicy="no-referrer" />
+```
+
+For other file types, link to the URL or fetch it with `downloadFile(key)`:
+
+```ts
+const blob = await downloadFile(key)
+```
+
+URLs are signed by the platform's file gateway and time-limited. Treat them as ephemeral — don't store them long-term.
+
+## Scoping files
+
+By default, `useR2Files` uses a global scope (everyone in the app sees everyone's files). For per-user or per-record scoping, pass an `R2Scope`:
+
+```tsx
+const { upload, list } = useR2Files({
+  scope: { type: 'user', userId },
+})
+
+// Only this user's files are listed; uploads are namespaced under their userId.
+```
+
+| Scope type | Files visible to |
+|---|---|
+| `{ type: 'global' }` (default) | All users in the app |
+| `{ type: 'user', userId }` | Only the specified user |
+| `{ type: 'room', roomId }` | Only members of the room |
+
+## Programmatic uploads — `uploadBase64`
+
+When you have file data as a Base64 string (e.g., from a `<canvas>` `toDataURL()`):
+
+```tsx
+const { uploadBase64 } = useR2Files()
+
+async function saveCanvasAsImage() {
+  const canvas = canvasRef.current!
+  const dataUrl = canvas.toDataURL('image/png')
+  const base64 = dataUrl.split(',')[1]
+  await uploadBase64(base64, { originalName: 'drawing.png' })
+}
+```
+
+## Storing metadata
+
+R2 files have no rich metadata of their own beyond what the gateway captures. For app-level metadata (tags, captions, MIME types, descriptions), store a sidecar record in a collection:
+
+```ts
+// src/schemas/attachments-schema.ts
+export const attachmentsSchema: CollectionSchema = {
+  name: 'attachments',
+  columns: [
+    { name: 'fileKey', storage: 'text', interpretation: 'plain' },
+    { name: 'mimeType', storage: 'text', interpretation: 'plain' },
+    { name: 'caption', storage: 'text', interpretation: 'plain' },
+  ],
+  permissions: {
+    member: { read: true, create: true, update: 'own', delete: 'own' },
+  },
+}
+```
+
+Then create the sidecar record alongside the upload:
+
+```tsx
+const { upload } = useR2Files()
+const { create } = useMutations<Attachment>('attachments')
+
+async function uploadWithMeta(file: File) {
+  const { key } = await upload(file)
+  await create({
+    fileKey: key,
+    mimeType: file.type,
+    caption: '',
+  })
+}
+```
+
+## Display helpers
+
+| Helper | Signature | Description |
+|---|---|---|
+| `isImageFile` | `(mimeType: string) => boolean` | Convenience for "is this an image" |
+| `formatFileSize` | `(bytes: number) => string` | "1.2 MB", "456 KB" |
+
+## Local development
+
+<Warning>
+R2 uploads require an `APP_IDENTITY_TOKEN` minted by the deploy worker. The CLI does not provision this token in local dev, so `upload()` round-trips return 401 from the platform file gateway. In local dev, assert that uploads are *dispatched* (the function is called) — the full upload-and-read flow works only against deployed apps.
+</Warning>
+
+If you need full file flows in local dev, deploy your app and run `npx deepspace dev --prod` to point local UI at production workers.
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="Custom bindings" icon="plug" href="/guides/custom-bindings">
+    Declare your own R2 bucket with custom permissions.
+  </Card>
+  <Card title="Data storage" icon="database" href="/guides/data-storage">
+    Pair files with sidecar records for metadata.
+  </Card>
+  <Card title="Files reference" icon="code" href="/sdk-reference/client/files">
+    Full `useR2Files` API.
+  </Card>
+</CardGroup>

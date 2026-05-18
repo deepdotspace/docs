@@ -1,0 +1,212 @@
+---
+title: "Project structure"
+description: "A tour of the files in a scaffolded DeepSpace app."
+---
+
+A new DeepSpace app looks like this:
+
+```
+my-app/
+├── src/
+│   ├── pages/                 React routes (file-based via generouted)
+│   │   ├── _app.tsx           Provider stack
+│   │   ├── home.tsx           Public landing page
+│   │   └── (protected)/       Gated route group
+│   │       ├── _layout.tsx    Applies <AuthGate>
+│   │       └── ...
+│   ├── components/            Local React components
+│   │   ├── Navigation.tsx     Top navigation (auth-aware)
+│   │   └── ui/                Shadcn-style primitives
+│   ├── schemas/               Per-collection schema files
+│   ├── schemas.ts             Exports the full schemas array
+│   ├── actions/index.ts       Server actions (privileged writes)
+│   ├── ai/
+│   │   ├── tools.ts           AI chat system prompt + tool allowlist
+│   │   └── chat-routes.ts     /api/ai/* endpoints
+│   ├── cron.ts                Scheduled tasks
+│   ├── themes.ts              Theme presets catalog
+│   ├── themes.css             Per-theme CSS variable blocks
+│   ├── styles.css             Tailwind v4 entrypoint
+│   ├── nav.ts                 Top-nav entries
+│   ├── constants.ts           APP_NAME, SCOPE_ID
+│   ├── subscriptions.ts       Subscription plans (optional)
+│   ├── products.ts            One-time products (optional)
+│   └── integrations.ts        Per-integration billing config
+├── tests/                     Playwright specs
+│   ├── playwright.config.ts
+│   ├── smoke.spec.ts          Page-load + auth tests
+│   ├── api.spec.ts            API and integration tests
+│   └── collab.spec.ts         Multi-user tests
+├── worker.ts                  Hono worker + Durable Object classes
+├── wrangler.toml              Cloudflare config; name = deploy subdomain
+├── index.html                 HTML shell; sets data-theme
+├── vite.config.ts             Vite + Cloudflare plugin config
+├── tsconfig.json
+└── package.json
+```
+
+This page walks through what each piece does. If you only read one section, make it [The Durable Object manifest](#the-durable-object-manifest) — it's the bridge between your worker and the SDK.
+
+## The provider stack — `src/pages/_app.tsx`
+
+This is the root layout. Every page renders inside this tree:
+
+```tsx
+<ToastProvider>                       {/* from src/components/ui */}
+  <DeepSpaceAuthProvider>
+    <AuthBoot>                        {/* waits for auth to load */}
+      <Navigation />
+      <main><Outlet /></main>
+    </AuthBoot>
+  </DeepSpaceAuthProvider>
+</ToastProvider>
+```
+
+`AuthBoot` mounts the data layer for everyone — signed in or out:
+
+```tsx
+<RecordProvider allowAnonymous>
+  <RecordScope roomId={SCOPE_ID} schemas={schemas} appId={APP_NAME}>
+    {children}
+  </RecordScope>
+</RecordProvider>
+```
+
+`allowAnonymous` means the WebSocket connects even without a JWT, so signed-out visitors can read public records. Inside an `<AuthGate>`, the user is always signed in.
+
+<Tip>
+Extend `_app.tsx` — don't replace it. Add schemas to `src/schemas.ts`, pages to `src/pages/`, and nav entries to `src/nav.ts`. The defaults are already wired correctly.
+</Tip>
+
+## Pages and routing — `src/pages/`
+
+Routing uses [generouted](https://github.com/oedotme/generouted): every `.tsx` file under `src/pages/` becomes a route. Folder names in parentheses (like `(protected)/`) are **route groups** — they apply layouts and middleware without showing up in the URL.
+
+The scaffold ships:
+
+- `src/pages/home.tsx` → `/` (public)
+- `src/pages/(protected)/_layout.tsx` → wraps gated routes in `<AuthGate>`
+- `src/pages/(protected)/settings.tsx` → `/settings` (gated)
+
+Add a new gated page by dropping a file into `(protected)/`. Add a public page at the top level.
+
+## Schemas — `src/schemas.ts`
+
+Schemas declare your collections. Each schema is a `name`, a list of `columns`, and a `permissions` block (per-role read/create/update/delete rules).
+
+```ts
+// src/schemas.ts
+import { usersSchema } from './schemas/users-schema'
+import { settingsSchema } from './schemas/admin-schema'
+import { todosSchema } from './schemas/todos-schema'
+
+export const schemas = [usersSchema, settingsSchema, todosSchema]
+```
+
+Schemas are **baked into your worker at deploy time**. They get imported by `worker.ts` and compiled into the bundle — there is no runtime schema registry.
+
+[Read the data model concepts →](/concepts/data-model)
+
+## The worker — `worker.ts`
+
+A Hono app that handles HTTP requests, WebSocket upgrades, and Durable Object routing. The scaffold's worker is small — most of the heavy lifting happens inside the SDK base classes.
+
+```ts
+// worker.ts (abbreviated)
+import { Hono } from 'hono'
+import { RecordRoom, YjsRoom, CanvasRoom, PresenceRoom, CronRoom } from 'deepspace/worker'
+import { schemas } from './src/schemas'
+import { tasks as cronTasks, runTask } from './src/cron'
+
+export class AppRecordRoom extends RecordRoom<Env> {
+  constructor(state: DurableObjectState, env: Env) {
+    super(state, env, schemas, { ownerUserId: env.OWNER_USER_ID })
+  }
+}
+// AppYjsRoom, AppCanvasRoom, AppPresenceRoom, AppCronRoom...
+
+const app = new Hono<{ Bindings: Env }>()
+app.get('/ws/:roomId', wsRoute((env) => env.RECORD_ROOMS))
+// ...other routes
+export default app
+```
+
+Edit `worker.ts` when you need to add custom HTTP routes, declare a new Durable Object class, or proxy to a shared cross-app scope. For everything else, you can leave it alone.
+
+## The Durable Object manifest
+
+The scaffold's `worker.ts` declares five DO classes in a constant:
+
+```ts
+export const __DO_MANIFEST__ = {
+  RECORD_ROOMS:   { class: 'AppRecordRoom',   sqlite: true },
+  YJS_ROOMS:      { class: 'AppYjsRoom',      sqlite: true },
+  CANVAS_ROOMS:   { class: 'AppCanvasRoom',   sqlite: true },
+  PRESENCE_ROOMS: { class: 'AppPresenceRoom', sqlite: true },
+  CRON_ROOMS:     { class: 'AppCronRoom',     sqlite: true },
+} as const satisfies DOManifest
+```
+
+This manifest is the source of truth for which Durable Object classes your app uses. The `Env` interface derives its DO bindings from this constant:
+
+```ts
+interface Env extends DOBindings<typeof __DO_MANIFEST__> {
+  // ...your secrets and custom bindings
+}
+```
+
+The deploy pipeline reads `__DO_MANIFEST__` to provision the right DO bindings on Cloudflare. **Don't remove classes you don't use** without also clearing their stored data.
+
+## Configuration files
+
+| File | What it controls |
+|---|---|
+| `wrangler.toml` | Cloudflare config. `name` field becomes the `<name>.app.space` subdomain. Declare custom bindings here. |
+| `index.html` | HTML shell. Set `<html data-theme="...">` to pick a theme preset. Update `<title>` and favicon. |
+| `.dev.vars` | Local dev secrets (auto-managed for SDK keys; user-added keys are preserved and uploaded as `secret_text` on deploy). **Never commit this file.** |
+| `vite.config.ts` | Vite + `@cloudflare/vite-plugin` config. You usually don't need to edit this. |
+
+## Themes — `src/themes.ts` + `src/themes.css`
+
+The scaffold ships 15 ready-made theme presets — 8 dark and 7 light. Pick one by setting `data-theme="<id>"` on the `<html>` element in `index.html`. Customize by editing the matching block in `src/themes.css`.
+
+[Read the theming guide →](/sdk-reference/client/theming)
+
+## Tests — `tests/`
+
+Three Playwright specs ship with every scaffold:
+
+- `smoke.spec.ts` — App boots, navigation renders, auth UI present.
+- `api.spec.ts` — API routes return expected shapes; auth required where expected.
+- `collab.spec.ts` — Two-user real-time sync tests.
+
+Run them with:
+
+```bash
+npx deepspace test          # smoke + api (fast)
+npx deepspace test e2e      # all Playwright specs
+```
+
+[Read the testing guide →](/guides/testing)
+
+## Optional files
+
+These are created on demand by `npx deepspace add <feature>` or by hand when you opt in:
+
+- `src/subscriptions.ts` — Recurring plan manifest (for `useSubscription`).
+- `src/products.ts` — One-time product manifest (for `useCheckout`).
+- `src/integrations.ts` — Per-integration billing config (`developer` vs `user`).
+- `src/cron.ts` — Scheduled tasks for `AppCronRoom`.
+- `src/actions/index.ts` — Server actions (privileged writes).
+- `src/ai/` — AI chat backend (already wired in the scaffold).
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="Architecture" icon="diagram-project" href="/concepts/architecture">
+    How the worker, Durable Objects, and platform fit together.
+  </Card>
+  <Card title="Data model" icon="database" href="/concepts/data-model">
+    Collections, records, and the envelope shape.
+  </Card>
+</CardGroup>

@@ -1,0 +1,260 @@
+---
+title: "Authentication"
+description: "Public, gated, and mixed auth configurations for DeepSpace apps."
+---
+
+DeepSpace authentication is handled by the platform's auth worker — you don't run an OAuth flow, mint JWTs, or manage sessions. The SDK ships React providers and components that wrap [Better Auth](https://www.better-auth.com/) and a verifier for your worker. This guide covers picking an auth model, gating routes, and the most common patterns.
+
+## Auth models
+
+Three configurations cover virtually every app:
+
+| Model | Public pages? | Gated pages? | Use when |
+|---|---|---|---|
+| **Fully public** | Every page | None | Marketing sites, public catalogs |
+| **Fully gated** | None | Every page | Internal tools, paid SaaS |
+| **Mixed** (default) | Landing, pricing, etc. | App routes inside `(protected)/` | Most consumer apps |
+
+The scaffold ships the mixed model. The `(protected)/_layout.tsx` route group applies `<AuthGate>` to everything inside it.
+
+## Mixed (default)
+
+Public pages live at `src/pages/<name>.tsx`. Gated pages go inside the `(protected)/` route group:
+
+```
+src/pages/
+  home.tsx                  ← public (/)
+  pricing.tsx               ← public (/pricing)
+  (protected)/
+    _layout.tsx             ← <AuthGate><Outlet /></AuthGate>
+    dashboard.tsx           ← gated (/dashboard)
+    settings.tsx            ← gated (/settings)
+```
+
+The folder name `(protected)/` is wrapped in literal parentheses — generouted treats it as a route group that doesn't appear in the URL. Adding a new gated page is a one-file change: drop it inside `(protected)/`.
+
+## Fully gated
+
+Wrap the entire tree with `<AuthGate>` in `_app.tsx`, and drop `allowAnonymous` from `RecordProvider`:
+
+```tsx
+// src/pages/_app.tsx
+import { DeepSpaceAuthProvider, AuthGate, RecordProvider, RecordScope } from 'deepspace'
+
+export default function App() {
+  return (
+    <DeepSpaceAuthProvider>
+      <AuthGate>
+        <RecordProvider>
+          <RecordScope roomId={SCOPE_ID} schemas={schemas} appId={APP_NAME}>
+            <Navigation />
+            <Outlet />
+          </RecordScope>
+        </RecordProvider>
+      </AuthGate>
+    </DeepSpaceAuthProvider>
+  )
+}
+```
+
+Inside an `<AuthGate>` subtree the user is always signed in, so anonymous WebSocket connections are unnecessary.
+
+## Fully public
+
+Don't import `<AuthGate>` anywhere. Rely on `RecordProvider allowAnonymous` (already on by default in the scaffold). All pages render for signed-out visitors; data the user has read access to under the `*` role rule is available.
+
+## Auth-state checks in components
+
+The canonical "is the user signed in?" check is `useAuth().isSignedIn`. It updates immediately on sign-in / sign-out:
+
+```tsx
+import { useAuth } from 'deepspace'
+
+function MyComponent() {
+  const { isLoaded, isSignedIn, userId } = useAuth()
+
+  if (!isLoaded) return <Skeleton />
+  if (!isSignedIn) return <SignInPrompt />
+  return <SignedInView userId={userId} />
+}
+```
+
+<Warning>
+**Don't gate on `useUser().user` truthiness alone.** `useUser` returns the storage-layer profile (with karma, credits, role) and loads async — you'll get a flash of "not signed in" while the profile fetch resolves. Use `useAuth().isSignedIn` for state checks; reach for `useUser()` only when you need profile fields.
+</Warning>
+
+## `<AuthGate>` props
+
+| Prop | Type | Description |
+|---|---|---|
+| `fallback` | `ReactNode` | UI shown to signed-out users. Defaults to `<AuthOverlay />` rendered without `onClose`, which makes it non-dismissible. |
+| `redirectOnSignOut` | `string` | Where the user lands when they sign out from inside the gate. Defaults to `'/'`. Triggers a full-page reload so cached state can't leak. |
+
+Pass a custom fallback to render something other than the default overlay:
+
+```tsx
+<AuthGate fallback={<TeaserPage />}>
+  <Dashboard />
+</AuthGate>
+```
+
+## Sign-in UI — `<AuthOverlay />`
+
+The SDK ships a styled modal sign-in component:
+
+```tsx
+import { AuthOverlay, useAuth } from 'deepspace'
+
+function App() {
+  const { isSignedIn } = useAuth()
+  return (
+    <>
+      <MainContent />
+      {!isSignedIn && <AuthOverlay providers={['google', 'github']} />}
+    </>
+  )
+}
+```
+
+Render `<AuthOverlay />` without an `onClose` prop and gate on `!isSignedIn`. It auto-hides when the user signs in.
+
+### Providers
+
+By default `<AuthOverlay />` shows Google, GitHub, and email/password. Restrict the list with the `providers` prop:
+
+```tsx
+<AuthOverlay providers={['google']} />              // Google only
+<AuthOverlay providers={['google', 'github']} />    // Google + GitHub
+```
+
+## Conditional rendering — `<SignedIn>` and `<SignedOut>`
+
+For small conditional pieces of UI:
+
+```tsx
+import { SignedIn, SignedOut } from 'deepspace'
+
+<SignedIn>
+  <UserMenu />
+</SignedIn>
+<SignedOut>
+  <SignInButton />
+</SignedOut>
+```
+
+## Signing out
+
+Use `signOut()` from the SDK's Better Auth client:
+
+```tsx
+import { signOut } from 'deepspace'
+
+<button onClick={() => signOut()}>Sign out</button>
+```
+
+The scaffolded `Navigation.tsx` already calls `signOut()` from the avatar dropdown. Don't add a second sign-out — extend the existing one if you need to customize.
+
+<Tip>
+If your app requires sign-in, a sign-out control is non-negotiable. If you replace `Navigation.tsx`, make sure `signOut()` remains reachable when signed in.
+</Tip>
+
+## Server-side verification
+
+To verify a JWT inside your worker (for custom API routes that aren't auto-protected):
+
+```ts
+// worker.ts
+import { verifyJwt } from 'deepspace/worker'
+
+app.get('/api/me', async (c) => {
+  const auth = c.req.header('Authorization') ?? ''
+  const token = auth.replace(/^Bearer\s+/i, '')
+
+  const outcome = await verifyJwt({
+    publicKey: c.env.AUTH_JWT_PUBLIC_KEY,
+    issuer: c.env.AUTH_JWT_ISSUER,
+  }, token)
+
+  if (!outcome.result) return c.json({ error: 'unauthorized' }, 401)
+  return c.json({ userId: outcome.result.sub })
+})
+```
+
+`verifyJwt` does not throw on invalid input — it returns a `{ result, error? }` envelope. Always check `result` before reading claims.
+
+The scaffold's `wsRoute` handler already calls `verifyJwt` for every WebSocket upgrade, so you only need this pattern for custom HTTP routes.
+
+## Common patterns
+
+### Landing page with an "open app" CTA
+
+```tsx
+function Landing() {
+  const { isSignedIn } = useAuth()
+  return (
+    <>
+      <Hero />
+      <Pricing />
+      {isSignedIn
+        ? <Link to="/dashboard">Open the app →</Link>
+        : <SignInButton />}
+    </>
+  )
+}
+```
+
+### Conditional nav links
+
+```tsx
+// src/nav.ts
+export const nav = [
+  { label: 'Home', href: '/', visibility: 'public' },
+  { label: 'Dashboard', href: '/dashboard', visibility: 'signed-in' },
+  { label: 'Admin', href: '/admin', visibility: 'admin' },
+]
+```
+
+The scaffold's `Navigation.tsx` reads `visibility` and filters accordingly.
+
+### Hiding nav on the landing route
+
+If your landing page has its own header, hide the global nav on that route:
+
+```tsx
+// src/pages/_app.tsx
+import { useLocation } from 'react-router-dom'
+
+const isLanding = useLocation().pathname === '/'
+{!isLanding && <Navigation />}
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="`useToast must be used within ToastProvider` on import">
+    The scaffold's `_app.tsx` wraps the tree in the **local** `ToastProvider` (from `src/components/ui`), not the SDK's. Import `useToast` from `../components/ui`, not from `deepspace`. Mixing the two contexts produces this error.
+  </Accordion>
+  <Accordion title="Safari shows the user as signed-out even after sign-in">
+    Safari enforces the `__Secure-` cookie attribute requires HTTPS, and refuses to set it on `localhost`. Chrome doesn't. Test against `https://` URLs (or deploy) when verifying Safari behavior.
+  </Accordion>
+  <Accordion title="Sign-in popup opens but never returns to the app">
+    The OAuth flow opens the auth worker at the platform domain, completes auth, then redirects back to your app. If the redirect doesn't fire, it's almost always a cookie or HTTPS issue (see above) — open the auth worker's tab and check the browser console.
+  </Accordion>
+</AccordionGroup>
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="Permissions" icon="lock" href="/concepts/permissions">
+    How role-based access control works on collections.
+  </Card>
+  <Card title="Server actions" icon="shield-halved" href="/guides/server-actions">
+    Privileged worker code that bypasses user RBAC.
+  </Card>
+  <Card title="Auth reference" icon="code" href="/sdk-reference/client/auth">
+    All auth hooks, providers, and components.
+  </Card>
+  <Card title="Worker auth reference" icon="server" href="/sdk-reference/worker/auth">
+    `verifyJwt` and HMAC primitives.
+  </Card>
+</CardGroup>

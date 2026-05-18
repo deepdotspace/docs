@@ -1,0 +1,128 @@
+---
+title: "Worker auth reference"
+description: "JWT verification, Better Auth integration, and HMAC primitives."
+---
+
+```ts
+import {
+  verifyJwt, decodeJwtPayload,
+  createDeepSpaceAuth,
+  verifyInternalSignature, buildInternalPayload,
+  signInternalPayload, computeHmacHex, timingSafeEqualHex,
+  DEFAULT_MAX_SKEW_MS,
+} from 'deepspace/worker'
+
+import type {
+  JwtVerifierConfig, VerifyOutcome, VerifyResult,
+  DeepSpaceAuth, DeepSpaceAuthConfig,
+} from 'deepspace/worker'
+```
+
+## `verifyJwt(config, token)`
+
+Verifies a JWT against a public key. **Does not throw** — returns a `{ result, error? }` envelope.
+
+```ts
+function verifyJwt(
+  config: JwtVerifierConfig,
+  token: string | null | undefined,
+): Promise<VerifyOutcome>
+
+type JwtVerifierConfig = {
+  publicKey: string         // PEM-encoded; env.AUTH_JWT_PUBLIC_KEY
+  issuer: string            // env.AUTH_JWT_ISSUER
+  audience?: string
+  authorizedParties?: string[]
+  clockSkewMs?: number      // default DEFAULT_MAX_SKEW_MS
+}
+
+type VerifyOutcome = {
+  result: VerifyResult | null    // null on failure
+  error?: string
+}
+
+type VerifyResult = {
+  sub: string                    // userId
+  name?: string
+  email?: string
+  image?: string
+  iss: string
+  iat: number
+  exp: number
+  // ...standard JWT claims
+}
+```
+
+Extract the JWT from the request yourself (Bearer header or cookie) before calling:
+
+```ts
+app.get('/api/me', async (c) => {
+  const auth = c.req.header('Authorization') ?? ''
+  const token = auth.replace(/^Bearer\s+/i, '')
+
+  const { result } = await verifyJwt({
+    publicKey: c.env.AUTH_JWT_PUBLIC_KEY,
+    issuer:    c.env.AUTH_JWT_ISSUER,
+  }, token)
+
+  if (!result) return c.json({ error: 'unauthorized' }, 401)
+  return c.json({ userId: result.sub })
+})
+```
+
+## `decodeJwtPayload(token)`
+
+Base64url-decode the JWT payload **without verification**. Useful for inspecting `sub` / `email` / `name` for logging or routing where verification has already happened upstream.
+
+```ts
+function decodeJwtPayload(token: string): VerifyResult | null
+```
+
+<Warning>
+Never use as a substitute for `verifyJwt` on the trust boundary. Decoded but unverified claims can be spoofed by anyone.
+</Warning>
+
+## HMAC primitives — internal signing
+
+For platform → app internal calls (and cron's `ctx.integrations.call`, which signs requests with `INTERNAL_STORAGE_HMAC_SECRET`).
+
+```ts
+function buildInternalPayload(body: object): { payload: string; timestamp: number }
+function signInternalPayload(secret: string, payload: string, timestamp: number): string
+function verifyInternalSignature(opts: {
+  secret: string
+  payload: string
+  signature: string
+  timestamp: number
+}): { valid: boolean; reason?: string }
+
+function computeHmacHex(secret: string, data: string): string
+function timingSafeEqualHex(a: string, b: string): boolean
+
+const DEFAULT_MAX_SKEW_MS: number   // verification tolerance for `timestamp`
+```
+
+These are exported so apps can verify inbound internal calls (e.g., custom webhook endpoints from the platform) using the same HMAC contract the rest of the SDK uses. Most apps never call these directly.
+
+## `createDeepSpaceAuth(config)`
+
+Construct a Better Auth instance pre-wired for DeepSpace conventions (cookie names, JWT issuance, scope claims). The scaffold doesn't build its own auth surface — it proxies to the platform auth-worker — so you only reach for this when standing up a custom auth-worker variant.
+
+```ts
+function createDeepSpaceAuth(config: DeepSpaceAuthConfig): DeepSpaceAuth
+
+type DeepSpaceAuthConfig = {
+  database: D1Database
+  trustedOrigins: string[]
+  privateKey: string
+  publicKey: string
+  issuer: string
+  // ...standard Better Auth options
+}
+```
+
+## See also
+
+- [Authentication guide](/guides/authentication)
+- [Client auth reference](/sdk-reference/client/auth)
+- [Architecture concepts](/concepts/architecture#security-model--websocket-identity)

@@ -1,0 +1,105 @@
+---
+title: "Real-time sync"
+description: "How DeepSpace synchronizes data across clients using WebSockets and Durable Objects."
+---
+
+DeepSpace's real-time layer is the reason most teams reach for the SDK. This page explains what's happening under the hood — the WebSocket protocol, the optimistic mutation pipeline, and the consistency guarantees you can rely on.
+
+## The model
+
+Every client holds a local replica of the records it has subscribed to. A persistent WebSocket connects the client to the relevant Durable Object. When any client mutates a record, the DO validates the write against RBAC, persists it to SQLite, and broadcasts the update to every other connected client within milliseconds.
+
+The DO is the single source of truth. Each `RecordRoom` instance owns its own SQLite database and serializes all writes — there are no merge conflicts to resolve.
+
+## The optimistic mutation pipeline
+
+Mutations resolve locally before the server confirms them. This keeps the UI responsive on slow networks.
+
+A call to `useMutations.create({ ... })`:
+
+1. Applies the change to the local store immediately (UI updates)
+2. Sends the mutation over the WebSocket to the DO
+3. The DO verifies RBAC, writes to SQLite, and broadcasts to all peers
+4. The local store reconciles with the server confirmation (no-op if the optimistic state already matches)
+
+If the server rejects the write — typically due to RBAC — the optimistic update is rolled back.
+
+Use `create` / `put` / `remove` when you want the snappy path. Use the `*Confirmed` variants when you need to wait for the server, typically when you need a server-generated ID before navigating.
+
+## Subscription scope
+
+A client subscribes to one or more **scopes** (Durable Object instances). The default scope in the scaffold is `app:<APP_NAME>` — every record in your app's main RecordRoom syncs to every connected client whose RBAC allows it.
+
+You can mount additional scopes by nesting `<RecordScope>`:
+
+```tsx
+<RecordScope roomId={`conv:${convId}`} schemas={CONVERSATION_SCHEMAS}>
+  <ChatThread />
+</RecordScope>
+```
+
+Each scope is an independent DO with its own WebSocket. Subscriptions don't interfere with each other.
+
+## What the DO sends
+
+When a client connects, the DO sends an initial snapshot of all records the client has read access to. From that point forward, the DO broadcasts incremental updates:
+
+| Event | When it fires |
+|---|---|
+| `record_created` | A new record passes the caller's read check |
+| `record_updated` | An existing record's data changed |
+| `record_removed` | A record was deleted or no longer passes the read check |
+| `users_changed` | The users collection changed (role updates, presence heartbeats) |
+
+The SDK's record store reduces these events into a flat array that `useQuery` exposes.
+
+## Consistency guarantees
+
+- **Writes are serialized inside the DO.** Two concurrent `put`s land in a deterministic order — the second wins on field-level merge.
+- **The DO sees all writes before any client.** There is no eventual consistency window from the DO's perspective.
+- **The optimistic local update can diverge briefly from the DO state** if the write fails RBAC. The SDK rolls back automatically.
+- **WebSocket disconnects trigger an automatic reconnect** with a fresh snapshot. The client store reconciles silently — you usually don't need to handle this in app code.
+
+## RBAC at the wire
+
+Permissions are enforced **before** the DO broadcasts. A user without read access to a record never sees it on the wire, so client-side filters are not a security boundary — they're a usability concern.
+
+When a record's `visibilityField` changes from `draft` to `published`, the DO automatically broadcasts the record to clients that gain read access at that moment. The inverse also happens: making a record private fires a `record_removed` event for users who lose access.
+
+## Yjs, Canvas, and Presence rooms
+
+The same WebSocket pattern applies to the other DO types, but the wire vocabulary differs:
+
+- **`YjsRoom`** speaks the Yjs sync protocol. The DO holds the canonical Y.Doc and broadcasts updates.
+- **`CanvasRoom`** sends typed shape and viewport messages, optimized for high-frequency cursor and shape updates.
+- **`PresenceRoom`** is fire-and-forget — peer state is held in memory only, never persisted. Updates broadcast at full speed.
+- **`GameRoom`** runs an authoritative tick loop on the DO, broadcasting state snapshots to all players.
+
+Reach for `useQuery` / `useMutations` when you need durable, RBAC-filtered records. Reach for the room-specific hooks (`useYjsText`, `useCanvas`, `usePresenceRoom`, `useGameRoom`) when you need ephemeral or specialized state.
+
+## Disconnection and reconnection
+
+The SDK handles WebSocket lifecycle transparently:
+
+- On disconnect, the local store stays intact — UI keeps working with the last known snapshot.
+- On reconnect, the DO sends a fresh snapshot and the store reconciles.
+- During the offline window, mutations are queued locally and replayed on reconnect.
+
+You can observe the connection state on each hook (`useQuery`'s `status` returns `'loading' | 'ready' | 'error'`; `usePresenceRoom` exposes a `connected` boolean).
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="Data storage guide" icon="database" href="/guides/data-storage">
+    Walkthrough — define a schema and wire up CRUD.
+  </Card>
+  <Card title="Presence and cursors" icon="users" href="/guides/presence-and-cursors">
+    Build real-time presence with `usePresenceRoom`.
+  </Card>
+  <Card title="Collaborative editing" icon="pen-to-square" href="/guides/collaborative-editing">
+    Yjs-backed text and shapes.
+  </Card>
+  <Card title="Records reference" icon="code" href="/sdk-reference/client/records">
+    The full hooks API surface.
+  </Card>
+</CardGroup>

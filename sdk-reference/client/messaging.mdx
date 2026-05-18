@@ -1,0 +1,172 @@
+---
+title: "Messaging reference"
+description: "Channels, messages, reactions, members, and read receipts."
+---
+
+```ts
+import {
+  useChannels, useMessages, useReactions,
+  useChannelMembers, useReadReceipts, useConversation,
+  formatMessageTime, formatFullTimestamp, shouldGroupMessages,
+  getThreadCounts, groupReactionsForMessage, parseMessageMetadata,
+  getConversationDisplayName, getConversationParticipantIds,
+  isDMConversation,
+} from 'deepspace'
+```
+
+Every messaging hook returns `status: 'loading' | 'ready' | 'error'` and `error?: string` alongside its records. Gate skeleton states on `status`.
+
+## `useChannels()`
+
+```ts
+function useChannels(): {
+  channels: Channel[]
+  status: 'loading' | 'ready' | 'error'
+  error?: string
+  create:  (input: { name: string; type: 'public' | 'private' | 'dm'; description?: string }) => Promise<string>
+  update:  (channelId: string, patch: Partial<Channel>) => Promise<void>
+  archive: (channelId: string) => Promise<void>
+  remove:  (channelId: string) => Promise<void>
+}
+```
+
+`create({ name, type })` requires both fields. Passing only `{ name }` returns a channel with `type: undefined` and silently breaks downstream queries.
+
+## `useMessages(channelId, options?)`
+
+```ts
+function useMessages(channelId: string, options?: {}): {
+  messages: Message[]
+  status: 'loading' | 'ready' | 'error'
+  error?: string
+  send:        (input: { content: string; metadata?: object }) => Promise<string>
+  edit:        (messageId: string, patch: Partial<Message>) => Promise<void>
+  softDelete:  (messageId: string) => Promise<void>  // sets tombstone flag
+  remove:      (messageId: string) => Promise<void>  // hard delete
+}
+```
+
+Prefer `softDelete` over `remove` to preserve chat history continuity.
+
+## `useReactions(channelId)`
+
+```ts
+function useReactions(channelId: string): {
+  reactions: Reaction[]
+  status: 'loading' | 'ready' | 'error'
+  error?: string
+  getReactionsForMessage: (messageId: string) => Reaction[]   // O(1)
+  toggle: (messageId: string, emoji: string) => Promise<void>
+}
+```
+
+`toggle` adds the caller's reaction or removes it if it already exists.
+
+## `useChannelMembers(channelId)`
+
+```ts
+function useChannelMembers(channelId: string): {
+  members: ChannelMember[]
+  status: 'loading' | 'ready' | 'error'
+  error?: string
+  join:     () => Promise<void>
+  leave:    () => Promise<void>
+  isMember: (userId: string) => boolean
+}
+```
+
+## `useReadReceipts()`
+
+```ts
+function useReadReceipts(): {
+  receipts: ReadReceipt[]
+  status: 'loading' | 'ready' | 'error'
+  error?: string
+  markAsRead:     (channelId: string, messageId: string) => Promise<void>
+  getUnreadCount: (channelId: string) => number
+}
+```
+
+## `useConversation(options?)`
+
+For DM/conversation Durable Objects (scope `conv:<id>`) backed by `conv_messages` / `conv_reactions` / `conv_members` collections. Mount inside a `<RecordScope roomId="conv:..." schemas={CONVERSATION_SCHEMAS}>`.
+
+```ts
+function useConversation(options?: {}): {
+  messages: ConvMessage[]
+  reactions: ConvReaction[]
+  members: ConvMember[]
+  status: 'connecting' | 'connected'
+  send:           (input: { content: string }) => Promise<string>
+  edit:           (messageId: string, patch: object) => Promise<void>
+  remove:         (messageId: string) => Promise<void>
+  toggleReaction: (messageId: string, emoji: string) => Promise<void>
+}
+```
+
+Different from `useMessages` / `useReactions` / `useChannelMembers` — those target the channel-style collections within your app's main RecordRoom. `useConversation` targets a dedicated DM Durable Object.
+
+## Record types
+
+```ts
+type Channel = Envelope<{
+  name: string
+  type: 'public' | 'private' | 'dm'
+  description?: string
+  archived?: boolean
+}>
+
+type Message = Envelope<{
+  channelId: string
+  authorId: string
+  content: string
+  metadata?: object
+  deleted?: boolean
+}>
+
+type Reaction = Envelope<{
+  messageId: string
+  authorId: string
+  emoji: string
+}>
+
+type ChannelMember = Envelope<{
+  channelId: string
+  userId: string
+  joinedAt: string
+}>
+
+type ReadReceipt = Envelope<{
+  channelId: string
+  userId: string
+  lastReadMessageId: string
+}>
+```
+
+## Helper functions
+
+| Helper | Signature |
+|---|---|
+| `formatMessageTime(dateStr)` | Returns `'3:42 PM'` |
+| `formatFullTimestamp(dateStr)` | Returns `'Today at 3:42 PM'` |
+| `shouldGroupMessages(current, previous, options?)` | True if consecutive messages from the same author within a window |
+| `getThreadCounts(messages)` | Map of parent messageId → reply count |
+| `groupReactionsForMessage(reactions, messageId, currentUserId)` | Aggregates reactions by emoji |
+| `parseMessageMetadata(raw)` | Safe JSON parse of `metadata` field |
+
+## Conversation helpers
+
+| Helper | Signature |
+|---|---|
+| `getConversationDisplayName(conv)` | Resolves a display string from a conversation record |
+| `getConversationParticipantIds(conv)` | Returns the array of participant userIds |
+| `isDMConversation(type)` | True if `type === 'dm'` |
+
+## Directory conversations
+
+For cross-app conversations (the platform's shared `dir:<appHandle>` DO), use the directory hooks instead of `useChannels` / `useMessages`. These hooks support discoverable conversations, communities, and posts spanning multiple DeepSpace apps. See the [worker schemas reference](/sdk-reference/worker/schemas) for `DIRECTORY_SCHEMAS`.
+
+## See also
+
+- [Messaging guide](/guides/messaging) — usage patterns and worked examples
+- [Worker schemas reference](/sdk-reference/worker/schemas) — `CHANNELS_SCHEMA`, `MESSAGES_SCHEMA`, etc.

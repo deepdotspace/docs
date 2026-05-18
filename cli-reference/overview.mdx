@@ -1,0 +1,108 @@
+---
+title: "CLI overview"
+description: "The `deepspace` command — scaffold, develop, test, and deploy."
+---
+
+The CLI ships inside the `deepspace` package, which is added to every scaffolded app. You run it via `npx`:
+
+```bash
+npx deepspace <command> [options]
+```
+
+No global install is needed. To create a new app, use `npm create deepspace@latest` — it fetches the latest scaffolder on demand.
+
+## Command index
+
+| Command | Purpose |
+|---|---|
+| `dev` | Run the app locally with Vite + worker in-process |
+| `deploy` | Deploy to Workers for Platforms; live at `<name>.app.space` |
+| `undeploy` | Tear down a deployed app and its provisioned resources |
+| `login` | Authenticate via GitHub or Google OAuth |
+| `logout` | Clear the local session |
+| `whoami` | Print the current login state |
+| `add` | Install a scaffold feature (`ai-chat`, `messaging`, `kanban`, ...) |
+| `test` | Run the Playwright + Vitest test suites |
+| `screenshot` | Capture a screenshot of any URL via Playwright |
+| `kill` | Stop leaked workerd / wrangler / vite processes |
+| `integrations` / `invoke` | Discover and call third-party integration endpoints |
+| `domain` | Buy, attach, and manage custom domains |
+| `test-accounts` | Create and manage `@deepspace.test` accounts for testing |
+
+[Full command reference →](/cli-reference/commands)
+
+## Login state
+
+Login is shared across every app on the machine. One `npx deepspace login` covers `dev`, `test-accounts`, `deploy`, and billed integration calls for all apps.
+
+```bash
+npx deepspace whoami        # human-readable
+npx deepspace whoami --json # machine-readable
+```
+
+The session file lives at `~/.deepspace/session`. Treat it as secret — never commit it.
+
+## Agent-friendly defaults
+
+The CLI is designed to be safely invoked from automation:
+
+- **Non-interactive by default.** Omitting required arguments prints usage and exits 1 — it does not prompt on stdin.
+- **`--json` everywhere it matters.** `whoami`, `domain *`, `integrations list/info`, `test-accounts list` all support machine-readable output.
+- **`--yes` skips confirmation prompts** on destructive commands (`undeploy`, `domain detach`, `domain buy`).
+- **Help is plain text.** `--help` / `-h` produces ANSI-free output suitable for scripting.
+
+## Local dev workflow
+
+The standard development loop:
+
+<Steps>
+  <Step title="Scaffold">
+    ```bash
+    npm create deepspace@latest my-app
+    cd my-app
+    ```
+  </Step>
+  <Step title="Develop">
+    ```bash
+    npx deepspace dev
+    ```
+    Vite + worker run on `localhost:5173` with HMR.
+  </Step>
+  <Step title="Test">
+    ```bash
+    npx deepspace test
+    ```
+    Smoke + API specs run against the dev workers.
+  </Step>
+  <Step title="Deploy">
+    ```bash
+    npx deepspace deploy
+    ```
+    Live at `<name>.app.space` in ~30 seconds.
+  </Step>
+</Steps>
+
+## Cleaning up leaked processes
+
+If a previous `dev` session crashed or you closed the terminal without `Ctrl-C`, leaked `workerd` / `wrangler` / `vite` processes can hold ports. Use:
+
+```bash
+npx deepspace kill                   # default port 5173
+npx deepspace kill --port 5180
+npx deepspace kill --all             # sweep every workerd/wrangler/vite
+```
+
+<Warning>
+**Don't kill a parallel session's processes.** If a sibling session is running on port 5173, use `--port 5174` (and update `tests/playwright.config.ts` to match) instead of stopping their dev server.
+</Warning>
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="All commands" icon="terminal" href="/cli-reference/commands">
+    Every command, every flag.
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/get-started/quickstart">
+    Walk through the full dev loop.
+  </Card>
+</CardGroup>

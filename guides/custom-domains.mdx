@@ -1,0 +1,135 @@
+---
+title: "Custom domains"
+description: "Buy and attach a real domain to your DeepSpace app."
+---
+
+By default, every deployed app lives at `<name>.app.space`. Attach a real domain — `myapp.com`, `myapp.ai`, `myapp.io` — directly from the CLI. Domain purchase, DNS, and SSL are handled end-to-end; you don't touch a registrar dashboard.
+
+## How it works
+
+DeepSpace registers domains through a hybrid backend:
+
+- **Cloudflare Registrar** for ~27 TLDs at cost (`.com`, `.dev`, `.app`, `.xyz`, and others)
+- **Porkbun** for `.ai`, `.io`, `.me`, `.co`, ccTLDs, and other variants
+
+Routing uses Cloudflare Custom Hostnames against the platform's SaaS zone (`app.space`). After purchase, the platform provisions ownership and DCV records on the new domain's zone, then activates a hostname route.
+
+Billing is via Stripe Checkout — the same payment flow as in-app purchases. Auto-renew is on by default.
+
+## Search and buy
+
+```bash
+# Find an available domain and its price
+npx deepspace domain search my-startup
+
+# Buy via Stripe Checkout (browser opens for payment)
+npx deepspace domain buy my-startup.com
+```
+
+`buy` opens a Stripe Checkout tab in your browser. After payment, the CLI polls for provisioning:
+
+- **Cloudflare Registrar TLDs** (`.com`, `.dev`, `.app`): ~60-90 seconds
+- **Porkbun TLDs** (`.ai`, `.io`, `.me`): 15-60 minutes (registry-side NS propagation)
+
+You can Ctrl-C out of the polling loop without losing progress — provisioning continues server-side. Re-check with `domain status <domain>`.
+
+### Buy options
+
+```bash
+# Print the Checkout URL instead of opening a browser
+npx deepspace domain buy myapp.com --no-open
+
+# Exit immediately after Checkout session is created (no polling)
+npx deepspace domain buy myapp.com --no-wait
+
+# Skip the confirmation prompt (required in non-TTY contexts)
+npx deepspace domain buy myapp.com --yes
+
+# Combine with --app to buy and attach in one command
+npx deepspace domain buy myapp.com --app my-app
+```
+
+## List, inspect, and manage
+
+```bash
+# Domains you own
+npx deepspace domain list
+npx deepspace domain list --json
+
+# Detail for one domain (registrar status, hostname status, expiry, errors)
+npx deepspace domain status myapp.com
+npx deepspace domain status myapp.com --json
+```
+
+## Re-point a domain at a different app
+
+```bash
+npx deepspace domain attach myapp.com --app new-app-name
+```
+
+Use this when:
+
+- You rename your wrangler.toml `name` and need to re-attach
+- You want to move a domain from a staging app to production
+- You're consolidating multiple domains under one app
+
+## Detach without releasing
+
+```bash
+npx deepspace domain detach myapp.com --yes
+```
+
+`detach` removes routing but keeps the registration on file. You keep owning the domain and can re-attach later. There is no `domain release` — releasing a registration goes through the registrar's own portal.
+
+## Auto-renew
+
+```bash
+# Disable auto-renew (will expire at end of term)
+npx deepspace domain renew myapp.com --auto off
+
+# Re-enable
+npx deepspace domain renew myapp.com --auto on
+```
+
+## Agent-friendly flags
+
+The CLI is designed for both humans and automation:
+
+| Flag | Available on | Purpose |
+|---|---|---|
+| `--json` | `search`, `buy`, `list`, `status`, `attach` | Machine-readable stdout |
+| `--yes` | `buy`, `detach` | Skip confirmation prompt (required in non-TTY) |
+| `--no-wait` | `buy` | Exit after Checkout session creation |
+| `--no-open` | `buy` | Print URL instead of opening browser |
+
+## Pitfalls
+
+<AccordionGroup>
+  <Accordion title="`--app` defaults to your current directory">
+    If you run `deepspace domain buy myapp.com` outside an app directory without `--app`, the CLI errors with `No app specified. Pass --app <name>, or run from an app directory with a wrangler.toml.`
+  </Accordion>
+  <Accordion title="Premium domains can have different registration and renewal prices">
+    `chargedCents` in `list` / `status` is what you paid this year. The pricing object exposes separate `registrationCost` / `renewalCost`. For non-premium TLDs they match; for premium domains, introductory pricing can reset at renewal — read `domain status` before assuming.
+  </Accordion>
+  <Accordion title="Don't wrap `buy` in `timeout N`">
+    The CLI polls for up to 5 minutes (Cloudflare TLDs) or 60 minutes (Porkbun TLDs). An artificial timeout aborts before payment completes. Use `--no-wait` for fire-and-forget; otherwise let it run and Ctrl-C if needed (safe; provisioning continues server-side).
+  </Accordion>
+  <Accordion title="Renaming your app breaks domain routing">
+    `domain attach --app <X>` writes a hostname mapping keyed on `X`, which must match the deployed worker's `name`. Renaming the app post-deploy without re-deploying and re-attaching breaks routing.
+  </Accordion>
+</AccordionGroup>
+
+## Pricing visibility
+
+The CLI shows the price during `search` and the Checkout flow. Pricing comes from the registrar (Cloudflare Registrar or Porkbun) — DeepSpace doesn't add a markup. Renewals charge to your saved Stripe card automatically.
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="Deployment" icon="cloud-arrow-up" href="/concepts/deployment">
+    How deploys work, and where subdomains come from.
+  </Card>
+  <Card title="CLI reference" icon="terminal" href="/cli-reference/commands#domain">
+    All `domain` subcommands and flags.
+  </Card>
+</CardGroup>

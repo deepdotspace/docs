@@ -1,0 +1,236 @@
+---
+title: "Presence and cursors"
+description: "Show who's online and broadcast live cursor, typing, and viewport state."
+---
+
+DeepSpace exposes two distinct primitives for "who else is here right now":
+
+- **`usePresence`** — derived online/offline status from heartbeats stored on the users collection.
+- **`usePresenceRoom`** — high-frequency ephemeral state (cursors, typing, viewport) broadcast through a dedicated Durable Object.
+
+Pick `usePresence` for "list of online users." Pick `usePresenceRoom` for cursor or typing UIs that need sub-second updates.
+
+## Online / offline — `usePresence`
+
+`usePresence` reads `lastSeenAt` from the users collection in the current `RecordScope` and sends a heartbeat every 60 seconds. A user is "online" if their last heartbeat was within `timeoutMs` (default 5 minutes).
+
+```tsx
+import { usePresence } from 'deepspace'
+
+function OnlineList() {
+  const { users, isOnline, getLastSeen } = usePresence()
+
+  return (
+    <ul>
+      {users.map((u) => (
+        <li key={u.id}>
+          <span className={isOnline(u.id) ? 'online' : 'offline'}>●</span>
+          {u.name}
+          {!isOnline(u.id) && <small>last seen {getLastSeen(u.id)}</small>}
+        </li>
+      ))}
+    </ul>
+  )
+}
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `users` | `User[]` | All users in the current scope |
+| `isOnline` | `(userId: string) => boolean` | Whether the user heartbeated within the timeout |
+| `getLastSeen` | `(userId: string) => string \| null` | Last heartbeat timestamp |
+
+Pass `options.timeoutMs` to tune the online threshold:
+
+```tsx
+const { isOnline } = usePresence({ timeoutMs: 2 * 60 * 1000 }) // 2 minutes
+```
+
+`usePresence` writes its heartbeat to the users collection, so heartbeats are visible to anyone with read access to users — and the data persists. Use it for "currently online" lists where 60-second granularity is acceptable.
+
+## Live cursors and typing — `usePresenceRoom`
+
+For sub-second cursor or typing indicators, use `usePresenceRoom`. It connects to a dedicated `PresenceRoom` Durable Object that holds peer state **in memory only** — nothing is persisted.
+
+```tsx
+import { usePresenceRoom } from 'deepspace'
+
+function Canvas({ canvasId }: { canvasId: string }) {
+  const { peers, updateState } = usePresenceRoom(`canvas:${canvasId}`)
+
+  return (
+    <div
+      onMouseMove={(e) => updateState({ cursor: { x: e.clientX, y: e.clientY } })}
+    >
+      {peers.map((peer) => {
+        const cursor = peer.state.cursor as { x: number; y: number } | undefined
+        if (!cursor) return null
+        return (
+          <div
+            key={peer.userId}
+            style={{ position: 'absolute', left: cursor.x, top: cursor.y }}
+          >
+            {peer.userName}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `peers` | `PresencePeerClient[]` | All other connected peers (excludes self) |
+| `connected` | `boolean` | WebSocket connection status |
+| `updateState` | `(state: object) => void` | Merge into your own peer state; broadcasts to peers |
+
+### Scoping rooms
+
+The first argument to `usePresenceRoom` is any string. Use it to scope presence to a specific surface:
+
+```tsx
+usePresenceRoom(`canvas:${canvasId}`)        // Per-canvas cursors
+usePresenceRoom(`doc:${docId}`)              // Per-document presence
+usePresenceRoom(`thread:${channelId}`)       // Per-channel typing
+```
+
+Two clients passing the same scope ID connect to the same `PresenceRoom` instance and see each other.
+
+### State merging
+
+`updateState` merges into your peer's state object. You can broadcast multiple kinds of state at once:
+
+```tsx
+updateState({ cursor: { x, y } })      // just cursor
+updateState({ typing: true })          // just typing
+updateState({ cursor: { x, y }, typing: true })  // both
+```
+
+To clear a state field, set it explicitly:
+
+```tsx
+updateState({ typing: false })
+updateState({ cursor: null })
+```
+
+### Peer shape
+
+Each peer in `peers` has this shape:
+
+```ts
+type PresencePeerClient = {
+  userId: string
+  userName: string
+  userEmail: string
+  userImageUrl?: string
+  joinedAt: string
+  state: Record<string, unknown>
+}
+```
+
+Identity fields (`userId`, `userName`, etc.) come from the verified JWT — the client can't spoof them.
+
+## Color-coding peers
+
+For cursor displays, you typically want a stable color per user. The SDK ships `getUserColor` for this:
+
+```tsx
+import { getUserColor, DEFAULT_USER_COLORS } from 'deepspace'
+
+const color = getUserColor(peer.userId)  // deterministic hash → palette index
+```
+
+The same userId always returns the same color. Pass a custom palette for brand colors:
+
+```tsx
+const color = getUserColor(peer.userId, ['#ff0', '#0f0', '#00f'])
+```
+
+## Typing indicator example
+
+A common pattern — show "X is typing…" in a chat:
+
+```tsx
+import { usePresenceRoom } from 'deepspace'
+import { useEffect, useRef } from 'react'
+
+function MessageInput({ channelId, value, onChange }: Props) {
+  const { peers, updateState } = usePresenceRoom(`thread:${channelId}`)
+  const typingTimer = useRef<ReturnType<typeof setTimeout>>()
+
+  function handleChange(v: string) {
+    onChange(v)
+    updateState({ typing: true })
+    clearTimeout(typingTimer.current)
+    typingTimer.current = setTimeout(() => updateState({ typing: false }), 1500)
+  }
+
+  const typers = peers.filter((p) => p.state.typing).map((p) => p.userName)
+
+  return (
+    <>
+      <input value={value} onChange={(e) => handleChange(e.target.value)} />
+      {typers.length > 0 && <p>{typers.join(', ')} typing…</p>}
+    </>
+  )
+}
+```
+
+## Cursor overlay with names
+
+```tsx
+function CursorOverlay({ scope }: { scope: string }) {
+  const { peers } = usePresenceRoom(scope)
+
+  return (
+    <>
+      {peers.map((peer) => {
+        const cursor = peer.state.cursor as { x: number; y: number } | undefined
+        if (!cursor) return null
+        const color = getUserColor(peer.userId)
+        return (
+          <div
+            key={peer.userId}
+            style={{
+              position: 'absolute',
+              left: cursor.x,
+              top: cursor.y,
+              pointerEvents: 'none',
+              color,
+            }}
+          >
+            <Cursor />
+            <span>{peer.userName}</span>
+          </div>
+        )
+      })}
+    </>
+  )
+}
+```
+
+## Choosing the right hook
+
+| Need | Use |
+|---|---|
+| "Who's online right now?" (60s granularity) | `usePresence` |
+| "What was their last activity time?" | `usePresence` |
+| Live cursor positions | `usePresenceRoom` |
+| Typing indicators | `usePresenceRoom` |
+| Per-document presence | `usePresenceRoom` |
+| State that needs persistence | Records (`useQuery` / `useMutations`) |
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="Canvas" icon="brush" href="/guides/canvas">
+    Real-time shapes and viewports on `useCanvas`.
+  </Card>
+  <Card title="Collaborative editing" icon="pen-to-square" href="/guides/collaborative-editing">
+    Yjs-backed text and rich data.
+  </Card>
+  <Card title="Real-time sync" icon="bolt" href="/concepts/realtime-sync">
+    How sync works under the hood.
+  </Card>
+</CardGroup>

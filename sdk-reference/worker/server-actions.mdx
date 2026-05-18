@@ -1,0 +1,155 @@
+---
+title: "Server actions reference"
+description: "`ActionHandler`, `ActionContext`, `ActionTools`, and `ActionResult`."
+---
+
+Server actions are defined in `src/actions/index.ts` and exposed at `POST /api/actions/:name`. They run as the app — RBAC checks are bypassed via the `X-App-Action` header — and are the right tool for cross-collection orchestration or owner-gated operations.
+
+```ts
+import type {
+  ActionHandler, ActionContext, ActionTools, ActionResult,
+  MutateActionData, GetActionData, QueryActionData, IntegrationActionData,
+} from 'deepspace/worker'
+```
+
+## `ActionHandler<TEnv>`
+
+```ts
+type ActionHandler<TEnv = Record<string, unknown>> =
+  (ctx: ActionContext<TEnv>) => Promise<ActionResult>
+```
+
+Export a record of named actions from `src/actions/index.ts`:
+
+```ts
+export const actions: Record<string, ActionHandler<Env>> = {
+  inviteAttendee: async ({ params, tools, userId }) => {
+    // ...
+    return { success: true, data: { added: 1 } }
+  },
+}
+```
+
+The handler name (the key) becomes the endpoint path: `/api/actions/inviteAttendee`.
+
+## `ActionContext<TEnv>`
+
+```ts
+type ActionContext<TEnv> = {
+  userId: string                       // verified JWT subject
+  params: Record<string, unknown>      // request body
+  tools: ActionTools
+  env: TEnv                            // worker bindings, typed
+}
+```
+
+`userId` is the caller — not the app owner. Use it for audit logs and per-caller logic. For owner-only actions, gate on `userId === env.OWNER_USER_ID`.
+
+## `ActionTools`
+
+```ts
+type ActionTools = {
+  create<T>: (coll: string, data: T) => Promise<ActionResult<MutateActionData<T>>>
+  update<T>: (coll: string, id: string, patch: Partial<T>) => Promise<ActionResult<MutateActionData<T>>>
+  remove:    (coll: string, id: string) => Promise<ActionResult<{ deleted: true }>>
+  get<T>:    (coll: string, id: string) => Promise<ActionResult<GetActionData<T>>>
+  query<T>:  (coll: string, opts?: QueryOpts) => Promise<ActionResult<QueryActionData<T>>>
+  integration<T>: (endpoint: string, body?: object) => Promise<ActionResult<IntegrationActionData<T>>>
+}
+```
+
+| Method | Returns (under `.data`) |
+|---|---|
+| `tools.get(coll, id)` | `{ record: Envelope<T> }` |
+| `tools.query(coll, opts?)` | `{ records: Envelope<T>[]; count: number }` |
+| `tools.create(coll, data)` | `{ recordId: string; record: Envelope<T> }` |
+| `tools.update(coll, id, patch)` | `{ recordId: string; record: Envelope<T> }` |
+| `tools.remove(coll, id)` | `{ deleted: true }` |
+| `tools.integration(endpoint, body)` | `{ response: T; status?: number }` |
+
+All operations bypass caller RBAC. **`tools.query` sees every record in the collection** regardless of the caller's role — pass a `where` clause to scope.
+
+## `ActionResult<T>`
+
+```ts
+type ActionResult<TData = unknown> =
+  | { success: true;  data: TData;  error?: never }
+  | { success: false; data?: never; error: string }
+```
+
+Narrow with `if (result.success)` before reading `result.data`:
+
+```ts
+const r = await tools.get<EventData>('events', eventId)
+if (!r.success) return r
+const event = r.data.record   // typed as Envelope<EventData>
+```
+
+## Integration billing
+
+`tools.integration(endpoint, body)` proxies through the api-worker. Billing follows `src/integrations.ts`:
+
+| `billing` setting | Who pays |
+|---|---|
+| `'developer'` | The app owner via `APP_OWNER_JWT` |
+| `'user'` | The signed-in caller |
+
+The api-worker reads the JWT subject — there's no client-supplied override (`X-Billing-User-Id` is ignored).
+
+## Owner-only pattern
+
+Gate actions that spend owner resources:
+
+```ts
+export const recomputeAnalytics: ActionHandler<Env> = async (ctx) => {
+  if (ctx.env.OWNER_USER_ID && ctx.userId !== ctx.env.OWNER_USER_ID) {
+    return { success: false, error: 'Forbidden: owner only' }
+  }
+  // privileged work
+  return { success: true, data: {} }
+}
+```
+
+`OWNER_USER_ID` is set on every deployed app and is the canonical trust anchor for owner-only operations.
+
+## Calling from the client
+
+```ts
+import { getAuthToken } from 'deepspace'
+
+const res = await fetch('/api/actions/inviteAttendee', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${await getAuthToken()}`,
+  },
+  body: JSON.stringify({ eventId, attendeeId }),
+})
+const result = await res.json() as ActionResult
+```
+
+The action's `success` / `data` / `error` shape is forwarded verbatim in the HTTP response body. HTTP status is 200 on success, 401 if unauthenticated, 404 if the action name doesn't exist, 500 on uncaught throws.
+
+## Type tip — post-write record envelope
+
+The published `MutateActionData` declares only `{ recordId }`. TypeScript rejects `result.data.record` even though the value exists at runtime. If you need the post-write envelope, either:
+
+```ts
+// Re-query
+const r = await tools.update('events', id, patch)
+if (r.success) {
+  const event = (await tools.get('events', r.data.recordId)).data
+}
+
+// Or cast
+const r = await tools.update<EventData>('events', id, patch)
+if (r.success) {
+  const event = (r.data as { recordId: string; record: Envelope<EventData> }).record
+}
+```
+
+## See also
+
+- [Server actions guide](/guides/server-actions) — patterns and worked examples
+- [Permissions concepts](/concepts/permissions) — what RBAC bypass means
+- [External APIs guide](/guides/external-apis) — billing routing for `tools.integration`

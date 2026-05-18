@@ -1,0 +1,83 @@
+---
+title: "Introduction"
+description: "What DeepSpace is, who it's for, and why you'd use it."
+---
+
+DeepSpace is a batteries-included SDK for building real-time collaborative applications. It is opinionated where opinions save you time, and unopinionated everywhere else — your app is a normal Vite + React project on the frontend and a Hono-based Cloudflare Worker on the backend. The SDK is the glue: providers, hooks, Durable Object base classes, a CLI, and a deploy pipeline that takes you from `npm create` to a live URL in minutes.
+
+## What you get out of the box
+
+When you scaffold a new app, you get a working starter with all of this already wired up:
+
+- **Authentication** — Better Auth with GitHub, Google, and email/password sign-in. JWTs are minted by the DeepSpace platform's auth service; you don't run an auth server.
+- **Data sync** — A SQLite-backed Durable Object per app, with WebSocket-based subscriptions, optimistic local mutations, and per-collection role-based access control.
+- **Real-time primitives** — Channel messaging, DMs, reactions, presence, live cursors, Yjs-backed collaborative text and shapes, and a turn-tick game-room base class.
+- **File storage** — R2-backed uploads with scoped buckets.
+- **AI** — Streamed Claude, OpenAI, and Cerebras with multi-turn tool use, persistent chat history, and automatic context compaction.
+- **Payments** — Stripe subscriptions, one-time products, ad-hoc charges, refunds, and self-service billing portals.
+- **Scheduled jobs** — Per-app cron via a built-in Durable Object, with an admin monitor hook.
+- **Third-party integrations** — A proxy that fronts 200+ external API endpoints (OpenAI, Anthropic, Stripe, Gmail, Calendar, LiveKit, finance, search, media, and more), with billing routed to the developer or the end-user.
+- **Custom Cloudflare bindings** — Declare Vectorize, KV, D1, Queues, Browser Rendering, Hyperdrive, or your own R2 buckets and the deploy pipeline auto-provisions them.
+- **Custom domains** — Buy and attach a real domain (`.com`, `.ai`, `.io`, and others) directly from the CLI.
+
+## Who it's for
+
+DeepSpace is designed for developers building apps where state is shared across users or sessions. If your app needs any of the following, you're in the right place:
+
+- Real-time updates across multiple browsers or devices
+- Per-user roles and access control on shared data
+- Collaborative editing (text, shapes, canvas)
+- Channel-based or DM-style messaging
+- A streamed AI chat surface with tool use
+- A billing model with subscriptions or one-time purchases
+- Cron jobs or background work without standing up new infrastructure
+
+DeepSpace runs on Cloudflare's global network, so apps are low-latency by default. You write your worker once; it runs everywhere.
+
+## What it isn't
+
+- **Not a no-code platform.** You write TypeScript and React. The CLI scaffolds, runs, and deploys — it doesn't generate features.
+- **Not a UI library.** Scaffolds include a shadcn-style primitives kit and 15 theme presets, but you own the design.
+- **Not a backend framework.** The worker is a normal Hono app; you can add routes, middleware, and bindings freely.
+- **Not a SaaS lock-in.** Apps deploy to Cloudflare Workers — you own the runtime, the data sits in your own Durable Objects, and you can eject at any time.
+
+## Architecture at a glance
+
+Each DeepSpace app is two pieces deployed together:
+
+1. **Your Worker** — a Cloudflare Worker hosting the React SPA, the API routes, and per-app Durable Objects (records, Yjs, canvas, presence, cron).
+2. **Platform Workers** — DeepSpace-operated services that handle authentication, payments, integration proxying, and cross-app data sharing. You never deploy these; the SDK talks to them on your behalf.
+
+```
+              ┌──────────────────────────────────────────┐
+              │           Your Worker (deployed)         │
+              │                                          │
+   Browser ──▶│  React SPA  ──▶  Hono routes  ──▶  DOs   │
+              │                                          │
+              └────────┬────────────────────┬────────────┘
+                       │                    │
+                       ▼                    ▼
+                ┌──────────────┐    ┌────────────────────┐
+                │  Auth worker │    │ API / Platform     │
+                │  (platform)  │    │ workers (platform) │
+                └──────────────┘    └────────────────────┘
+```
+
+[Read the full architecture overview →](/concepts/architecture)
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/get-started/quickstart">
+    Scaffold and deploy your first app.
+  </Card>
+  <Card title="Installation" icon="download" href="/get-started/installation">
+    Prereqs, account setup, and CLI login.
+  </Card>
+  <Card title="Project structure" icon="folder-tree" href="/get-started/project-structure">
+    A tour of the scaffolded files and what each one does.
+  </Card>
+  <Card title="Concepts" icon="book" href="/concepts/architecture">
+    Learn how the SDK is organized before you build.
+  </Card>
+</CardGroup>

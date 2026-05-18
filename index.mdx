@@ -1,66 +1,95 @@
 ---
-title: "Welcome to DeepSpace"
+title: "DeepSpace SDK"
+description: "Build real-time collaborative apps in one package. Auth, storage, multiplayer, payments, and zero-config deploys to your own subdomain."
 ---
 
-DeepSpace is a platform where you can build, discover, and share interactive apps — all without writing code. Describe what you want in plain language, and the Deepspace agent builds it for you.
+DeepSpace is a full-stack SDK for shipping real-time apps on Cloudflare Workers. One package gives you authentication, SQLite-backed data sync, role-based permissions, presence, collaborative editing, channel-based messaging, file storage, AI chat, scheduled jobs, payments, and deploys to `<your-app>.app.space` — or your own custom domain.
 
-Whether you need a habit tracker, a sales dashboard, a trip planner, or a game, you can have it running in minutes.
+```bash
+npm create deepspace@latest my-app
+cd my-app
+npx deepspace dev
+```
 
-## Key Concepts
-
-### Spaces
-
-A space is your workspace — it's where everything lives. When you open DeepSpace, you're in a space.
-
-There are two types:
-
-- **Desktop** — A fixed-viewport layout where widgets are arranged in a dock. Great for dashboards, daily tools, and structured setups.
-- **Canvas** — A free-form infinite canvas you can pan and zoom. Great for brainstorming, visual layouts, and larger projects.
-
-You can create multiple spaces and switch between them. The Library also has a **Spaces** tab where you can browse and import spaces others have shared.
-
-### Widgets
-
-Widgets are the core of DeepSpace. Each widget is a self-contained mini-app — a task tracker, a calculator, a dashboard, a game, anything you need.
-
-You can:
-- **Browse** the library and add widgets others have built
-- **Build** your own by describing what you want to the Deepspace agent
-- **Customize** existing widgets to fit your needs
-- **Share** what you create with the community
-- **Deploy** a widget as a standalone website
-
-Widgets store data automatically — anything you add persists across sessions without you having to think about it.
-
-### Themes
-
-Themes control the look and feel of your space. You can browse community-created themes in the Library, or create your own by uploading an image or video — we generate a matching color palette automatically.
-
-### Deepspace Agent
-
-Deepspace Agent is your builder. Open the chat and tell it what you want in everyday language — "make me a workout tracker" or "build a dashboard for my sales data" — and it creates a working widget for you. You can keep refining it through conversation until it's exactly right.
-
-When you first open the chat, you'll see a set of suggestions to help you get started.
-
-## This Guide
+A new app boots in under a minute with sensible defaults: file-based routing, Tailwind v4, shadcn-style UI primitives, and a starter worker wired to a per-app Durable Object. When you're ready to ship, one command deploys to the edge.
 
 <CardGroup cols={2}>
-  <Card title="Library" icon="grid-2" href="/getting-started/library">
-    Browse widgets, themes, and spaces
+  <Card title="Quickstart" icon="rocket" href="/get-started/quickstart">
+    Scaffold, run, and deploy your first app in five minutes.
   </Card>
-  <Card title="Building Widgets" icon="hammer" href="/getting-started/building-widgets">
-    Create your own widgets with the Deepspace agent
+  <Card title="Architecture" icon="diagram-project" href="/concepts/architecture">
+    How the worker, Durable Objects, and platform fit together.
   </Card>
-  <Card title="AI Tips" icon="lightbulb" href="/getting-started/ai-tips">
-    Get better results from the Deepspace agent
+  <Card title="Client hooks" icon="react" href="/sdk-reference/client/records">
+    `useQuery`, `useMutations`, `useAuth`, and the rest.
   </Card>
-  <Card title="Integrations" icon="plug" href="/getting-started/integrations">
-    Connect your widgets to Google Calendar, Gmail, and more
+  <Card title="CLI" icon="terminal" href="/cli-reference/overview">
+    `deepspace dev`, `deploy`, `add`, `domain`, and more.
   </Card>
-  <Card title="Sharing" icon="share-nodes" href="/getting-started/sharing">
-    Share spaces, publish widgets, and collaborate
+</CardGroup>
+
+## What you can build
+
+DeepSpace is opinionated for apps where state is shared. The SDK ships the primitives so you don't have to write them.
+
+<CardGroup cols={2}>
+  <Card title="Multiplayer apps" icon="users">
+    Live cursors, presence, and per-collection RBAC with no extra plumbing.
   </Card>
-  <Card title="What's Next" icon="arrow-right" href="/getting-started/whats-next">
-    Where to go from here
+  <Card title="Collaborative editors" icon="pen-to-square">
+    Yjs-backed text fields and shapes, synced over WebSocket.
+  </Card>
+  <Card title="Messaging products" icon="message">
+    Channels, DMs, reactions, and read receipts as drop-in schemas.
+  </Card>
+  <Card title="AI applications" icon="sparkles">
+    Streamed Claude, GPT, or Cerebras with tool use over your records.
+  </Card>
+  <Card title="SaaS with billing" icon="credit-card">
+    Subscriptions, one-time products, and refunds via Stripe Checkout.
+  </Card>
+  <Card title="Internal tools" icon="screwdriver-wrench">
+    Dashboards, trackers, and admin consoles with auth and storage built in.
+  </Card>
+</CardGroup>
+
+## Two imports
+
+Everything you need lives behind two import paths.
+
+```tsx
+// Frontend (React)
+import { RecordProvider, useQuery, useMutations, useAuth } from 'deepspace'
+
+// Worker (Cloudflare Worker)
+import { RecordRoom, verifyJwt, CHANNELS_SCHEMA } from 'deepspace/worker'
+```
+
+A third entry point, `deepspace/testing`, exposes a Playwright fixture for multiplayer tests. See the [Testing guide](/guides/testing).
+
+## How the SDK is organized
+
+The DeepSpace SDK has three surfaces. Most apps only need the first two.
+
+| Surface | What lives here | Import from |
+|---|---|---|
+| **Client** | React hooks, providers, auth UI, theming | `deepspace` |
+| **Worker** | Durable Object base classes, schemas, JWT verification, AI helpers | `deepspace/worker` |
+| **CLI** | Project scaffold, dev server, deploy, integration probes | `npx deepspace` |
+
+## Where to next
+
+<CardGroup cols={2}>
+  <Card title="Get started" icon="play" href="/get-started/introduction">
+    Read the introduction, then run the quickstart.
+  </Card>
+  <Card title="Learn the concepts" icon="book" href="/concepts/architecture">
+    Workers, Durable Objects, scopes, and the data model.
+  </Card>
+  <Card title="Browse guides" icon="map" href="/guides/authentication">
+    Task-shaped walkthroughs — auth, messaging, payments, and more.
+  </Card>
+  <Card title="API reference" icon="code" href="/sdk-reference/overview">
+    Every export, with signatures and examples.
   </Card>
 </CardGroup>

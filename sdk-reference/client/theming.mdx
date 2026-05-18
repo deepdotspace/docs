@@ -1,0 +1,102 @@
+---
+title: "Theming reference"
+description: "Theme providers, helpers, and the user color palette."
+---
+
+DeepSpace ships 15 ready-made theme presets and CSS-variable-based theming. Most apps pick a preset with `<html data-theme="...">` and never touch the runtime API. The exports below are for advanced cases — applying themes dynamically, embedding DeepSpace surfaces in a deployed site, or building a theme picker.
+
+```ts
+import {
+  DeepSpaceThemeProvider,
+  useIsDarkTheme, isDarkColor,
+  applyDeepSpaceTheme, clearDeepSpaceTheme, readThemeFromDOM,
+  applyUIThemeTokens,
+  DEEPSPACE_THEME_PROPERTIES,
+  DEFAULT_USER_COLORS, getUserColor,
+} from 'deepspace'
+```
+
+## `<DeepSpaceThemeProvider theme={...}>`
+
+Wraps the tree with theme tokens. Reads from `--color-*` CSS variables by default — usually you don't need this; the `[data-theme]` attribute on `<html>` does the work.
+
+Reach for it when:
+
+- Embedding DeepSpace surfaces (cross-app pills, directory panels) on a deployed site
+- Switching themes at runtime from React state
+- Building a theme picker UI
+
+## Hooks and utilities
+
+| Export | Signature | Description |
+|---|---|---|
+| `useIsDarkTheme()` | `() => boolean` | True if the current theme is a dark variant. |
+| `isDarkColor(color)` | `(color: string) => boolean` | Luminance check on a single color value. |
+
+## Imperative API
+
+```ts
+applyDeepSpaceTheme(config: ThemeConfig, root?: HTMLElement): void
+clearDeepSpaceTheme(root?: HTMLElement): void
+readThemeFromDOM(root?: HTMLElement): ThemeConfig
+applyUIThemeTokens(theme: 'light' | 'dark', root?: HTMLElement, accent?: string): void
+```
+
+| Function | Purpose |
+|---|---|
+| `applyDeepSpaceTheme` | Sets the `--theme-*` CSS variables consumed by cross-app surfaces. |
+| `clearDeepSpaceTheme` | Removes theme variables. |
+| `readThemeFromDOM` | Inspects `--color-*` tokens and derives a theme config. |
+| `applyUIThemeTokens` | Sets `UI_TOKENS_LIGHT` / `UI_TOKENS_DARK` for dark/light mode switches. |
+
+`DEEPSPACE_THEME_PROPERTIES` is the list of CSS custom properties the theme defines — useful for introspection.
+
+## User colors
+
+```ts
+// 12-color palette for cursors, avatars, and "who's typing" pills
+const DEFAULT_USER_COLORS: readonly string[]
+
+// Deterministic hash: same userId always returns the same color
+function getUserColor(userId: string, palette?: string[]): string
+```
+
+```tsx
+import { getUserColor } from 'deepspace'
+
+<div style={{ color: getUserColor(peer.userId) }}>{peer.userName}</div>
+```
+
+Pass a custom palette to match your brand:
+
+```ts
+const color = getUserColor(userId, ['#1D4ED8', '#16A34A', '#DC2626'])
+```
+
+## UI primitives (SDK-provided)
+
+The SDK ships a small set of UI primitives, but the scaffolded app usually includes its own copies in `src/components/ui/`. Check `_app.tsx` to see which `ToastProvider` is wrapped in the tree before importing `useToast`.
+
+<Warning>
+**Mixing SDK and local contexts produces `useToast must be used within ToastProvider`.** The scaffold's local `src/components/ui/` ships its own React contexts; the SDK's hooks only find providers from the same module instance. Import primitives from `../components/ui` (local), not from `deepspace`, unless `_app.tsx` is wrapped in the SDK's `ToastProvider`.
+</Warning>
+
+| Export | Description |
+|---|---|
+| `ToastProvider` | Context for toasts (SDK version) |
+| `useToast()` | Returns `{ success, error, warning, info, toast, dismiss, dismissAll }` |
+
+## Theme presets reference
+
+The scaffold's 15 presets are defined in `src/themes.css` with a typed catalog in `src/themes.ts`. Pick by setting `<html data-theme="...">`:
+
+**Dark themes:** `slate` (default), `ink`, `aurora`, `midnight`, `forest`, `ember`, `graphite`, `noir`
+
+**Light themes:** `linen`, `mist`, `sand`, `bloom`, `paper`, `lavender`, `citrus`
+
+For customization (overriding tokens, adding new presets, light/dark toggles), see the scaffold's `themes.ts` header comments.
+
+## See also
+
+- [Get started → Project structure](/get-started/project-structure) — theme files in the scaffold
+- [Real-time reference](/sdk-reference/client/realtime) — `getUserColor` for cursors

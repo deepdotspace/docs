@@ -1,0 +1,220 @@
+---
+title: "Server actions"
+description: "Privileged worker-side functions that bypass user RBAC for orchestration and admin operations."
+---
+
+Server actions are app-defined functions called from the client with the user's JWT. They run **as the app** — RBAC checks are bypassed, so they can do things the user themselves can't, like updating two collections atomically or running owner-only operations.
+
+Reach for server actions when you need to:
+
+- Orchestrate writes across multiple collections in one round-trip
+- Run admin operations (recompute analytics, send notifications, mass-update records)
+- Spend owner credits via an integration on behalf of the user
+- Wrap business logic that needs server-side validation
+
+If the operation can be done with the caller's own RBAC, prefer `useMutations` on the client — keep server actions for cases that genuinely need escalation.
+
+## Define an action
+
+```ts
+// src/actions/index.ts
+import type { ActionHandler } from 'deepspace/worker'
+
+interface EventData {
+  attendeeIds?: string[]
+}
+
+export const actions: Record<string, ActionHandler<Env>> = {
+  inviteAttendee: async ({ params, tools }) => {
+    const eventId = params.eventId as string
+    const attendeeId = params.attendeeId as string
+
+    const event = await tools.get('events', eventId)
+    if (!event.success) return event
+
+    const { record } = event.data as { record: { data: EventData } }
+    const current = record.data.attendeeIds ?? []
+    const next = [...new Set([...current, attendeeId])]
+
+    return tools.update('events', eventId, { attendeeIds: next })
+  },
+}
+```
+
+The action is automatically exposed at `POST /api/actions/inviteAttendee`. The caller's JWT is verified before the action runs.
+
+## Call from the client
+
+```ts
+import { getAuthToken } from 'deepspace'
+
+const res = await fetch('/api/actions/inviteAttendee', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${await getAuthToken()}`,
+  },
+  body: JSON.stringify({ eventId, attendeeId }),
+})
+
+const { success, data, error } = await res.json()
+```
+
+## The action context
+
+Each action receives a context with the verified caller and a tools API:
+
+```ts
+type ActionContext<TEnv> = {
+  userId: string              // caller (verified JWT subject)
+  params: Record<string, unknown>  // request body
+  tools: ActionTools
+  env: TEnv
+}
+```
+
+### `tools` — RBAC-bypassing operations
+
+| Method | Returns | Notes |
+|---|---|---|
+| `tools.create(coll, data)` | `{ recordId, record }` | Create a record. |
+| `tools.update(coll, id, patch)` | `{ recordId, record }` | Patch an existing record. |
+| `tools.remove(coll, id)` | `{ deleted: true }` | Delete a record. |
+| `tools.get(coll, id)` | `{ record }` | Fetch one record. |
+| `tools.query(coll, opts?)` | `{ records, count }` | List records with filtering. |
+| `tools.integration(endpoint, body)` | `{ response, status? }` | Call a third-party integration. Billing follows `src/integrations.ts`. |
+
+All operations return an `ActionResult<T>` envelope — narrow with `if (result.success)` before accessing `result.data`.
+
+```ts
+const r = await tools.query('items', { where: { status: 'pending' } })
+if (r.success) {
+  for (const item of r.data.records) {
+    await tools.update('items', item.recordId, { status: 'processed' })
+  }
+}
+```
+
+<Note>
+`tools.query` bypasses caller RBAC — your action sees every record in the collection, not just records the caller could read. If you want caller-scoped reads, do them client-side with `useQuery`, or pass a `where` clause that scopes by caller.
+</Note>
+
+## Action return shape
+
+Actions must return `ActionResult<T>`:
+
+```ts
+type ActionResult<TData> =
+  | { success: true; data: TData; error?: never }
+  | { success: false; data?: never; error: string }
+```
+
+Return a typed payload on success:
+
+```ts
+return { success: true, data: { invitedCount: 3 } }
+```
+
+Or an error message on failure:
+
+```ts
+return { success: false, error: 'Event not found' }
+```
+
+The HTTP response wraps the result in `{ success, data, error }` matching this shape.
+
+## Owner-only actions
+
+When an action burns owner resources (credits, owner-billed integrations, sensitive owner-state mutations), gate it explicitly using `OWNER_USER_ID`:
+
+```ts
+import type { ActionHandler } from 'deepspace/worker'
+
+interface OwnerEnv { OWNER_USER_ID?: string }
+
+export const recomputeAnalytics: ActionHandler<OwnerEnv> = async (ctx) => {
+  if (ctx.env.OWNER_USER_ID && ctx.userId !== ctx.env.OWNER_USER_ID) {
+    return { success: false, error: 'Forbidden: owner only' }
+  }
+
+  // ...privileged work...
+
+  return { success: true, data: {} }
+}
+```
+
+`OWNER_USER_ID` is set on every deployed app to the user who owns it. Use it as the trust anchor for owner-only operations.
+
+## Integration calls — billing routing
+
+`tools.integration(endpoint, body)` proxies through the api-worker. Billing depends on `src/integrations.ts`:
+
+```ts
+// src/integrations.ts
+export const integrations = {
+  openai: { billing: 'developer' },   // owner pays
+  google: { billing: 'user' },        // caller pays
+}
+```
+
+| `billing` setting | Who pays |
+|---|---|
+| `'developer'` | The app owner. Anonymous callers allowed. |
+| `'user'` | The signed-in caller. Anonymous callers get 401. |
+
+The api-worker reads the JWT subject to bill — there's no client-supplied override.
+
+## When to use actions vs other patterns
+
+| Need | Use |
+|---|---|
+| Single-collection mutation the user can do | `useMutations` |
+| Multi-collection orchestration | Server action |
+| Owner-billed integration call | Server action with owner gate, or cron |
+| Admin operation (mass update, recompute) | Server action |
+| Streaming response | Custom Hono route (actions don't stream) |
+| Scheduled work | Cron (see [Scheduled jobs](/guides/scheduled-jobs)) |
+
+## Testing server actions
+
+A server action is one POST endpoint; cover it in `api.spec.ts`:
+
+```ts
+test('inviteAttendee adds attendee', async ({ request }) => {
+  const token = await signInAndGetToken(request, 'alice@deepspace.test')
+  const res = await request.post('/api/actions/inviteAttendee', {
+    headers: { Authorization: `Bearer ${token}` },
+    data: { eventId: 'evt_1', attendeeId: 'usr_2' },
+  })
+  expect(res.status()).toBe(200)
+  expect(await res.json()).toMatchObject({ success: true })
+})
+
+test('inviteAttendee requires auth', async ({ request }) => {
+  const res = await request.post('/api/actions/inviteAttendee', {
+    data: { eventId: 'evt_1', attendeeId: 'usr_2' },
+  })
+  expect(res.status()).toBe(401)
+})
+```
+
+## Tips
+
+- **Keep actions focused.** One verb per action (`inviteAttendee`, not `manageEvent`). Easier to test, easier to reason about.
+- **Don't put RBAC logic inside actions.** That's what the DO's collection permissions are for. Actions should be for orchestration and owner-gating.
+- **Prefer actions over ad-hoc `fetch` endpoints.** The `tools` API gives you type-safe RBAC bypass; rolling your own endpoint loses that.
+- **Use the caller's userId for audit logs.** `ctx.userId` is the verified caller; record it alongside any privileged write so you can trace who initiated it.
+
+## Next
+
+<CardGroup cols={2}>
+  <Card title="Server actions reference" icon="server" href="/sdk-reference/worker/server-actions">
+    `ActionHandler`, `ActionContext`, `ActionResult` types.
+  </Card>
+  <Card title="Permissions" icon="lock" href="/concepts/permissions">
+    Collection-level RBAC.
+  </Card>
+  <Card title="External APIs" icon="plug" href="/guides/external-apis">
+    Call third-party services from actions.
+  </Card>
+</CardGroup>

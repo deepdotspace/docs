@@ -1,0 +1,161 @@
+---
+title: "Quickstart"
+description: "Scaffold, run, and deploy a real-time app in five minutes."
+---
+
+This guide walks you from an empty terminal to a live app at `<your-app>.app.space`. You'll need [Node.js 20 or higher](https://nodejs.org/) and a free GitHub or Google account for sign-in.
+
+## 1. Scaffold an app
+
+The `create-deepspace` package bootstraps a new project with the SDK preinstalled, a worker wired to a Durable Object, and a Vite-powered React frontend.
+
+```bash
+npm create deepspace@latest my-app
+cd my-app
+```
+
+The scaffolder is non-interactive by default and prints a list of files it created. Pass `--interactive` if you want a prompt-driven wizard.
+
+<Tip>
+The app name becomes the deploy subdomain. It must match `^[a-z0-9](?:-?[a-z0-9])+$` (lowercase, 2–63 chars, no leading/trailing/double dashes). You can rename later by editing `wrangler.toml`.
+</Tip>
+
+## 2. Start the dev server
+
+```bash
+npx deepspace dev
+```
+
+This runs Vite + the worker in-process and opens [http://localhost:5173](http://localhost:5173) with hot-module reload. The CLI also mints a development JWT for your local worker so authentication, storage, and integrations work end-to-end against the platform's dev environment.
+
+Pass `--port` to run multiple apps in parallel:
+
+```bash
+npx deepspace dev --port 5180
+```
+
+## 3. Sign in to the CLI
+
+You'll need a DeepSpace account to deploy. One-time setup:
+
+```bash
+npx deepspace login
+```
+
+This opens your browser for GitHub or Google OAuth and stores a long-lived session at `~/.deepspace/session`. The same session covers every app on the machine — you only do this once.
+
+Check status anytime with:
+
+```bash
+npx deepspace whoami
+```
+
+## 4. Make it yours
+
+Open the project in your editor. The interesting files:
+
+- `src/pages/home.tsx` — the landing route. Edit the H1 and intro.
+- `src/schemas.ts` — collection schemas. Add a new collection alongside the seeded `users` and `settings`.
+- `src/pages/_app.tsx` — the provider stack. Auth, storage, and theming are already wired.
+- `worker.ts` — the Hono worker. Add custom routes here.
+- `index.html` — change the `<title>` and `data-theme` attribute to pick a preset.
+
+Try adding a `todos` collection:
+
+```ts
+// src/schemas/todos-schema.ts
+import type { CollectionSchema } from 'deepspace/worker'
+
+export const todosSchema: CollectionSchema = {
+  name: 'todos',
+  columns: [
+    { name: 'title', storage: 'text', interpretation: 'plain' },
+    { name: 'completed', storage: 'integer', interpretation: 'boolean' },
+  ],
+  permissions: {
+    member: { read: true, create: true, update: 'own', delete: 'own' },
+    admin: { read: true, create: true, update: true, delete: true },
+  },
+}
+```
+
+```ts
+// src/schemas.ts
+import { todosSchema } from './schemas/todos-schema'
+import { usersSchema } from './schemas/users-schema'
+import { settingsSchema } from './schemas/admin-schema'
+
+export const schemas = [usersSchema, settingsSchema, todosSchema]
+```
+
+Then read and write from the UI:
+
+```tsx
+// src/pages/(protected)/todos.tsx
+import { useQuery, useMutations } from 'deepspace'
+
+type Todo = { title: string; completed: boolean }
+
+export default function TodosPage() {
+  const { records, status } = useQuery<Todo>('todos', { orderBy: 'createdAt' })
+  const { create, put, remove } = useMutations<Todo>('todos')
+
+  if (status === 'loading') return <p>Loading…</p>
+
+  return (
+    <ul>
+      {records.map((r) => (
+        <li key={r.recordId}>
+          <input
+            type="checkbox"
+            checked={r.data.completed}
+            onChange={(e) => put(r.recordId, { completed: e.target.checked })}
+          />
+          {r.data.title}
+          <button onClick={() => remove(r.recordId)}>Delete</button>
+        </li>
+      ))}
+      <button onClick={() => create({ title: 'New todo', completed: false })}>
+        Add
+      </button>
+    </ul>
+  )
+}
+```
+
+The page lives at `/todos` — generouted picks it up automatically. The `(protected)` route group means it's gated behind sign-in. Save the file; the change is visible in your browser before you can tab back.
+
+## 5. Deploy
+
+When you're ready:
+
+```bash
+npx deepspace deploy
+```
+
+The CLI bundles the worker, uploads it to Cloudflare Workers for Platforms, syncs any secrets from `.dev.vars`, and registers your subdomain. After 30 seconds, your app is live at:
+
+```
+https://my-app.app.space
+```
+
+Visit the URL, sign in, and add a todo. Data syncs to all open tabs in real-time.
+
+## What's next
+
+You have a working app. Here's where to go to build it out:
+
+<CardGroup cols={2}>
+  <Card title="Add authentication gates" icon="lock" href="/guides/authentication">
+    Public, gated, or mixed — pick the right model for your app.
+  </Card>
+  <Card title="Add real-time presence" icon="users" href="/guides/presence-and-cursors">
+    Show who's online and broadcast cursor positions.
+  </Card>
+  <Card title="Add a payment flow" icon="credit-card" href="/guides/payments">
+    Subscriptions and one-time products via Stripe.
+  </Card>
+  <Card title="Add AI chat" icon="sparkles" href="/guides/ai-chat">
+    Streamed Claude or GPT with tool use over your records.
+  </Card>
+</CardGroup>

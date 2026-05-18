@@ -1,0 +1,183 @@
+---
+title: "Bindings reference"
+description: "Migration runner, per-tenant metering, and binding manifest exports."
+---
+
+```ts
+import {
+  runMigrations,
+  meterAi, meterVectorize, meterUsage,
+  COST_RATES,
+  AUTO_PROVISION_SENTINEL, AUTO_PROVISIONABLE_TYPES,
+  ALLOWED_BINDING_TYPES, RESERVED_BINDING_NAMES,
+  validateBindingManifest, isAutoProvision,
+  bindingManifestFromOutputConfig,
+} from 'deepspace/worker'
+
+import type { CustomBinding, ValidationError } from 'deepspace/worker'
+```
+
+## `runMigrations(db, migrations)`
+
+Idempotently apply a list of SQL migrations to a D1 database. Designed to run at worker startup.
+
+```ts
+function runMigrations(
+  db: D1Database,
+  migrations: readonly string[],
+): Promise<{ fromVersion: number; toVersion: number; applied: number }>
+```
+
+State is tracked in a meta-table `_dpc_migrations(idx INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)`.
+
+**Contract:**
+
+- Each array entry is one migration; index in the array is its sequence number.
+- Each migration string can contain multiple `;`-separated statements.
+- **Don't put `;` inside string literals** — the split is naive.
+- Statements run via `db.prepare(sql).run()`, not `exec()`.
+- Idempotent — re-running with the same array is a no-op.
+- **Append new migrations to the end; never reorder or delete entries.**
+- Throws on any individual migration failure; the failed row is not inserted, so the next deploy retries.
+
+```ts
+await runMigrations(env.MY_DB, [
+  `CREATE TABLE notes (
+     id TEXT PRIMARY KEY,
+     body TEXT NOT NULL,
+     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+   );
+   CREATE INDEX idx_notes_created ON notes(created_at);`,
+  `ALTER TABLE notes ADD COLUMN tags TEXT;`,
+])
+```
+
+## Per-tenant metering
+
+Every deployed app gets a `USAGE_EVENTS` Analytics Engine binding automatically — don't declare it in `wrangler.toml`. The metering helpers write usage events keyed by `OWNER_USER_ID`.
+
+### `meterAi(env, model, fields)`
+
+```ts
+function meterAi(
+  env: Env,
+  model: string,
+  fields: { inputChars?: number; outputChars?: number; calls?: number },
+): boolean
+```
+
+Emits `op='input'` and `op='output'` events. If both are 0, emits `op='call'` so the model invocation is still recorded.
+
+```ts
+const result = await env.AI.run('@cf/meta/llama-3.1-8b', { messages })
+meterAi(env, '@cf/meta/llama-3.1-8b', {
+  inputChars: JSON.stringify(messages).length,
+  outputChars: result.response?.length ?? 0,
+})
+```
+
+### `meterVectorize(env, indexName, op, fields)`
+
+```ts
+function meterVectorize(
+  env: Env,
+  indexName: string,
+  op: 'query' | 'upsert' | 'delete' | 'getByIds',
+  fields: { vectors?: number; dims?: number; storedCount?: number },
+): boolean
+```
+
+Units calculation:
+- **`query`**: `(vectors + storedCount) * dims` (matches CF's `(stored + queries) * dims` formula)
+- **`upsert` / `delete` / `getByIds`**: `vectors * dims`
+
+Pass `storedCount` on queries against non-empty indexes or you'll significantly undercount.
+
+```ts
+const matches = await env.VEC.query(embedding, { topK: 10 })
+meterVectorize(env, 'docs', 'query', {
+  vectors: 1,
+  dims: 768,
+  storedCount: await env.VEC.describe().then(d => d.vectorsCount),
+})
+```
+
+### `meterUsage(env, kind, fields)`
+
+Generic fallback for any other binding (Browser Rendering, Hyperdrive, custom kinds).
+
+```ts
+function meterUsage(
+  env: Env,
+  kind: string,
+  fields: { id?: string; op?: string; units?: number; count?: number },
+): boolean
+```
+
+```ts
+const pdf = await env.BROWSER.fetch(url).then(r => r.blob())
+meterUsage(env, 'browser', { id: 'render', units: 1, count: 1 })
+```
+
+### Behavior
+
+All three helpers return `boolean` — `false` when `USAGE_EVENTS` is missing (local dev) or when Analytics Engine throws. **Metering never breaks the calling code path** — wrap in `void` if you prefer to ignore the return.
+
+### `COST_RATES`
+
+Per-`units` USD multipliers for dashboard rollup. Multiply `SUM(_sample_interval * doubles[1])` by the matching rate to get USD without re-querying Cloudflare's billing API.
+
+```ts
+const COST_RATES: Record<string, number>
+// 'ai.input.tokens', 'ai.output.tokens', 'vectorize.queried.dims', 'vectorize.stored.dims', ...
+```
+
+## Manifest validation
+
+For tooling that introspects or generates binding manifests.
+
+```ts
+const AUTO_PROVISION_SENTINEL: 'auto'
+
+const AUTO_PROVISIONABLE_TYPES: readonly [
+  'd1', 'kv_namespace', 'vectorize', 'r2_bucket', 'queue'
+]
+
+const ALLOWED_BINDING_TYPES: readonly [
+  'vectorize', 'ai', 'r2_bucket', 'kv_namespace',
+  'd1', 'queue', 'browser_rendering', 'analytics_engine', 'hyperdrive'
+]
+
+const RESERVED_BINDING_NAMES: readonly string[]
+// ASSETS, PLATFORM_WORKER, API_WORKER, APP_NAME, OWNER_USER_ID,
+// AUTH_JWT_PUBLIC_KEY, AUTH_JWT_ISSUER, AUTH_WORKER_URL,
+// APP_IDENTITY_TOKEN, APP_OWNER_JWT, INTERNAL_STORAGE_HMAC_SECRET, USAGE_EVENTS
+
+function validateBindingManifest(manifest: CustomBinding[]): ValidationError[]
+function isAutoProvision(b: CustomBinding): boolean
+function bindingManifestFromOutputConfig(config: object): CustomBinding[]
+```
+
+`validateBindingManifest` returns an empty array if the manifest is valid. Each `ValidationError` carries `{ binding, reason }`.
+
+## `CustomBinding` (wire type)
+
+```ts
+type CustomBinding =
+  | { type: 'vectorize'; name: string; index_name: string; dimensions?: number; metric?: string }
+  | { type: 'r2_bucket'; name: string; bucket_name: string }
+  | { type: 'kv_namespace'; name: string; id: string; title?: string }
+  | { type: 'd1'; name: string; database_id: string; database_name?: string }
+  | { type: 'queue'; name: string; queue: string }
+  | { type: 'ai'; name: string }
+  | { type: 'browser_rendering'; name: string }
+  | { type: 'analytics_engine'; name: string; dataset: string }
+  | { type: 'hyperdrive'; name: string; id: string }
+```
+
+The deploy worker validates inbound manifests against this shape before forwarding to Workers for Platforms.
+
+## See also
+
+- [Custom bindings guide](/guides/custom-bindings) — declaring resources in `wrangler.toml`
+- [Deployment concepts](/concepts/deployment) — auto-provisioning lifecycle
