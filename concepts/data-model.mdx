@@ -139,6 +139,8 @@ The hooks subscribe to a WebSocket the moment they mount and stream updates in r
 For workflows that must wait for the server to accept the write - so RBAC denials or schema validation errors surface before you navigate or trigger downstream work - use the `*Confirmed` variants:
 
 ```ts
+import { useMutations } from 'deepspace'
+
 const { createConfirmed } = useMutations<Item>('items')
 try {
   const recordId = await createConfirmed({ title: 'New', status: 'draft' })

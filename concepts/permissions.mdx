@@ -3,7 +3,7 @@ title: "Permissions"
 description: "Role-based access control on collections, evaluated server-side in your Durable Object."
 ---
 
-DeepSpace enforces permissions in the Durable Object - the server checks every read and write before it broadcasts to clients. Permissions are declared per-collection in the schema, and the rules cover the common cases without custom logic.
+DeepSpace enforces permissions in the Durable Object - the server checks every read and write before it broadcasts to clients. Permissions are declared per-collection in the schema.
 
 <Info>
 Client-side filtering is not a security boundary. The DO drops records the caller can't read **before** sending them over the WebSocket, so anything that arrives on the client is data the caller is allowed to see.
@@ -19,7 +19,7 @@ Every user has a role on each app's RecordRoom. The built-in roles are:
 | `member` | All authenticated users | Normal app users |
 | `admin` | Explicitly promoted users | Owners, moderators |
 
-New authenticated users get `member` by default. You can override that with `defaultRole` on the users schema. Promotion happens via `useUsers().setRole(userId, 'admin')` (admin-only) or via the dashboard.
+New authenticated users get `member` by default. Override that with `defaultRole` on the users schema. The only in-SDK way to promote a user is `useUsers().setRole(userId, 'admin')`, which the server rejects unless the caller is already an admin. The app owner is pinned to `admin` at connect time, so you don't promote them manually.
 
 Unauthenticated callers use the `'*'` wildcard key in the permissions block - there is no `anonymous` role identifier.
 
@@ -38,21 +38,27 @@ permissions: {
 
 `read`, `update`, and `delete` each accept a `PermissionLevel` - the union of `boolean | 'own' | 'unclaimed-or-own' | 'collaborator' | 'team' | 'access' | 'published' | 'shared'`. `create` is the exception: it accepts a `boolean` only - you either let a role create rows or you don't.
 
-The levels that cover ~95% of apps:
+The levels you'll reach for most often:
 
 | Level | Meaning |
 |---|---|
 | `true` / `false` | Allow all / deny all |
-| `'own'` | Records the caller created (falls back to `record.createdBy`) |
+| `'own'` | Caller is the owner. Default: `record.createdBy === userId`; override with [`ownerField`](#ownerfield). |
 | `'published'` | Owner OR matches `visibilityField` |
-| `'shared'` | Owner OR in `collaboratorsField` OR published |
-| `'team'` | Owner OR in `collaboratorsField` OR team member |
+| `'shared'` | Owner OR in `collaboratorsField` OR matches `visibilityField` |
+| `'team'` | Owner OR in `collaboratorsField` OR member of the team named in `teamField` |
 
-Less common (check the `PermissionLevel` export in `deepspace/worker` before using):
+Less common:
 
-- `'unclaimed-or-own'` - no owner set, OR caller is owner
+- `'unclaimed-or-own'` - requires `ownerField`; passes when that field is empty, or when the caller is the owner. Without `ownerField` set, behaves identically to `'own'`.
 - `'collaborator'` - owner OR in `collaboratorsField` (owners always pass)
 - `'access'` - equivalent to `'team'`; prefer `'team'` for clarity
+
+Import the type from `deepspace/worker` to typecheck against the full union:
+
+```ts
+import type { PermissionLevel } from 'deepspace/worker'
+```
 
 ## `visibilityField` and `collaboratorsField`
 
@@ -65,7 +71,6 @@ When you use `'published'` or `'shared'`, you tell the SDK which column to check
     { name: 'title',  storage: 'text', interpretation: 'plain' },
     { name: 'status', storage: 'text', interpretation: { kind: 'select', options: ['draft', 'published'] } },
     { name: 'collaborators', storage: 'text', interpretation: { kind: 'json' } },
-    // ...declare an ownerField column too (typically userBound: true)
   ],
   visibilityField:    { field: 'status', value: 'published' },
   collaboratorsField: 'collaborators',
@@ -75,12 +80,13 @@ When you use `'published'` or `'shared'`, you tell the SDK which column to check
 }
 ```
 
-- `visibilityField` declares which field gates the `'published'` rule.
-- `collaboratorsField` declares which field holds the list of explicit collaborator userIds.
+- `visibilityField` declares which column gates the `'published'` and `'shared'` rules. Use the string form (`'status'`) to match when `data.status === 'public'`, or the object form (`{ field, value }`) for any other sentinel value.
+- `collaboratorsField` declares which column holds the JSON array of collaborator userIds checked by `'shared'`, `'collaborator'`, and `'team'`.
+- `teamField` (used by `'team'` / `'access'`) declares which column holds the team ID. The team membership check itself is wired up by the room via [`PermissionContext.isTeamMember`](/sdk-reference/worker/schemas).
 
-## `ownerField` - when the creator isn't the owner
+## `ownerField`
 
-By default, `'own'` checks against `record.createdBy` (set automatically when the record was created). If you want to tie ownership to a different field - say, "this todo belongs to the `assignedTo` user, not the creator" - set `ownerField`:
+By default, `'own'` checks against `record.createdBy` (set automatically when the record was created). To tie ownership to a different field (for example, an `assignedTo` user instead of the creator), set `ownerField`:
 
 ```ts
 {
@@ -101,13 +107,13 @@ Now `'own'` resolves against `record.data.assignedTo`.
 
 ```ts
 permissions: {
-  '*':    { read: 'published' },
-  member: { read: true, create: true, update: 'own', delete: 'own' },
-  admin:  { read: true, create: true, update: true, delete: true },
+  '*':    { read: 'published', create: false, update: false, delete: false },
+  member: { read: true,        create: true,  update: 'own', delete: 'own' },
+  admin:  { read: true,        create: true,  update: true,  delete: true },
 }
 ```
 
-Visitors see only published posts. Members see their own drafts. Admins see everything.
+Visitors see only published posts. Members see their own drafts. Admins see everything. (The collection also needs `visibilityField` set - see above - for `'published'` to resolve.)
 
 ### A shared workspace with collaborators
 
@@ -135,17 +141,16 @@ Each user sees only their own records. Useful for things like personal preferenc
 The rules are enforced inside the Durable Object's `canRead()` / `canWrite()` checks. Three things follow from this:
 
 1. **Permissions are checked before data ships over the wire.** A user without read access never receives the records - they're filtered out at the DO before the WebSocket broadcast.
-2. **Client-side filtering is not enough.** Don't rely on the UI to hide records the user shouldn't see. A determined attacker reading WebSocket frames sees what the DO sent - so make sure the DO never sends what it shouldn't.
+2. **Client-side filtering is not enough.** Don't rely on the UI to hide records the user shouldn't see. A determined attacker reading WebSocket frames sees exactly what the DO sent.
 3. **Bypassing RBAC requires a server action.** See [Server actions](/guides/server-actions) - they call privileged worker code with the `X-App-Action` header, which bypasses RBAC for orchestration that the user themselves couldn't perform.
 
 ## Roles vs. visibility
 
-It's tempting to model "private messages" via `read: 'own'`. For DMs and conversations, prefer the **schema-level visibility** baked into the channel collection:
+It's tempting to model "private messages" via `read: 'own'`, but `'own'` only matches a single user. Every participant in a DM needs read access, but only that exact set - so reach for a participant-list pattern instead.
 
-- For **app-scoped channels** (`CHANNELS_SCHEMA`): set the channel's `type` to `'private'` or `'dm'`. The message schema filters by channel membership.
-- For **directory conversations** (`DIRECTORY_SCHEMAS`): set `Visibility: 'private'` and populate `ParticipantIds`. The platform DO checks visibility on every read.
+The built-in [directory conversations](/sdk-reference/worker/schemas) schema does this out of the box: it declares `collaboratorsField: 'ParticipantIds'` and `visibilityField: 'Visibility'`, with `read: 'shared'` on `member`. Setting a conversation's `Visibility` to `'private'` and listing user IDs in `ParticipantIds` is then enough - the DO's `canRead` check filters every record before broadcast.
 
-Don't rely on `read: 'own'` for shared messaging - every participant needs read access, but only that exact set.
+For [`CHANNELS_SCHEMA`](/sdk-reference/worker/schemas), the included `type: 'public' | 'private' | 'dm'` column is informational only - the schema's `member` permission is `read: true`, so the SDK does not gate channels by type on its own. If you need private channels, apply the same pattern: add a participants column, declare it as `collaboratorsField`, and switch `read` to `'shared'` or `'collaborator'`.
 
 ## Debugging "why can't this user see X?"
 
@@ -156,7 +161,7 @@ When a record isn't visible when you think it should be:
 3. **Check the envelope.** `record.createdBy` is the `'own'` check; `record.data.<collaboratorsField>` is the collaborator check.
 4. **Check the `*` rule.** If the user is signed out (anonymous), only `*` applies.
 
-Add a temporary `console.log` of the full record envelope in a development build to confirm the field values are what you expect.
+Log the full record envelope locally to confirm the field values are what you expect.
 
 ## Next steps
 
