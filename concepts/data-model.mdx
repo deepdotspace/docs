@@ -11,7 +11,7 @@ A collection is a named table with typed columns. A record is one row, wrapped i
 
 ```ts
 type RecordData<T> = {
-  recordId: string         // unique ID — the client generates this on create
+  recordId: string         // unique ID - the client generates this on create
   data: T                  // your user-defined fields
   createdBy: string        // userId of the creator
   createdAt: string        // ISO timestamp
@@ -25,7 +25,7 @@ Your own fields live under `.data`. When you query a `todos` collection:
 const { records } = useQuery<{ title: string; completed: boolean }>('todos')
 records[0].data.title       // "Buy milk"
 records[0].recordId         // "1714000000000-k3f9x2a"
-records[0].title            // undefined — common bug
+records[0].title            // undefined - common bug
 ```
 
 <Warning>
@@ -87,7 +87,7 @@ Every column has a `storage` type and an `interpretation`:
 | `{ kind: 'boolean', trueLabel?, falseLabel? }` | `'number'` | Stored as `0` / `1`. |
 | `{ kind: 'percent', decimals? }` | `'number'` | Accepts `"42%"` strings; stores `0.42`. |
 | `{ kind: 'select', options: string[] }` | `'text'` | Constrained enum. |
-| `{ kind: 'multiselect', options: string[] }` | `'text'` | Constrained enum, multiple values. Stored as text — pass a pre-joined string (or use `{ kind: 'json' }` if you want array round-tripping). |
+| `{ kind: 'multiselect', options: string[] }` | `'text'` | Constrained enum, multiple values. Stored as text - pass a pre-joined string (or use `{ kind: 'json' }` if you want array round-tripping). |
 | `{ kind: 'url' }` | `'text'` | URL string. |
 | `{ kind: 'email' }` | `'text'` | Email string. |
 | `{ kind: 'json' }` | `'text'` | Auto `JSON.stringify` on write, auto `JSON.parse` on read. |
@@ -146,7 +146,7 @@ try {
   const recordId = await createConfirmed({ title: 'New', status: 'draft' })
   navigate(`/items/${recordId}`)
 } catch (err) {
-  // server rejected the write — show an error to the user
+  // server rejected the write - show an error to the user
 }
 ```
 

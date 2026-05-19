@@ -1,9 +1,9 @@
 ---
 title: "Quickstart"
-description: "Scaffold, run, and deploy a real-time app in five minutes."
+description: "Scaffold, run, and deploy a real-time app."
 ---
 
-This guide walks you from an empty terminal to a live app at `<your-app>.app.space`. You'll need [Node.js 20 or higher](https://nodejs.org/) and a free GitHub or Google account for sign-in.
+This guide takes you from `npm create` to a deployed app at `<your-app>.app.space`. You'll need [Node.js 20 or higher](https://nodejs.org/) and a GitHub or Google account for sign-in.
 
 For prerequisites and account setup, see [installation](/get-started/installation). For a tour of the files the scaffolder generates, see [project structure](/get-started/project-structure).
 
@@ -19,7 +19,7 @@ cd my-app
 The scaffolder is non-interactive by default and prints a list of files it created. Pass `--interactive` if you want a prompt-driven wizard.
 
 <Tip>
-The app name becomes the deploy subdomain. It must match `^[a-z0-9](?:-?[a-z0-9])+$` (lowercase, 2–63 chars, no leading/trailing/double dashes). You can rename later by editing `wrangler.toml`.
+The app name becomes the deploy subdomain. It must be lowercase alphanumeric with optional dashes, up to 63 characters. You can rename later by editing `wrangler.toml`.
 </Tip>
 
 ## 2. Start the dev server
@@ -28,7 +28,7 @@ The app name becomes the deploy subdomain. It must match `^[a-z0-9](?:-?[a-z0-9]
 npx deepspace dev
 ```
 
-This runs Vite + the worker in-process and opens [http://localhost:5173](http://localhost:5173) with hot-module reload. The CLI also mints a development JWT for your local worker so authentication, storage, and integrations work end-to-end against the platform's dev environment.
+This runs Vite and the worker together and opens `http://localhost:5173` with hot-module reload. The CLI also writes an app-owner JWT and platform URLs to `.dev.vars`, so your local worker can call the live auth, storage, and integration services.
 
 Pass `--port` to run multiple apps in parallel:
 
@@ -44,7 +44,7 @@ You'll need a DeepSpace account to deploy. One-time setup:
 npx deepspace login
 ```
 
-This opens your browser for GitHub or Google OAuth and stores a long-lived session at `~/.deepspace/session`. The same session covers every app on the machine - you only do this once.
+This opens your browser for GitHub or Google OAuth and stores a long-lived session at `~/.deepspace/session`. The same session covers every app on the machine.
 
 Check status anytime with:
 
@@ -54,11 +54,11 @@ npx deepspace whoami
 
 ## 4. Make it yours
 
-Open the project in your editor. The interesting files:
+Open the project in your editor. Key files:
 
-- `src/pages/home.tsx` - the landing route. Edit the H1 and intro.
+- `src/pages/home.tsx` - the landing route. Edit the hero copy and feature list.
 - `src/schemas.ts` - collection schemas. Add a new collection alongside the seeded `users` and `settings`.
-- `src/pages/_app.tsx` - the provider stack. Auth, storage, and theming are already wired.
+- `src/pages/_app.tsx` - the provider stack. Auth and storage are already wired.
 - `worker.ts` - the Hono worker. Add custom routes here.
 - `index.html` - change the `<title>` and `data-theme` attribute to pick a preset.
 
@@ -83,14 +83,15 @@ export const todosSchema: CollectionSchema = {
 
 ```ts
 // src/schemas.ts
+import type { CollectionSchema } from 'deepspace/worker'
 import { todosSchema } from './schemas/todos-schema'
 import { usersSchema } from './schemas/users-schema'
 import { settingsSchema } from './schemas/admin-schema'
 
-export const schemas = [usersSchema, settingsSchema, todosSchema]
+export const schemas: CollectionSchema[] = [usersSchema, settingsSchema, todosSchema]
 ```
 
-Then read and write from the UI using [`useQuery`](/sdk-reference/client/records#usequery-t-collection-options) and [`useMutations`](/sdk-reference/client/records#usemutations-t-collection):
+Then read and write from the UI using [`useQuery`](/sdk-reference/client/records#usequery<t>-collection-options) and [`useMutations`](/sdk-reference/client/records#usemutations<t>-collection):
 
 ```tsx
 // src/pages/(protected)/todos.tsx
@@ -105,27 +106,29 @@ export default function TodosPage() {
   if (status === 'loading') return <p>Loading…</p>
 
   return (
-    <ul>
-      {records.map((r) => (
-        <li key={r.recordId}>
-          <input
-            type="checkbox"
-            checked={r.data.completed}
-            onChange={(e) => put(r.recordId, { completed: e.target.checked })}
-          />
-          {r.data.title}
-          <button onClick={() => remove(r.recordId)}>Delete</button>
-        </li>
-      ))}
+    <>
+      <ul>
+        {records.map((r) => (
+          <li key={r.recordId}>
+            <input
+              type="checkbox"
+              checked={r.data.completed}
+              onChange={(e) => put(r.recordId, { completed: e.target.checked })}
+            />
+            {r.data.title}
+            <button onClick={() => remove(r.recordId)}>Delete</button>
+          </li>
+        ))}
+      </ul>
       <button onClick={() => create({ title: 'New todo', completed: false })}>
         Add
       </button>
-    </ul>
+    </>
   )
 }
 ```
 
-The page lives at `/todos` - generouted picks it up automatically. The `(protected)` route group means it's gated behind sign-in (see [authentication](/guides/authentication)). Save the file; the change is visible in your browser before you can tab back.
+The page lives at `/todos` - Generouted picks it up automatically. The `(protected)` route group means it's gated behind sign-in (see [authentication](/guides/authentication)). Save and the page hot-reloads.
 
 ## 5. Deploy
 
@@ -135,13 +138,13 @@ When you're ready:
 npx deepspace deploy
 ```
 
-The CLI bundles the worker, uploads it to Cloudflare Workers for Platforms, syncs any secrets from `.dev.vars`, and registers your subdomain. The [deployment](/concepts/deployment) reference covers the full pipeline. After 30 seconds, your app is live at:
+The CLI bundles the worker, uploads it to Cloudflare Workers for Platforms, syncs any secrets from `.dev.vars`, and registers your subdomain. The [deployment](/concepts/deployment) reference covers the full pipeline. Within a few seconds, your app is live at:
 
 ```
 https://my-app.app.space
 ```
 
-Visit the URL, sign in, and add a todo. Data syncs to all open tabs in real-time.
+Visit the URL, sign in, and add a todo. Open the same URL in a second tab - edits sync between them instantly.
 
 ## Next steps
 

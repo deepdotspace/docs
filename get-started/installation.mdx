@@ -24,10 +24,10 @@ This:
 
 1. Downloads the latest `create-deepspace` package on demand (no global install).
 2. Scaffolds a Vite + React app with the worker and Durable Objects pre-wired.
-3. Installs `deepspace` and a small set of peer dependencies.
+3. Installs `deepspace` and the starter's dependencies.
 4. Initializes a git repository.
 
-The scaffold takes about 30 seconds. When it finishes, you have a working app - but you'll need to log in before you can run it. `npx deepspace dev` calls into the platform to mint a development JWT and refuses to start without a session.
+The scaffold takes about 30 seconds. You'll have a working app at the end, but `npx deepspace dev` won't start until you've logged in.
 
 ### Scaffold options
 
@@ -47,7 +47,7 @@ npm create deepspace@latest -- --help
 
 ## Log in to the CLI
 
-Login is required for every CLI command that touches the platform - including `dev`, `deploy`, test-account management, and billable integration endpoints. Plan to log in once before your first `npx deepspace dev`.
+Every CLI command that talks to the platform - `dev`, `deploy`, `invoke`, `test-accounts`, and the rest - requires a session. Plan to log in once before your first `npx deepspace dev`.
 
 ```bash
 npx deepspace login
@@ -67,7 +67,7 @@ npx deepspace whoami
 npx deepspace whoami --json   # machine-readable
 ```
 
-If the JWT has expired, `whoami` prints `Not logged in.` and exits with code 1 - re-run `login`.
+`whoami` refreshes the short-lived JWT on demand, so an expired token is handled silently. If `~/.deepspace/session` is missing, it prints "Not logged in." and exits 1. If the session can no longer be refreshed, it prints "Session expired." and exits 1. In either case, re-run `npx deepspace login`.
 
 <Warning>
 The session file holds a long-lived refresh token. Treat `~/.deepspace/session`, `~/.deepspace/token`, and your app's `.dev.vars` file as secret. Never commit any of them to version control.
@@ -89,7 +89,7 @@ You're ready to build when all of these succeed:
 
 ```bash
 node --version             # v20.x or higher
-npm create deepspace --help
+npm create deepspace@latest -- --help
 npx deepspace --version
 npx deepspace whoami       # prints your account, after `login`
 ```
