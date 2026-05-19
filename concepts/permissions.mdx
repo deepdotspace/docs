@@ -82,7 +82,7 @@ When you use `'published'` or `'shared'`, you tell the SDK which column to check
 
 - `visibilityField` declares which column gates the `'published'` and `'shared'` rules. Use the string form (`'status'`) to match when `data.status === 'public'`, or the object form (`{ field, value }`) for any other sentinel value.
 - `collaboratorsField` declares which column holds the JSON array of collaborator userIds checked by `'shared'`, `'collaborator'`, and `'team'`.
-- `teamField` (used by `'team'` / `'access'`) declares which column holds the team ID. The team membership check itself is wired up by the room via [`PermissionContext.isTeamMember`](/sdk-reference/worker/schemas).
+- `teamField` (used by `'team'` / `'access'`) declares which column holds the team ID. Membership is resolved against a `team_members` collection in the same scope, which must declare `teamId`, `userId`, and `status` columns - a row counts as a member when `status` is `'active'` or null. Without a `team_members` collection registered, `'team'` checks always fail. The built-in [`WORKSPACE_SCHEMAS`](/concepts/architecture#cross-app-shared-scopes) ships one.
 
 ## `ownerField`
 
