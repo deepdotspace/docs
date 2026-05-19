@@ -15,7 +15,7 @@ A DeepSpace deployment has two halves: the worker you write, and the platform wo
 
 **Your app worker** is a Cloudflare Worker compiled from `worker.ts` and the [Vite](https://vite.dev/) build of `src/`. It serves the SPA, handles HTTP and WebSocket routes, and owns the per-app Durable Objects. You deploy it with `npx deepspace deploy`; it lives at `<name>.app.space`.
 
-**The platform workers** are shared services run by DeepSpace. You never deploy or configure them - they're shared infrastructure. Your worker talks to three of them directly at runtime (auth, API, platform) via the helpers in [Talking to platform workers](#talking-to-platform-workers); the deploy and dispatch workers sit outside your request path.
+**The platform workers** are managed by DeepSpace; you never deploy or configure them. Your worker talks to three of them at runtime (auth, API, platform) via the helpers in [Talking to platform workers](#talking-to-platform-workers); the deploy and dispatch workers sit outside your request path.
 
 | Platform worker | Responsibility |
 |---|---|
@@ -76,7 +76,7 @@ To read or write a cross-app scope, see [Cross-app shared scopes](#cross-app-sha
 
 ## Talking to platform workers
 
-The SDK exposes three fetch helpers in `deepspace/worker` for addressing platform services. Each prefers a Cloudflare service binding when one is configured and falls back to an HTTPS URL otherwise, so the same code path works in production and under `deepspace dev`.
+The SDK exposes three fetch helpers in `deepspace/worker` for addressing platform services. `apiWorkerFetch` and `platformWorkerFetch` prefer a Cloudflare service binding when one is configured and fall back to an HTTPS URL otherwise, so the same code path works in production and under `deepspace dev`. `authWorkerFetch` is URL-only by design.
 
 ```ts
 import { authWorkerFetch, apiWorkerFetch, platformWorkerFetch } from 'deepspace/worker'
@@ -94,13 +94,13 @@ Calling `c.env.PLATFORM_WORKER.fetch(...)` directly works in production but brea
 
 Durable Objects trust whatever identity the request URL carries. Verifying that identity is the worker's job - it strips anything the client sent, then re-applies it from a verified JWT. The SDK does this at two entry points:
 
-**Per-app WebSocket route (`wsRoute`)** - the scaffold ships a `wsRoute` helper defined inline in `worker.ts` (it is not an SDK export - look for the `function wsRoute(...)` declaration near the bottom of the file). It strips `userId`, `userName`, `userEmail`, `userImageUrl`, `role`, and `token` from the URL on every upgrade, then re-applies identity only from a verified JWT. Three states are possible:
+**Per-app WebSocket route (`wsRoute`)** - the scaffold ships an inline `wsRoute` helper in `worker.ts` (it is not an SDK export). It strips `userId`, `userName`, `userEmail`, `userImageUrl`, `role`, and `token` from the URL on every upgrade, then re-applies identity only from a verified JWT. Three states are possible:
 
 - **No token** → anonymous (DO assigns `anon-<uuid>`)
 - **Invalid token** → 401
 - **Valid token** → identity = JWT `sub` / `name` / `email` / `image`
 
-**Platform worker (cross-app scopes)** - when a `workspace:*`, `dir:*`, or `conv:*` request reaches the platform worker, the same URL parameters are stripped and re-applied from the JWT before the request reaches the shared DO. On HTTP forwards, `x-user-id` is overwritten from the JWT and `x-app-action` is dropped. These scopes require a valid JWT; unauthenticated requests are rejected with 401.
+**Platform worker (cross-app scopes)** - when a `workspace:*`, `dir:*`, or `conv:*` request hits the platform worker, the same URL parameters are stripped and re-applied from the JWT before it forwards to the shared DO. On HTTP forwards, `x-user-id` is overwritten from the JWT and `x-app-action` is dropped. These scopes require a valid JWT; unauthenticated requests are rejected with 401.
 
 <Warning>
 **Never put identity in WebSocket URLs or `/api/*` headers.** The scaffold's inline `wsRoute` helper strips them; identity always comes from the JWT subject. There is no client-side override.
@@ -108,7 +108,7 @@ Durable Objects trust whatever identity the request URL carries. Verifying that 
 
 ## Cross-app shared scopes
 
-If your app needs to read or write `workspace:*`, `dir:*`, or `conv:*` scopes that sync across DeepSpace apps, two edits are required.
+If your app needs to read or write `workspace:*`, `dir:*`, or `conv:*` scopes that sync across DeepSpace apps, three edits are required.
 
 <Steps>
   <Step title="Declare the platform service binding">
@@ -154,7 +154,7 @@ If your app needs to read or write `workspace:*`, `dir:*`, or `conv:*` scopes th
     </RecordScope>
     ```
 
-    `WORKSPACE_SCHEMAS` lives in `deepspace/worker` because schemas are server-side data — the import is safe in the browser bundle (Vite tree-shakes the worker-only code).
+    `WORKSPACE_SCHEMAS` is exported from `deepspace/worker` alongside the other schema constants. Importing it in client code is safe — Vite tree-shakes the worker-only modules.
   </Step>
 </Steps>
 
