@@ -102,31 +102,27 @@
         ]
       }
     ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "deep.space",
-          "href": "https://deep.space",
-          "icon": "globe"
-        },
-        {
-          "anchor": "GitHub",
-          "href": "https://github.com/deepdotspace",
-          "icon": "github"
-        },
-        {
-          "anchor": "Discord",
-          "href": "https://discord.gg/hcKSav5PpU",
-          "icon": "discord"
-        }
-      ]
-    }
+    "global": {}
   },
   "logo": {
     "light": "/logo/light.svg",
     "dark": "/logo/dark.svg"
   },
   "navbar": {
+    "links": [
+      {
+        "label": "deep.space",
+        "href": "https://deep.space"
+      },
+      {
+        "label": "GitHub",
+        "href": "https://github.com/deepdotspace"
+      },
+      {
+        "label": "Discord",
+        "href": "https://discord.gg/hcKSav5PpU"
+      }
+    ],
     "primary": {
       "type": "button",
       "label": "Get started",
