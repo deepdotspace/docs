@@ -3,7 +3,7 @@ title: "Theming reference"
 description: "Theme providers, helpers, and the user color palette."
 ---
 
-DeepSpace ships 15 ready-made theme presets and CSS-variable-based theming. Most apps pick a preset with `<html data-theme="...">` and never touch the runtime API. The exports below are for advanced cases — applying themes dynamically, embedding DeepSpace surfaces in a deployed site, or building a theme picker.
+DeepSpace ships 15 ready-made theme presets and CSS-variable-based theming. Most apps pick a preset with `<html data-theme="...">` and never touch the runtime API. The exports below are for advanced cases - applying themes dynamically, embedding DeepSpace surfaces in a deployed site, or building a theme picker.
 
 ```ts
 import {
@@ -18,7 +18,7 @@ import {
 
 ## `<DeepSpaceThemeProvider theme={...}>`
 
-Wraps the tree with theme tokens. Reads from `--color-*` CSS variables by default — usually you don't need this; the `[data-theme]` attribute on `<html>` does the work.
+Wraps the tree with theme tokens. Reads from `--color-*` CSS variables by default - usually you don't need this; the `[data-theme]` attribute on `<html>` does the work.
 
 Reach for it when:
 
@@ -65,9 +65,9 @@ applyUIThemeTokens(
 | `applyDeepSpaceTheme` | Sets the `--theme-*` CSS variables consumed by cross-app surfaces. |
 | `clearDeepSpaceTheme` | Removes theme variables. |
 | `readThemeFromDOM` | Inspects `--color-*` tokens and derives a theme config. |
-| `applyUIThemeTokens` | Sets the static `--ui-*` tokens (surfaces, text, borders) for the chosen mode. The optional `accent` overrides the accent/hover/secondary triplet — if omitted, the current `--theme-accent` / `--theme-secondary` are read from computed styles. |
+| `applyUIThemeTokens` | Sets the static `--ui-*` tokens (surfaces, text, borders) for the chosen mode. The optional `accent` overrides the accent/hover/secondary triplet - if omitted, the current `--theme-accent` / `--theme-secondary` are read from computed styles. |
 
-`DEEPSPACE_THEME_PROPERTIES` is the readonly tuple of CSS custom properties the theme defines — useful for introspection or building custom clear logic.
+`DEEPSPACE_THEME_PROPERTIES` is the readonly tuple of CSS custom properties the theme defines - useful for introspection or building custom clear logic.
 
 ## User colors
 
@@ -116,5 +116,5 @@ For customization (overriding tokens, adding new presets, light/dark toggles), s
 
 ## See also
 
-- [Get started → Project structure](/get-started/project-structure) — theme files in the scaffold
-- [Real-time reference](/sdk-reference/client/realtime) — `getUserColor` for cursors
+- [Get started → Project structure](/get-started/project-structure) - theme files in the scaffold
+- [Real-time reference](/sdk-reference/client/realtime) - `getUserColor` for cursors

@@ -3,7 +3,7 @@ title: "Scheduled jobs"
 description: "Run cron tasks in a per-app Durable Object."
 ---
 
-DeepSpace apps include a per-app `CronRoom` Durable Object for scheduled work — digests, cleanups, periodic syncs. Tasks run on the DO's alarm, so there's no separate scheduler service to manage. You declare tasks in `src/cron.ts`; the SDK runs them and exposes a monitor hook.
+DeepSpace apps include a per-app `CronRoom` Durable Object for scheduled work - digests, cleanups, periodic syncs. Tasks run on the DO's alarm, so there's no separate scheduler service to manage. You declare tasks in `src/cron.ts`; the SDK runs them and exposes a monitor hook.
 
 ## Define tasks
 
@@ -49,15 +49,15 @@ Each task declares **either** `intervalMinutes` (every N minutes) **or** `schedu
 
 ## The cron context
 
-`buildCronContext(env, ownerUserId, roomId?)` returns a context that runs as the app owner — RBAC is bypassed:
+`buildCronContext(env, ownerUserId, roomId?)` returns a context that runs as the app owner - RBAC is bypassed:
 
 | Property | Type | Description |
 |---|---|---|
 | `records` | object | `query`, `create`, `update`, `delete` operations. |
-| `integrations` | object | `call(endpoint, params)` — proxies through the api-worker with HMAC auth, billed to the owner. |
+| `integrations` | object | `call(endpoint, params)` - proxies through the api-worker with HMAC auth, billed to the owner. |
 | `ownerUserId` | `string` | The owner's user ID. |
 
-The records API differs from server actions — methods return their data directly rather than wrapping in `{ success, data }`:
+The records API differs from server actions - methods return their data directly rather than wrapping in `{ success, data }`:
 
 ```ts
 // query: returns Envelope[] (already unwrapped from the tools response)
@@ -69,7 +69,7 @@ await ctx.records.update('users', userId, { lastSeenAt: Date.now() })
 await ctx.records.delete('notifications', notificationId)
 ```
 
-`ctx.records.query` accepts `{ where?, limit? }` only — there is no `orderBy`/`orderDir` here. For richer filters, fetch from a server action instead. There is no `ctx.records.get(...)`; fetch one row via `query` with a `where` filter on `recordId` or call `tools.get` from a server action.
+`ctx.records.query` accepts `{ where?, limit? }` only - there is no `orderBy`/`orderDir` here. For richer filters, fetch from a server action instead. There is no `ctx.records.get(...)`; fetch one row via `query` with a `where` filter on `recordId` or call `tools.get` from a server action.
 
 Throws on failure; wrap in `try/catch` if you need to handle an error inline.
 
@@ -89,9 +89,9 @@ export class AppCronRoom extends CronRoom {
 }
 ```
 
-Don't edit those bindings — add tasks to `src/cron.ts` and the DO picks them up at construction.
+Don't edit those bindings - add tasks to `src/cron.ts` and the DO picks them up at construction.
 
-## Monitor and trigger from the UI — `useCronMonitor`
+## Monitor and trigger from the UI - `useCronMonitor`
 
 ```tsx
 import { useCronMonitor, useUser } from 'deepspace'
@@ -110,7 +110,7 @@ function CronAdmin() {
       <ul>
         {tasks.map((t) => (
           <li key={t.name}>
-            <strong>{t.name}</strong> — next: {t.nextRunAt}
+            <strong>{t.name}</strong> - next: {t.nextRunAt}
             {isAdmin && (
               <>
                 <button onClick={() => trigger(t.name)}>Run now</button>
@@ -126,7 +126,7 @@ function CronAdmin() {
       <ul>
         {history.map((h, i) => (
           <li key={i}>
-            {h.taskName} — {h.success ? 'ok' : 'failed'} — {h.durationMs}ms
+            {h.taskName} - {h.success ? 'ok' : 'failed'} - {h.durationMs}ms
           </li>
         ))}
       </ul>
@@ -140,12 +140,12 @@ function CronAdmin() {
 | `tasks` | `CronTaskState[]` | Live state of each task. |
 | `history` | `CronHistoryEntry[]` | Recent runs (with success, duration, error). |
 | `connected` | `boolean` | WebSocket connection status. |
-| `trigger(name)` | `(name: string) => void` | Fire `onTask` immediately — same code path as the alarm. Fire-and-forget over the open socket. |
+| `trigger(name)` | `(name: string) => void` | Fire `onTask` immediately - same code path as the alarm. Fire-and-forget over the open socket. |
 | `pause(name)` | `(name: string) => void` | Disable a task. |
 | `resume(name)` | `(name: string) => void` | Re-enable a task. |
 
 <Warning>
-**Auth-gate any page that exposes `trigger` / `pause` / `resume`.** The Durable Object does not enforce a role on these methods — without a client-side check, any signed-in user can trigger owner-billed tasks. Gate by `user?.role === 'admin'`.
+**Auth-gate any page that exposes `trigger` / `pause` / `resume`.** The Durable Object does not enforce a role on these methods - without a client-side check, any signed-in user can trigger owner-billed tasks. Gate by `user?.role === 'admin'`.
 </Warning>
 
 ## Outbound calls in handlers
@@ -184,7 +184,7 @@ test('daily-digest fires when triggered', async ({ page }) => {
 })
 ```
 
-Don't wait for `intervalMinutes: 1` to tick in tests — it's slow and flaky. Trigger explicitly.
+Don't wait for `intervalMinutes: 1` to tick in tests - it's slow and flaky. Trigger explicitly.
 
 ## A ready-made admin page
 
@@ -192,10 +192,10 @@ Don't wait for `intervalMinutes: 1` to tick in tests — it's slow and flaky. Tr
 npx deepspace add cron
 ```
 
-This installs a heartbeat task and a read-only `/cron-log` page that subscribes via `useCronMonitor(SCOPE_ID)` and renders tasks + history. It does **not** expose `trigger` / `pause` / `resume` — add those yourself with admin gating.
+This installs a heartbeat task and a read-only `/cron-log` page that subscribes via `useCronMonitor(SCOPE_ID)` and renders tasks + history. It does **not** expose `trigger` / `pause` / `resume` - add those yourself with admin gating.
 
 ## Next steps
 
-- [Worker cron reference](/sdk-reference/worker/cron) — `CronRoom`, `CronTask`, `buildCronContext`.
-- [Server actions](/guides/server-actions) — privileged on-demand operations.
-- [External APIs](/guides/external-apis) — calling third-party APIs from your worker.
+- [Worker cron reference](/sdk-reference/worker/cron) - `CronRoom`, `CronTask`, `buildCronContext`.
+- [Server actions](/guides/server-actions) - privileged on-demand operations.
+- [External APIs](/guides/external-apis) - calling third-party APIs from your worker.

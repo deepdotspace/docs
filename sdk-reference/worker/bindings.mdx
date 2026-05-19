@@ -43,9 +43,9 @@ State is tracked in a meta-table `_dpc_migrations(idx INTEGER PRIMARY KEY, appli
 
 - Each array entry is one migration; index in the array is its sequence number.
 - Each migration string can contain multiple `;`-separated statements.
-- **Don't put `;` inside string literals** — the split is naive.
+- **Don't put `;` inside string literals** - the split is naive.
 - Statements run via `db.prepare(sql).run()`, not `exec()`.
-- Idempotent — re-running with the same array is a no-op.
+- Idempotent - re-running with the same array is a no-op.
 - **Append new migrations to the end; never reorder or delete entries.**
 - Throws on any individual migration failure; the failed row is not inserted, so the next deploy retries.
 
@@ -63,9 +63,9 @@ await runMigrations(env.MY_DB, [
 
 ## Per-tenant metering
 
-Every deployed app gets a `USAGE_EVENTS` Analytics Engine binding automatically — don't declare it in `wrangler.toml`. The metering helpers write usage events keyed by `OWNER_USER_ID`.
+Every deployed app gets a `USAGE_EVENTS` Analytics Engine binding automatically - don't declare it in `wrangler.toml`. The metering helpers write usage events keyed by `OWNER_USER_ID`.
 
-All three helpers take a `MeteringEnv` shape — `{ USAGE_EVENTS?, OWNER_USER_ID?, APP_NAME? }` — which the app's `Env` already satisfies because the deploy worker injects all three. The runtime `MeteringEnv` is intentionally weaker than `Env` so the helpers compile in shared utility code.
+All three helpers take a `MeteringEnv` shape - `{ USAGE_EVENTS?, OWNER_USER_ID?, APP_NAME? }` - which the app's `Env` already satisfies because the deploy worker injects all three. The runtime `MeteringEnv` is intentionally weaker than `Env` so the helpers compile in shared utility code.
 
 ### `meterAi(env, model, fields)`
 
@@ -132,7 +132,7 @@ meterUsage(env, 'browser', { id: 'render', units: 1, count: 1 })
 
 ### Behavior
 
-All three helpers return `boolean` — `false` when `USAGE_EVENTS` is missing (local dev) or when Analytics Engine throws. **Metering never breaks the calling code path** — wrap in `void` if you prefer to ignore the return.
+All three helpers return `boolean` - `false` when `USAGE_EVENTS` is missing (local dev) or when Analytics Engine throws. **Metering never breaks the calling code path** - wrap in `void` if you prefer to ignore the return.
 
 ### `COST_RATES`
 
@@ -195,7 +195,7 @@ interface ValidationError {
 
 `validateBindingManifest` returns a discriminated union: on success, `{ valid: true, bindings }`; on failure, `{ valid: false, errors }` carrying one or more `ValidationError`s.
 
-The three name/type sets are exported as `Set<string>` instances, not tuples — use `.has(...)` rather than indexing.
+The three name/type sets are exported as `Set<string>` instances, not tuples - use `.has(...)` rather than indexing.
 
 ## `CustomBinding` (wire type)
 
@@ -247,9 +247,9 @@ type CustomBinding =
 type CustomBindingManifest = CustomBinding[]
 ```
 
-The deploy worker validates inbound manifests against this shape before forwarding to Workers for Platforms. The exact ID field varies by binding kind — `kv_namespace` uses `namespace_id`, `d1` uses `id`, `queue` uses `queue_name`, `r2_bucket` uses `bucket_name`, and `vectorize` uses `index_name`. `analytics_engine.dataset` is optional.
+The deploy worker validates inbound manifests against this shape before forwarding to Workers for Platforms. The exact ID field varies by binding kind - `kv_namespace` uses `namespace_id`, `d1` uses `id`, `queue` uses `queue_name`, `r2_bucket` uses `bucket_name`, and `vectorize` uses `index_name`. `analytics_engine.dataset` is optional.
 
 ## See also
 
-- [Custom bindings guide](/guides/custom-bindings) — declaring resources in `wrangler.toml`
-- [Deployment concepts](/concepts/deployment) — auto-provisioning lifecycle
+- [Custom bindings guide](/guides/custom-bindings) - declaring resources in `wrangler.toml`
+- [Deployment concepts](/concepts/deployment) - auto-provisioning lifecycle

@@ -3,7 +3,7 @@ title: "Custom domains"
 description: "Buy and attach a real domain to your DeepSpace app."
 ---
 
-By default, every deployed app lives at `<name>.app.space`. Attach a real domain — `myapp.com`, `myapp.ai`, `myapp.io` — directly from the CLI. Domain purchase, DNS, and SSL are handled end-to-end; you don't touch a registrar dashboard.
+By default, every deployed app lives at `<name>.app.space`. Attach a real domain - `myapp.com`, `myapp.ai`, `myapp.io` - directly from the CLI. Domain purchase, DNS, and SSL are handled end-to-end; you don't touch a registrar dashboard.
 
 ## How it works
 
@@ -14,7 +14,7 @@ DeepSpace registers domains through a hybrid backend:
 
 Routing uses Cloudflare Custom Hostnames against the platform's SaaS zone (`app.space`). After purchase, the platform provisions ownership and DCV records on the new domain's zone, then activates a hostname route.
 
-Billing is via Stripe Checkout — the same payment flow as in-app purchases. Auto-renew is on by default.
+Billing is via Stripe Checkout - the same payment flow as in-app purchases. Auto-renew is on by default.
 
 ## Search and buy
 
@@ -31,7 +31,7 @@ npx deepspace domain buy my-startup.com
 - **Cloudflare Registrar TLDs** (`.com`, `.dev`, `.app`): ~60-90 seconds
 - **Porkbun TLDs** (`.ai`, `.io`, `.me`): 15-60 minutes (registry-side NS propagation)
 
-You can Ctrl-C out of the polling loop without losing progress — provisioning continues server-side. Re-check with `domain status <domain>`.
+You can Ctrl-C out of the polling loop without losing progress - provisioning continues server-side. Re-check with `domain status <domain>`.
 
 ### Buy options
 
@@ -79,7 +79,7 @@ Use this when:
 npx deepspace domain detach myapp.com --yes
 ```
 
-`detach` removes routing but keeps the registration on file. You keep owning the domain and can re-attach later. There is no `domain release` — releasing a registration goes through the registrar's own portal.
+`detach` removes routing but keeps the registration on file. You keep owning the domain and can re-attach later. There is no `domain release` - releasing a registration goes through the registrar's own portal.
 
 ## Auto-renew
 
@@ -109,7 +109,7 @@ The CLI is designed for both humans and automation:
     If you run `deepspace domain buy myapp.com` outside an app directory without `--app`, the CLI errors with `No app specified. Pass --app <name>, or run from an app directory with a wrangler.toml.`
   </Accordion>
   <Accordion title="Premium domains can have different registration and renewal prices">
-    `chargedCents` in `list` / `status` is what you paid this year. The pricing object exposes separate `registrationCost` / `renewalCost`. For non-premium TLDs they match; for premium domains, introductory pricing can reset at renewal — read `domain status` before assuming.
+    `chargedCents` in `list` / `status` is what you paid this year. The pricing object exposes separate `registrationCost` / `renewalCost`. For non-premium TLDs they match; for premium domains, introductory pricing can reset at renewal - read `domain status` before assuming.
   </Accordion>
   <Accordion title="Don't wrap `buy` in `timeout N`">
     The CLI polls for up to 5 minutes (Cloudflare TLDs) or 60 minutes (Porkbun TLDs). An artificial timeout aborts before payment completes. Use `--no-wait` for fire-and-forget; otherwise let it run and Ctrl-C if needed (safe; provisioning continues server-side).
@@ -121,9 +121,9 @@ The CLI is designed for both humans and automation:
 
 ## Pricing visibility
 
-The CLI shows the price during `search` and the Checkout flow. Pricing comes from the registrar (Cloudflare Registrar or Porkbun) — DeepSpace doesn't add a markup. Renewals charge to your saved Stripe card automatically.
+The CLI shows the price during `search` and the Checkout flow. Pricing comes from the registrar (Cloudflare Registrar or Porkbun) - DeepSpace doesn't add a markup. Renewals charge to your saved Stripe card automatically.
 
 ## Next steps
 
-- [Deployment](/concepts/deployment) — how deploys work, and where subdomains come from.
-- [CLI reference](/cli-reference/commands#domain) — all `domain` subcommands and flags.
+- [Deployment](/concepts/deployment) - how deploys work, and where subdomains come from.
+- [CLI reference](/cli-reference/commands#domain) - all `domain` subcommands and flags.

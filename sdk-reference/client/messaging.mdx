@@ -34,7 +34,7 @@ function useChannels(): {
 }
 ```
 
-Only `create` and `remove` are async — `update` and `archive` dispatch optimistically and return `void`.
+Only `create` and `remove` are async - `update` and `archive` dispatch optimistically and return `void`.
 
 <Tabs>
   <Tab title="Create">
@@ -54,7 +54,7 @@ Only `create` and `remove` are async — `update` and `archive` dispatch optimis
   </Tab>
 
   <Tab title="Update">
-    `update` patches the channel's `name` and/or `description`. Uses [merge semantics](/sdk-reference/client/records#usemutations-t-collection). Fire-and-forget — returns `void`.
+    `update` patches the channel's `name` and/or `description`. Uses [merge semantics](/sdk-reference/client/records#usemutations-t-collection). Fire-and-forget - returns `void`.
 
     ```tsx
     const { update } = useChannels()
@@ -64,7 +64,7 @@ Only `create` and `remove` are async — `update` and `archive` dispatch optimis
   </Tab>
 
   <Tab title="Archive">
-    Hides the channel from default lists without deleting messages. Fire-and-forget — returns `void`. To unarchive, write `archived: false` through a custom `put` call.
+    Hides the channel from default lists without deleting messages. Fire-and-forget - returns `void`. To unarchive, write `archived: false` through a custom `put` call.
 
     ```tsx
     const { archive } = useChannels()
@@ -105,7 +105,7 @@ Pass `options.parentMessageId` to scope the query to a single reply thread.
 
 <Tabs>
   <Tab title="Send">
-    Posts a new message to the channel. Returns the new `messageId` (or `undefined` if there's no signed-in user / no `channelId`). Identity (author) is derived from the [verified JWT](/concepts/architecture#security-model--websocket-identity) — you don't pass an `authorId`.
+    Posts a new message to the channel. Returns the new `messageId` (or `undefined` if there's no signed-in user / no `channelId`). Identity (author) is derived from the [verified JWT](/concepts/architecture#security-model--websocket-identity) - you don't pass an `authorId`.
 
     ```tsx
     const { send } = useMessages(channelId)
@@ -118,7 +118,7 @@ Pass `options.parentMessageId` to scope the query to a single reply thread.
   </Tab>
 
   <Tab title="Edit">
-    Replaces the message body and marks it as edited. Fire-and-forget — returns `void`. The collection's RBAC determines who can edit; the default `MESSAGES_SCHEMA` allows authors to edit their own.
+    Replaces the message body and marks it as edited. Fire-and-forget - returns `void`. The collection's RBAC determines who can edit; the default `MESSAGES_SCHEMA` allows authors to edit their own.
 
     ```tsx
     const { edit } = useMessages(channelId)
@@ -128,7 +128,7 @@ Pass `options.parentMessageId` to scope the query to a single reply thread.
   </Tab>
 
   <Tab title="Soft delete">
-    Sets `deleted: true` on the row instead of dropping it. Fire-and-forget — returns `void`. **Preferred over `remove`** — preserves thread continuity and lets the UI render a "[deleted]" placeholder.
+    Sets `deleted: true` on the row instead of dropping it. Fire-and-forget - returns `void`. **Preferred over `remove`** - preserves thread continuity and lets the UI render a "[deleted]" placeholder.
 
     ```tsx
     const { softDelete } = useMessages(channelId)
@@ -138,7 +138,7 @@ Pass `options.parentMessageId` to scope the query to a single reply thread.
   </Tab>
 
   <Tab title="Hard delete">
-    Permanently removes the row. Fire-and-forget — returns `void`. Use sparingly — soft delete is almost always the right choice for chat history.
+    Permanently removes the row. Fire-and-forget - returns `void`. Use sparingly - soft delete is almost always the right choice for chat history.
 
     ```tsx
     const { remove } = useMessages(channelId)
@@ -167,7 +167,7 @@ function useReactions(channelId: string | undefined): {
 }
 ```
 
-`getReactionsForMessage` returns one row per distinct emoji on the message, already aggregated with `count`, the full `userIds` list, and a `currentUserReacted` flag. `toggle` adds the caller's reaction or removes it if it already exists. Fire-and-forget — `toggle` returns `void`.
+`getReactionsForMessage` returns one row per distinct emoji on the message, already aggregated with `count`, the full `userIds` list, and a `currentUserReacted` flag. `toggle` adds the caller's reaction or removes it if it already exists. Fire-and-forget - `toggle` returns `void`.
 
 ```tsx
 const { getReactionsForMessage, toggle } = useReactions(channelId)
@@ -193,7 +193,7 @@ function useChannelMembers(channelId: string | undefined): {
 }
 ```
 
-`isMember` is a derived boolean property (not a function) that reflects whether the current signed-in user is in this channel. `join` and `leave` are fire-and-forget — they return `void`.
+`isMember` is a derived boolean property (not a function) that reflects whether the current signed-in user is in this channel. `join` and `leave` are fire-and-forget - they return `void`.
 
 ## `useReadReceipts()`
 
@@ -207,7 +207,7 @@ function useReadReceipts(): {
 }
 ```
 
-`markAsRead` records the current timestamp as the user's last-read marker for the given channel (no `messageId` argument — the timestamp is what matters). `getUnreadCount` takes the channel's messages array (typically from `useMessages`) and counts how many landed after the stored timestamp.
+`markAsRead` records the current timestamp as the user's last-read marker for the given channel (no `messageId` argument - the timestamp is what matters). `getUnreadCount` takes the channel's messages array (typically from `useMessages`) and counts how many landed after the stored timestamp.
 
 ```tsx
 const { messages } = useMessages(channelId)
@@ -241,9 +241,9 @@ function useConversation(options?: {
 }
 ```
 
-All mutation methods are fire-and-forget — they return `void` and dispatch through the underlying record store. Pass `onMessageSent` to `useConversation()` if you need a hook into successful sends (e.g., to scroll to the bottom).
+All mutation methods are fire-and-forget - they return `void` and dispatch through the underlying record store. Pass `onMessageSent` to `useConversation()` if you need a hook into successful sends (e.g., to scroll to the bottom).
 
-Different from `useMessages` / `useReactions` / `useChannelMembers` — those target the channel-style collections within your app's main `RecordRoom`. `useConversation` targets a dedicated DM Durable Object on a `conv:<id>` [scope](/concepts/architecture#scopes).
+Different from `useMessages` / `useReactions` / `useChannelMembers` - those target the channel-style collections within your app's main `RecordRoom`. `useConversation` targets a dedicated DM Durable Object on a `conv:<id>` [scope](/concepts/architecture#scopes).
 
 ## Record types
 
@@ -309,6 +309,6 @@ For cross-app conversations (the platform's shared `dir:<appHandle>` DO), use th
 
 ## See also
 
-- [Messaging guide](/guides/messaging) — UI patterns and worked examples.
-- [Permissions](/concepts/permissions) — how `'private'` / `'dm'` channel types map to RBAC.
-- [Worker schemas reference](/sdk-reference/worker/schemas) — `CHANNELS_SCHEMA`, `MESSAGES_SCHEMA`, etc.
+- [Messaging guide](/guides/messaging) - UI patterns and worked examples.
+- [Permissions](/concepts/permissions) - how `'private'` / `'dm'` channel types map to RBAC.
+- [Worker schemas reference](/sdk-reference/worker/schemas) - `CHANNELS_SCHEMA`, `MESSAGES_SCHEMA`, etc.

@@ -36,7 +36,7 @@ npx deepspace dev --prod              # workers point at production (real auth, 
 | Arg / Flag | Default | Description |
 |---|---|---|
 | `[dir]` | `.` | App directory (positional). |
-| `--port <n>` | `5173` (or `$DEEPSPACE_PORT`) | Listening port. Vite uses `--strictPort` — fails loudly if held. |
+| `--port <n>` | `5173` (or `$DEEPSPACE_PORT`) | Listening port. Vite uses `--strictPort` - fails loudly if held. |
 | `--prod` | off | Use production workers (real auth, real API calls). |
 
 `dev` rewrites the SDK-managed keys in `.dev.vars` on every run. User-added secrets (below the divider) are preserved.
@@ -54,7 +54,7 @@ npx deepspace deploy ./my-app         # deploy from a specific directory
 |---|---|---|
 | `[dir]` | `.` | App directory (positional). |
 
-The subdomain comes from the `name` field in `wrangler.toml`. To change it, edit `wrangler.toml` before deploying — `deploy` doesn't accept a name override.
+The subdomain comes from the `name` field in `wrangler.toml`. To change it, edit `wrangler.toml` before deploying - `deploy` doesn't accept a name override.
 
 User secrets below the `.dev.vars` divider are uploaded as `secret_text` bindings. Custom bindings declared in `wrangler.toml` are validated and auto-provisioned if `id = "auto"`.
 
@@ -90,7 +90,7 @@ npx deepspace login --email me@x.test --password ******  # non-interactive
 The session is stored at `~/.deepspace/session` and is shared across all DeepSpace apps on the machine.
 
 <Warning>
-**Don't wrap in `timeout N` or `sleep N && kill`.** OAuth needs the full polling window. Ctrl-C is safe — server-side state is preserved. Re-login only when `whoami` reports not signed in or the session has expired.
+**Don't wrap in `timeout N` or `sleep N && kill`.** OAuth needs the full polling window. Ctrl-C is safe - server-side state is preserved. Re-login only when `whoami` reports not signed in or the session has expired.
 </Warning>
 
 ## `logout`
@@ -103,7 +103,7 @@ npx deepspace logout
 
 ## `whoami`
 
-Print the current login state. The canonical login-state probe — it refreshes the JWT in the same call path that `dev` / `test` / `deploy` use.
+Print the current login state. The canonical login-state probe - it refreshes the JWT in the same call path that `dev` / `test` / `deploy` use.
 
 ```bash
 npx deepspace whoami
@@ -136,7 +136,7 @@ npx deepspace add <feature> ./my-app      # install into specific dir
 | `--list`, `-l` | List available features and exit. |
 | `--info <name>` | Show details about a feature and exit. |
 
-Available features (subject to change — run `--list` for the current set):
+Available features (subject to change - run `--list` for the current set):
 
 `admin-page`, `ai-chat`, `canvas`, `cron`, `docs`, `file-attachments`, `file-manager`, `integration-test`, `items`, `kanban`, `landing`, `leaderboard`, `messaging`, `presence-test`, `sidebar`, `tasks`, `testing`, `topbar`, `tree`
 
@@ -292,7 +292,7 @@ npx deepspace test-accounts clear --yes          # skip confirmation
 | Subcommand | Flags |
 |---|---|
 | `create` | `--email` (required, must end `@deepspace.test`), `--password` (required, min 8 chars), `--name`, `--label` |
-| `list` | — |
+| `list` | - |
 | `delete` | `--email` _or_ `--id` (exactly one) |
 | `clear` | `--label <tag>`, `--yes` |
 
@@ -345,7 +345,7 @@ The CLI reads a small set of environment variables:
 
 ## See also
 
-- [CLI overview](/cli-reference/overview) — dev loop summary
-- [Quickstart](/get-started/quickstart) — first-time walkthrough
-- [Custom domains guide](/guides/custom-domains) — purchase and attach flow
-- [Testing guide](/guides/testing) — the test runner in context
+- [CLI overview](/cli-reference/overview) - dev loop summary
+- [Quickstart](/get-started/quickstart) - first-time walkthrough
+- [Custom domains guide](/guides/custom-domains) - purchase and attach flow
+- [Testing guide](/guides/testing) - the test runner in context

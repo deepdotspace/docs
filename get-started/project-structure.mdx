@@ -5,7 +5,7 @@ description: "A tour of the files in a scaffolded DeepSpace app."
 
 A scaffolded app is a normal Vite + React project with a Cloudflare Worker entry point. This page explains what each file does and which ones you'll edit most often.
 
-If you only read one section, make it [The Durable Object manifest](#the-durable-object-manifest) — it's the bridge between your worker and the SDK.
+If you only read one section, make it [The Durable Object manifest](#the-durable-object-manifest) - it's the bridge between your worker and the SDK.
 
 ## Top-level files
 
@@ -18,7 +18,7 @@ If you only read one section, make it [The Durable Object manifest](#the-durable
 | `package.json` | Dependencies. The scaffold includes `deepspace`, `react`, `vite`, and a few Tailwind/UI peers. |
 | `.dev.vars` | Local secrets (gitignored). Auto-managed for SDK keys; user-added keys are uploaded as `secret_text` on deploy. |
 
-## `src/` — application code
+## `src/` - application code
 
 ### Pages and providers
 
@@ -29,9 +29,9 @@ If you only read one section, make it [The Durable Object manifest](#the-durable
 | `src/pages/(protected)/_layout.tsx` | Applies `<AuthGate>` to every route inside the `(protected)/` folder. |
 | `src/pages/(protected)/*.tsx` | Gated routes. Add a file here for a new authenticated page. |
 | `src/components/Navigation.tsx` | Top navigation with auth-aware controls. Reads entries from `src/nav.ts`. |
-| `src/components/ui/` | Shadcn-style primitives — `Button`, `Dialog`, `Toast`, `Card`, `EmptyState`, and more. |
+| `src/components/ui/` | Shadcn-style primitives - `Button`, `Dialog`, `Toast`, `Card`, `EmptyState`, and more. |
 
-Routing is file-based via [generouted](https://github.com/oedotme/generouted): every file under `src/pages/` becomes a route. Folder names in parentheses (`(protected)/`) are route groups — they apply layouts without showing up in the URL.
+Routing is file-based via [generouted](https://github.com/oedotme/generouted): every file under `src/pages/` becomes a route. Folder names in parentheses (`(protected)/`) are route groups - they apply layouts without showing up in the URL.
 
 ### Data layer
 
@@ -39,10 +39,10 @@ Routing is file-based via [generouted](https://github.com/oedotme/generouted): e
 |---|---|
 | `src/schemas.ts` | Exports the array of every collection schema in the app. |
 | `src/schemas/` | One file per collection (`users-schema.ts`, `admin-schema.ts`, your custom collections). |
-| `src/actions/index.ts` | Server actions — privileged worker functions called via `POST /api/actions/:name`. |
+| `src/actions/index.ts` | Server actions - privileged worker functions called via `POST /api/actions/:name`. |
 | `src/constants.ts` | `APP_NAME`, `SCOPE_ID`, and role re-exports. |
 
-Schemas are imported by `worker.ts` and baked into the bundle at deploy time. There's no runtime schema registry — adding or changing a schema requires a redeploy.
+Schemas are imported by `worker.ts` and baked into the bundle at deploy time. There's no runtime schema registry - adding or changing a schema requires a redeploy.
 
 ### Theming and navigation
 
@@ -55,7 +55,7 @@ Schemas are imported by `worker.ts` and baked into the bundle at deploy time. Th
 
 ### Optional surfaces
 
-These exist only if your app needs them — install via `npx deepspace add <feature>` or create by hand.
+These exist only if your app needs them - install via `npx deepspace add <feature>` or create by hand.
 
 | File | Purpose |
 |---|---|
@@ -66,7 +66,7 @@ These exist only if your app needs them — install via `npx deepspace add <feat
 | `src/subscriptions.ts` | Subscription plan manifest for Stripe billing. |
 | `src/products.ts` | One-time product manifest. |
 
-## `tests/` — Playwright specs
+## `tests/` - Playwright specs
 
 | File | Purpose |
 |---|---|
@@ -101,7 +101,7 @@ interface Env extends DOBindings<typeof __DO_MANIFEST__> {
 }
 ```
 
-The deploy pipeline reads `__DO_MANIFEST__` to provision the right DO bindings on Cloudflare. Don't remove classes you no longer use without clearing their stored data first — the records persist across deploys.
+The deploy pipeline reads `__DO_MANIFEST__` to provision the right DO bindings on Cloudflare. Don't remove classes you no longer use without clearing their stored data first - the records persist across deploys.
 
 ## Conventions
 
@@ -112,6 +112,6 @@ The deploy pipeline reads `__DO_MANIFEST__` to provision the right DO bindings o
 
 ## Next steps
 
-- [Quickstart](/get-started/quickstart) — build something with these files.
-- [Architecture](/concepts/architecture) — how everything fits together.
-- [Data model](/concepts/data-model) — collections, records, and the envelope shape.
+- [Quickstart](/get-started/quickstart) - build something with these files.
+- [Architecture](/concepts/architecture) - how everything fits together.
+- [Data model](/concepts/data-model) - collections, records, and the envelope shape.

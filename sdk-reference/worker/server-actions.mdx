@@ -3,7 +3,7 @@ title: "Server actions reference"
 description: "`ActionHandler`, `ActionContext`, `ActionTools`, and `ActionResult`."
 ---
 
-Server actions are defined in `src/actions/index.ts` and exposed at `POST /api/actions/:name`. They run as the app — RBAC checks are bypassed via the `X-App-Action` header — and are the right tool for cross-collection orchestration or owner-gated operations.
+Server actions are defined in `src/actions/index.ts` and exposed at `POST /api/actions/:name`. They run as the app - RBAC checks are bypassed via the `X-App-Action` header - and are the right tool for cross-collection orchestration or owner-gated operations.
 
 ```ts
 import type {
@@ -43,7 +43,7 @@ interface ActionContext<TEnv = Record<string, unknown>> {
 }
 ```
 
-`userId` is the caller — not the app owner. Use it for audit logs and per-caller logic. For owner-only actions, gate on `userId === env.OWNER_USER_ID`.
+`userId` is the caller - not the app owner. Use it for audit logs and per-caller logic. For owner-only actions, gate on `userId === env.OWNER_USER_ID`.
 
 ## `ActionTools`
 
@@ -104,16 +104,16 @@ interface QueryActionData<T = Record<string, unknown>> {
 
 | Method | Returns (under `.data`) |
 |---|---|
-| `tools.get(coll, id)` | `{ record }` — full envelope with `data` typed as `T` |
+| `tools.get(coll, id)` | `{ record }` - full envelope with `data` typed as `T` |
 | `tools.query(coll, opts?)` | `{ records, count }` |
 | `tools.create(coll, data)` | `{ recordId }` |
 | `tools.update(coll, id, patch)` | `{ recordId }` |
 | `tools.remove(coll, id)` | `{ recordId }` |
 | `tools.integration(endpoint, body)` | The integration's response body directly (typed as `T`) |
 
-`tools.integration` does **not** wrap the response in `{ response }` — on success, `result.data` IS the integration's body. An OpenAI chat call yields `result.data.choices`; a Freepik image call yields `result.data.images`.
+`tools.integration` does **not** wrap the response in `{ response }` - on success, `result.data` IS the integration's body. An OpenAI chat call yields `result.data.choices`; a Freepik image call yields `result.data.images`.
 
-All operations bypass caller RBAC. **`tools.query` sees every record in the collection** regardless of the caller's role — pass a `where` clause to scope.
+All operations bypass caller RBAC. **`tools.query` sees every record in the collection** regardless of the caller's role - pass a `where` clause to scope.
 
 ## `ActionResult<T>`
 
@@ -140,7 +140,7 @@ const event = r.data.record   // typed as RecordResult & { data: EventData }
 | `'developer'` | The app owner via `APP_OWNER_JWT` |
 | `'user'` | The signed-in caller |
 
-The api-worker reads the JWT subject — there's no client-supplied override (`X-Billing-User-Id` is ignored).
+The api-worker reads the JWT subject - there's no client-supplied override (`X-Billing-User-Id` is ignored).
 
 ## Owner-only pattern
 
@@ -176,9 +176,9 @@ const result = await res.json() as ActionResult
 
 The action's `success` / `data` / `error` shape is forwarded verbatim in the HTTP response body. HTTP status is 200 on success, 401 if unauthenticated, 404 if the action name doesn't exist, 500 on uncaught throws.
 
-## Type tip — fetching the post-write envelope
+## Type tip - fetching the post-write envelope
 
-`tools.create` / `update` / `remove` resolve to `ActionResult<MutateActionData>` — only `{ recordId }` is returned, never the full envelope. To inspect the row after a mutation, re-fetch it:
+`tools.create` / `update` / `remove` resolve to `ActionResult<MutateActionData>` - only `{ recordId }` is returned, never the full envelope. To inspect the row after a mutation, re-fetch it:
 
 ```ts
 const r = await tools.update<EventData>('events', id, patch)
@@ -192,6 +192,6 @@ if (r.success) {
 
 ## See also
 
-- [Server actions guide](/guides/server-actions) — patterns and worked examples
-- [Permissions concepts](/concepts/permissions) — what RBAC bypass means
-- [External APIs guide](/guides/external-apis) — billing routing for `tools.integration`
+- [Server actions guide](/guides/server-actions) - patterns and worked examples
+- [Permissions concepts](/concepts/permissions) - what RBAC bypass means
+- [External APIs guide](/guides/external-apis) - billing routing for `tools.integration`

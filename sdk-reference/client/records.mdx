@@ -43,7 +43,7 @@ Mounts a specific [scope](/concepts/architecture#scopes) (Durable Object instanc
 |---|---|---|
 | `roomId` | `string` | Scope ID (e.g. `app:my-app`, `conv:abc123`). |
 | `schemas` | `CollectionSchema[]` | Collections in this scope. |
-| `appId` | `string` | App identifier — used for cross-app routing. |
+| `appId` | `string` | App identifier - used for cross-app routing. |
 | `sharedScopes` | `Array<{ roomId, schemas }>` | Cross-app scopes to mount alongside the primary. See [cross-app shared scopes](/concepts/architecture#cross-app-shared-scopes). |
 | `wsUrl` | `string` *(optional)* | Override WebSocket URL. |
 | `wsPathPrefix` | `string` *(optional)* | Override path prefix (default `/ws`). |
@@ -138,12 +138,12 @@ type Envelope<T> = {
 ```
 
 <Warning>
-**User fields live under `.data`.** `r.title` returns `undefined` — always reach for `r.data.title`. TypeScript catches this if you pass a row type to `useQuery<T>`.
+**User fields live under `.data`.** `r.title` returns `undefined` - always reach for `r.data.title`. TypeScript catches this if you pass a row type to `useQuery<T>`.
 </Warning>
 
 ## `useMutations<T>(collection)`
 
-Returns mutation functions for the given collection. Each mutation applies [optimistically](/concepts/realtime-sync#the-optimistic-mutation-pipeline) — the local store updates before the server confirms.
+Returns mutation functions for the given collection. Each mutation applies [optimistically](/concepts/realtime-sync#the-optimistic-mutation-pipeline) - the local store updates before the server confirms.
 
 ```ts
 function useMutations<T>(collection: string): {
@@ -170,7 +170,7 @@ function useMutations<T>(collection: string): {
     })
     ```
 
-    If you need to confirm the row was actually persisted (e.g., before navigating away), use `createConfirmed` instead — it awaits server acknowledgment:
+    If you need to confirm the row was actually persisted (e.g., before navigating away), use `createConfirmed` instead - it awaits server acknowledgment:
 
     ```tsx
     const id = await createConfirmed({ title: 'New', body: '', pinned: false })
@@ -179,7 +179,7 @@ function useMutations<T>(collection: string): {
   </Tab>
 
   <Tab title="Update">
-    `put` is **merge semantics** — the server applies `{ ...existing, ...patch }`. Send only the fields you're changing.
+    `put` is **merge semantics** - the server applies `{ ...existing, ...patch }`. Send only the fields you're changing.
 
     ```tsx
     const { put } = useMutations<Note>('notes')
@@ -191,7 +191,7 @@ function useMutations<T>(collection: string): {
     Do not spread the existing record:
 
     ```tsx
-    // ❌ Wasteful — sends every field
+    // ❌ Wasteful - sends every field
     await put(noteId, { ...note.data, pinned: true })
 
     // ✅ Send only what changed
@@ -212,13 +212,13 @@ function useMutations<T>(collection: string): {
   </Tab>
 
   <Tab title="Confirmed variants">
-    `createConfirmed` / `putConfirmed` / `removeConfirmed` resolve only after the DO has acknowledged the write. Use when the next step depends on server persistence — typically before navigation.
+    `createConfirmed` / `putConfirmed` / `removeConfirmed` resolve only after the DO has acknowledged the write. Use when the next step depends on server persistence - typically before navigation.
 
     ```tsx
     const { createConfirmed } = useMutations<Note>('notes')
 
     const id = await createConfirmed({ title: 'New' })
-    navigate(`/notes/${id}`)   // safe — server has persisted
+    navigate(`/notes/${id}`)   // safe - server has persisted
     ```
 
     Plain `create` resolves as soon as the local store is updated, which is usually before the server confirms. If the server then rejects the write (e.g., RBAC denial), the optimistic update [rolls back](/concepts/realtime-sync#the-optimistic-mutation-pipeline).
@@ -287,7 +287,7 @@ const { getName } = useUserLookup()
 <p>By {getName(message.authorId) ?? 'unknown'}</p>
 ```
 
-There is no `getRole` or `getImageUrl` — read those off `getUser(id)?.role` or `getUser(id)?.imageUrl`.
+There is no `getRole` or `getImageUrl` - read those off `getUser(id)?.role` or `getUser(id)?.imageUrl`.
 
 ## `useRecordContext()`
 
@@ -295,8 +295,8 @@ Low-level access to the record-store context (WebSocket send/receive primitives,
 
 ## See also
 
-- [Data storage guide](/guides/data-storage) — schemas, CRUD, and patterns.
-- [Data model](/concepts/data-model) — collections, envelopes, scopes.
-- [Permissions](/concepts/permissions) — RBAC rules and the `'own'` / `'shared'` / `'published'` shortcuts.
-- [Real-time sync](/concepts/realtime-sync) — optimistic pipeline and consistency guarantees.
-- [Worker schemas reference](/sdk-reference/worker/schemas) — the `CollectionSchema` type and drop-in collections.
+- [Data storage guide](/guides/data-storage) - schemas, CRUD, and patterns.
+- [Data model](/concepts/data-model) - collections, envelopes, scopes.
+- [Permissions](/concepts/permissions) - RBAC rules and the `'own'` / `'shared'` / `'published'` shortcuts.
+- [Real-time sync](/concepts/realtime-sync) - optimistic pipeline and consistency guarantees.
+- [Worker schemas reference](/sdk-reference/worker/schemas) - the `CollectionSchema` type and drop-in collections.

@@ -31,11 +31,11 @@ test('A sends, B sees', async ({ users }) => {
 })
 ```
 
-The fixture caches `storageState` per account, so each test account signs in once per machine — not once per test.
+The fixture caches `storageState` per account, so each test account signs in once per machine - not once per test.
 
 **Requires `baseURL`** in `tests/playwright.config.ts`. The scaffold sets this; tests error with `users fixture requires a baseURL` if it's missing.
 
-## `users(N | string[], options?)` — the fixture
+## `users(N | string[], options?)` - the fixture
 
 ```ts
 type UsersFixture = (
@@ -64,7 +64,7 @@ const [alice, bob] = await users(['Alice', 'Bob'])
 const [team] = await users(1, { label: 'team-fixture' })
 ```
 
-Contexts auto-close when the test finishes — no manual cleanup needed for contexts. You still need to clean up records you create during the test (see [Testing guide → Test data cleanup](/guides/testing#test-data-cleanup)).
+Contexts auto-close when the test finishes - no manual cleanup needed for contexts. You still need to clean up records you create during the test (see [Testing guide → Test data cleanup](/guides/testing#test-data-cleanup)).
 
 ## Escape hatches
 
@@ -72,7 +72,7 @@ When the fixture is too high-level, import the underlying helpers directly:
 
 | Helper | Signature |
 |---|---|
-| `loadAllTestAccounts()` | `() => TestAccount[]` — every cached account (sync) |
+| `loadAllTestAccounts()` | `() => TestAccount[]` - every cached account (sync) |
 | `pickTestAccounts(n, opts?)` | `(n: number, opts?: { label?: string }) => TestAccount[]` (sync); throws if not enough accounts |
 | `findTestAccountByName(name)` | `(name: string) => TestAccount` (sync); throws if not found |
 | `ensureStorageState(browser, account, baseURL, options?)` | Sign in once and return the cached `storageState` path |
@@ -80,7 +80,7 @@ When the fixture is too high-level, import the underlying helpers directly:
 | `getStatePathForEmail(email)` | Direct cache-path lookup for an email |
 | `readCachedState(email)` | Direct cache read by email |
 
-All three account loaders read from `~/.deepspace/test-accounts.json` synchronously — they don't return promises.
+All three account loaders read from `~/.deepspace/test-accounts.json` synchronously - they don't return promises.
 
 ### `TestAccount`
 
@@ -166,6 +166,6 @@ test('custom flow', async ({ browser }) => {
 
 ## See also
 
-- [Testing guide](/guides/testing) — full workflow, test extension checklist, debugging
-- [CLI test command](/cli-reference/commands#test) — runner flags
-- [CLI test-accounts command](/cli-reference/commands#test-accounts) — provisioning the account pool
+- [Testing guide](/guides/testing) - full workflow, test extension checklist, debugging
+- [CLI test command](/cli-reference/commands#test) - runner flags
+- [CLI test-accounts command](/cli-reference/commands#test-accounts) - provisioning the account pool

@@ -3,9 +3,9 @@ title: "Data storage"
 description: "Define a collection, query it from React, and mutate it with optimistic updates."
 ---
 
-This guide walks through adding a new [collection](/concepts/data-model) to your app — declaring its [schema](/sdk-reference/worker/schemas), querying it from the client, and persisting writes. By the end, you'll have a working CRUD surface backed by a [Durable Object](/concepts/architecture#durable-objects) that syncs in real time across every connected client.
+This guide walks through adding a new [collection](/concepts/data-model) to your app - declaring its [schema](/sdk-reference/worker/schemas), querying it from the client, and persisting writes. By the end, you'll have a working CRUD surface backed by a [Durable Object](/concepts/architecture#durable-objects) that syncs in real time across every connected client.
 
-For the underlying mental model — envelopes, scopes, the optimistic pipeline — see [Data model](/concepts/data-model) and [Real-time sync](/concepts/realtime-sync).
+For the underlying mental model - envelopes, scopes, the optimistic pipeline - see [Data model](/concepts/data-model) and [Real-time sync](/concepts/realtime-sync).
 
 ## Define the schema
 
@@ -39,13 +39,13 @@ import { notesSchema } from './schemas/notes-schema'
 export const schemas = [usersSchema, settingsSchema, notesSchema]
 ```
 
-Restart `npx deepspace dev` if it's running — schemas are picked up at worker startup.
+Restart `npx deepspace dev` if it's running - schemas are picked up at worker startup.
 
 <Note>
 Schemas are **baked into your worker at deploy time**. There's no runtime schema registry. To add or change a schema in production, you must redeploy.
 </Note>
 
-## Read records — `useQuery`
+## Read records - `useQuery`
 
 The [`useQuery`](/sdk-reference/client/records#usequery-t-collection-options) hook subscribes to a collection and streams updates over a WebSocket. Each record comes wrapped in an **envelope**:
 
@@ -87,7 +87,7 @@ function NotesList() {
 ```
 
 <Warning>
-User fields live under `.data`. Reading `note.title` returns `undefined` — always use `note.data.title`. TypeScript catches this if you pass a row type to `useQuery<Note>`.
+User fields live under `.data`. Reading `note.title` returns `undefined` - always use `note.data.title`. TypeScript catches this if you pass a row type to `useQuery<Note>`.
 </Warning>
 
 ### Query options
@@ -110,13 +110,13 @@ const { records } = useQuery<Note>('notes', {
 
 The DO applies the filter server-side before broadcasting, so unauthorized records never leave the worker.
 
-## Write records — `useMutations`
+## Write records - `useMutations`
 
-The [`useMutations`](/sdk-reference/client/records#usemutations-t-collection) hook returns three mutation functions plus their confirmed variants. Each mutation applies [optimistically](/concepts/realtime-sync#the-optimistic-mutation-pipeline) — the local store updates before the server confirms.
+The [`useMutations`](/sdk-reference/client/records#usemutations-t-collection) hook returns three mutation functions plus their confirmed variants. Each mutation applies [optimistically](/concepts/realtime-sync#the-optimistic-mutation-pipeline) - the local store updates before the server confirms.
 
 <Tabs>
   <Tab title="Create">
-    `create` takes the full row shape and returns the new `recordId` (generated client-side before the optimistic write is sent). Capture it if you need to navigate to a new resource — you can use it immediately without waiting for server acknowledgment.
+    `create` takes the full row shape and returns the new `recordId` (generated client-side before the optimistic write is sent). Capture it if you need to navigate to a new resource - you can use it immediately without waiting for server acknowledgment.
 
     ```tsx
     import { useMutations } from 'deepspace'
@@ -135,7 +135,7 @@ The [`useMutations`](/sdk-reference/client/records#usemutations-t-collection) ho
   </Tab>
 
   <Tab title="Update">
-    `put` uses **merge semantics** — the server applies `{ ...existing, ...patch }`. Send only the fields you're changing.
+    `put` uses **merge semantics** - the server applies `{ ...existing, ...patch }`. Send only the fields you're changing.
 
     ```tsx
     const { put } = useMutations<Note>('notes')
@@ -147,7 +147,7 @@ The [`useMutations`](/sdk-reference/client/records#usemutations-t-collection) ho
     await put(noteId, { title: 'New', body: 'Updated body' })
     ```
 
-    Don't spread the whole row — it wastes bandwidth and risks overwriting concurrent edits.
+    Don't spread the whole row - it wastes bandwidth and risks overwriting concurrent edits.
   </Tab>
 
   <Tab title="Delete">
@@ -161,7 +161,7 @@ The [`useMutations`](/sdk-reference/client/records#usemutations-t-collection) ho
   </Tab>
 
   <Tab title="Confirmed">
-    The `*Confirmed` variants resolve only after the Durable Object acknowledges the write. Use when the next step depends on persistence — typically before navigating to a server-generated ID.
+    The `*Confirmed` variants resolve only after the Durable Object acknowledges the write. Use when the next step depends on persistence - typically before navigating to a server-generated ID.
 
     ```tsx
     const { createConfirmed } = useMutations<Note>('notes')
@@ -235,7 +235,7 @@ export default function NotesPage() {
 }
 ```
 
-Open the page in two browser windows — changes in one window appear in the other in real time.
+Open the page in two browser windows - changes in one window appear in the other in real time.
 
 ## Working with JSON columns
 
@@ -245,13 +245,13 @@ For structured data, use `interpretation: { kind: 'json' }`:
 { name: 'tags', storage: 'text', interpretation: { kind: 'json' } }
 ```
 
-On write, pass the value directly — the SDK serializes:
+On write, pass the value directly - the SDK serializes:
 
 ```ts
 await create({ title: 'Trip', tags: ['vacation', '2024'] })
 ```
 
-On read, the value is already parsed — don't call `JSON.parse`:
+On read, the value is already parsed - don't call `JSON.parse`:
 
 ```ts
 record.data.tags        // ✓ ['vacation', '2024']
@@ -270,7 +270,7 @@ permissions: {
 
 Now each user sees only the notes they created. `'own'` resolves against `record.createdBy` by default; override with `ownerField` if you want a different column to determine ownership.
 
-For more advanced rules — published/draft visibility, collaborators, teams — see [Concepts → Permissions](/concepts/permissions).
+For more advanced rules - published/draft visibility, collaborators, teams - see [Concepts → Permissions](/concepts/permissions).
 
 ## Performance tips
 
@@ -281,7 +281,7 @@ For more advanced rules — published/draft visibility, collaborators, teams —
 
 ## Next steps
 
-- [Permissions](/concepts/permissions) — role-based access control on collections.
-- [Server actions](/guides/server-actions) — privileged writes that bypass user RBAC.
-- [Records reference](/sdk-reference/client/records) — full hooks API surface.
-- [Schema reference](/sdk-reference/worker/schemas) — column types and permission rules.
+- [Permissions](/concepts/permissions) - role-based access control on collections.
+- [Server actions](/guides/server-actions) - privileged writes that bypass user RBAC.
+- [Records reference](/sdk-reference/client/records) - full hooks API surface.
+- [Schema reference](/sdk-reference/worker/schemas) - column types and permission rules.

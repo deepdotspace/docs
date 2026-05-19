@@ -57,7 +57,7 @@ function useSubscription(): {
   hasTier:   (slug: string) => boolean       // strict slug match AND entitled
   isAtLeast: (slug: string) => boolean       // rank ≥ target AND entitled
 
-  // Actions — both navigate the browser to Stripe Checkout / portal automatically
+  // Actions - both navigate the browser to Stripe Checkout / portal automatically
   subscribe:  (planSlug: string, opts?: { interval?: 'month' | 'year'; returnUrl?: string; cancelUrl?: string }) => Promise<SubscribeResult>
   openPortal: (returnUrl?: string) => Promise<{ url: string }>
 
@@ -66,7 +66,7 @@ function useSubscription(): {
 }
 ```
 
-`subscribe` and `openPortal` redirect the page when they receive a URL from the server. Even though they return a promise, the page will usually navigate away before it resolves — only `await` them when you specifically need to inspect the result (e.g., `immediate: true` in-place plan changes).
+`subscribe` and `openPortal` redirect the page when they receive a URL from the server. Even though they return a promise, the page will usually navigate away before it resolves - only `await` them when you specifically need to inspect the result (e.g., `immediate: true` in-place plan changes).
 
 <Warning>
 **Gate features on `hasTier` / `isAtLeast`, never on `tier` alone.** A `past_due` Pro subscriber keeps `tier === 'pro'` but `entitled === false`.
@@ -104,14 +104,14 @@ function useCheckout(options?: { productId?: string }): {
 
 Two modes:
 
-- **Product mode** — pass `{ productId }` to both the hook and `chargeOnce`. The server resolves the amount and name from your declared product catalog. Entitlement is checked via `owned` / `ownsProduct`.
-- **Ad-hoc mode** — pass `{ amount, name }` (and optionally `description`) to `chargeOnce`. The purchase has `productId: null` and **cannot** be used to gate features.
+- **Product mode** - pass `{ productId }` to both the hook and `chargeOnce`. The server resolves the amount and name from your declared product catalog. Entitlement is checked via `owned` / `ownsProduct`.
+- **Ad-hoc mode** - pass `{ amount, name }` (and optionally `description`) to `chargeOnce`. The purchase has `productId: null` and **cannot** be used to gate features.
 
-`chargeOnce` redirects the browser to Stripe Checkout on success, so callers usually don't see the promise resolve — `await` is only meaningful when you want to inspect the URL or surface an error before redirecting.
+`chargeOnce` redirects the browser to Stripe Checkout on success, so callers usually don't see the promise resolve - `await` is only meaningful when you want to inspect the URL or surface an error before redirecting.
 
 ## `<PricingTable plans={...} onSelect={...} />`
 
-A ready-made pricing UI wired to the plan catalog. Stateless — pass the plan catalog in and call `subscribe()` from your `onSelect` handler.
+A ready-made pricing UI wired to the plan catalog. Stateless - pass the plan catalog in and call `subscribe()` from your `onSelect` handler.
 
 ```tsx
 import { PricingTable, useSubscription } from 'deepspace'
@@ -132,7 +132,7 @@ function Pricing() {
 |---|---|---|
 | `plans` | `PlanInfo[]` | Plans from `useSubscription().plans`. |
 | `interval` | `'month' \| 'year'` *(optional)* | Which interval to show prices for. Defaults to `'month'`. |
-| `currentTier` | `string` *(optional)* | The viewer's current plan slug — disables that plan's button and labels it "Current plan". |
+| `currentTier` | `string` *(optional)* | The viewer's current plan slug - disables that plan's button and labels it "Current plan". |
 | `onSelect` | `(planSlug: string, interval: 'month' \| 'year') => void \| Promise<void>` | Called when the user clicks a plan's button. Wire this to `useSubscription().subscribe`. |
 
 ## Server helpers
@@ -156,16 +156,16 @@ function requireSubscription(
   opts: { tier?: string; atLeast?: string },
 ): Promise<SubscriptionRead>
 
-class SubscriptionAuthError extends Error {       // 401-shaped — identity failure
+class SubscriptionAuthError extends Error {       // 401-shaped - identity failure
   readonly status: number
 }
-class SubscriptionRequiredError extends Error {   // 402-shaped — tier failure
+class SubscriptionRequiredError extends Error {   // 402-shaped - tier failure
   readonly required: string
   readonly current: string
 }
 ```
 
-Both `tier` and `atLeast` are optional. Pass `tier` for a strict slug match, `atLeast` for a rank-or-higher check, or both. The helper always enforces the entitlement gate first (status must be `active` or `trialing` — `free` always passes).
+Both `tier` and `atLeast` are optional. Pass `tier` for a strict slug match, `atLeast` for a rank-or-higher check, or both. The helper always enforces the entitlement gate first (status must be `active` or `trialing` - `free` always passes).
 
 ```ts
 app.get('/api/premium', async (c) => {
@@ -190,7 +190,7 @@ function getSubscription(c: Context): Promise<SubscriptionRead>
 
 ### `cancelSubscription(c, opts)`
 
-Cancel one user or every user on a retired plan. Requires the inbound request to carry the app-owner's JWT — the api-worker rejects anyone else.
+Cancel one user or every user on a retired plan. Requires the inbound request to carry the app-owner's JWT - the api-worker rejects anyone else.
 
 ```ts
 function cancelSubscription(
@@ -214,7 +214,7 @@ class CancelSubscriptionError extends Error {
 }
 ```
 
-Batched at 50. Loop the call while `hasMore` is true — `cancel_at_period_end` is idempotent so re-flagging is a no-op.
+Batched at 50. Loop the call while `hasMore` is true - `cancel_at_period_end` is idempotent so re-flagging is a no-op.
 
 ### `refundInvoice(c, opts)`
 
@@ -267,5 +267,5 @@ type OneTimeProduct = {
 
 ## See also
 
-- [Payments guide](/guides/payments) — patterns and worked examples
-- [Server actions guide](/guides/server-actions) — wrap refunds in admin routes
+- [Payments guide](/guides/payments) - patterns and worked examples
+- [Server actions guide](/guides/server-actions) - wrap refunds in admin routes

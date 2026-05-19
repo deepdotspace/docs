@@ -3,7 +3,7 @@ title: "Authentication"
 description: "Public, gated, and mixed auth configurations for DeepSpace apps."
 ---
 
-DeepSpace authentication is handled by the platform's [auth worker](/concepts/architecture#platform-workers) — you don't run an OAuth flow, mint JWTs, or manage sessions. The SDK ships React providers and components that wrap [Better Auth](https://www.better-auth.com/) and a [`verifyJwt`](/sdk-reference/worker/auth#verifyjwt-config-token) helper for your worker. This guide covers picking an auth model, gating routes, and the most common patterns.
+DeepSpace authentication is handled by the platform's [auth worker](/concepts/architecture#platform-workers) - you don't run an OAuth flow, mint JWTs, or manage sessions. The SDK ships React providers and components that wrap [Better Auth](https://www.better-auth.com/) and a [`verifyJwt`](/sdk-reference/worker/auth#verifyjwt-config-token) helper for your worker. This guide covers picking an auth model, gating routes, and the most common patterns.
 
 ## Auth models
 
@@ -23,7 +23,7 @@ Three configurations cover virtually every app. The scaffold ships the **mixed**
         settings.tsx            ← gated (/settings)
     ```
 
-    The folder name `(protected)/` is wrapped in literal parentheses — generouted treats it as a route group that doesn't appear in the URL. Adding a new gated page is a one-file change: drop it inside `(protected)/`.
+    The folder name `(protected)/` is wrapped in literal parentheses - generouted treats it as a route group that doesn't appear in the URL. Adding a new gated page is a one-file change: drop it inside `(protected)/`.
 
     **Best for:** consumer apps with a public landing or marketing surface plus an authenticated app behind sign-in.
   </Tab>
@@ -80,7 +80,7 @@ function MyComponent() {
 ```
 
 <Warning>
-**Don't gate on `useUser().user` truthiness alone.** `useUser` returns the storage-layer profile (with karma, credits, role) and loads async — you'll get a flash of "not signed in" while the profile fetch resolves. Use `useAuth().isSignedIn` for state checks; reach for `useUser()` only when you need profile fields.
+**Don't gate on `useUser().user` truthiness alone.** `useUser` returns the storage-layer profile (with karma, credits, role) and loads async - you'll get a flash of "not signed in" while the profile fetch resolves. Use `useAuth().isSignedIn` for state checks; reach for `useUser()` only when you need profile fields.
 </Warning>
 
 ## `<AuthGate>` props
@@ -98,7 +98,7 @@ Pass a custom fallback to render something other than the default overlay:
 </AuthGate>
 ```
 
-## Sign-in UI — `<AuthOverlay />`
+## Sign-in UI - `<AuthOverlay />`
 
 The SDK ships a styled modal sign-in component:
 
@@ -120,14 +120,14 @@ Render `<AuthOverlay />` without an `onClose` prop and gate on `!isSignedIn`. It
 
 ### Providers
 
-By default `<AuthOverlay />` shows GitHub, Google, and email/password. The `providers` prop only controls the OAuth provider buttons — its type is `Array<'github' | 'google'>`. Email/password sign-in is always rendered regardless of `providers`:
+By default `<AuthOverlay />` shows GitHub, Google, and email/password. The `providers` prop only controls the OAuth provider buttons - its type is `Array<'github' | 'google'>`. Email/password sign-in is always rendered regardless of `providers`:
 
 ```tsx
 <AuthOverlay providers={['google']} />              // Google + email/password
 <AuthOverlay providers={['google', 'github']} />    // Google + GitHub + email/password
 ```
 
-## Conditional rendering — `<SignedIn>` and `<SignedOut>`
+## Conditional rendering - `<SignedIn>` and `<SignedOut>`
 
 For small conditional pieces of UI:
 
@@ -152,7 +152,7 @@ import { signOut } from 'deepspace'
 <button onClick={() => signOut()}>Sign out</button>
 ```
 
-The scaffolded `Navigation.tsx` already calls `signOut()` from the avatar dropdown. Don't add a second sign-out — extend the existing one if you need to customize.
+The scaffolded `Navigation.tsx` already calls `signOut()` from the avatar dropdown. Don't add a second sign-out - extend the existing one if you need to customize.
 
 <Tip>
 If your app requires sign-in, a sign-out control is non-negotiable. If you replace `Navigation.tsx`, make sure `signOut()` remains reachable when signed in.
@@ -180,7 +180,7 @@ app.get('/api/me', async (c) => {
 })
 ```
 
-`verifyJwt` does not throw on invalid input — it returns a `{ result, error? }` envelope. On success `result` is `{ userId, claims }` (use `result.userId` for the subject, `result.claims` for the full JWT payload). Always check `result` before reading either.
+`verifyJwt` does not throw on invalid input - it returns a `{ result, error? }` envelope. On success `result` is `{ userId, claims }` (use `result.userId` for the subject, `result.claims` for the full JWT payload). Always check `result` before reading either.
 
 The scaffold's `wsRoute` handler already calls `verifyJwt` for every WebSocket upgrade, so you only need this pattern for custom HTTP routes.
 
@@ -238,13 +238,13 @@ const isLanding = useLocation().pathname === '/'
     Safari enforces the `__Secure-` cookie attribute requires HTTPS, and refuses to set it on `localhost`. Chrome doesn't. Test against `https://` URLs (or deploy) when verifying Safari behavior.
   </Accordion>
   <Accordion title="Sign-in popup opens but never returns to the app">
-    The OAuth flow opens the auth worker at the platform domain, completes auth, then redirects back to your app. If the redirect doesn't fire, it's almost always a cookie or HTTPS issue (see above) — open the auth worker's tab and check the browser console.
+    The OAuth flow opens the auth worker at the platform domain, completes auth, then redirects back to your app. If the redirect doesn't fire, it's almost always a cookie or HTTPS issue (see above) - open the auth worker's tab and check the browser console.
   </Accordion>
 </AccordionGroup>
 
 ## Next steps
 
-- [Permissions](/concepts/permissions) — how role-based access control works on collections.
-- [Server actions](/guides/server-actions) — privileged worker code that bypasses user RBAC.
-- [Auth reference](/sdk-reference/client/auth) — all auth hooks, providers, and components.
-- [Worker auth reference](/sdk-reference/worker/auth) — `verifyJwt` and HMAC primitives.
+- [Permissions](/concepts/permissions) - how role-based access control works on collections.
+- [Server actions](/guides/server-actions) - privileged worker code that bypasses user RBAC.
+- [Auth reference](/sdk-reference/client/auth) - all auth hooks, providers, and components.
+- [Worker auth reference](/sdk-reference/worker/auth) - `verifyJwt` and HMAC primitives.

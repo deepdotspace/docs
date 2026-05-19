@@ -51,7 +51,7 @@ if (!isSignedIn) return <SignInPrompt />
 
 ### `useAuthUser(): { isLoaded, isSignedIn, user }`
 
-Returns the auth-layer user from Better Auth's session — `{ id, fullName, firstName, primaryEmailAddress, ... } | null`. Use when you need fields from the OAuth provider's profile.
+Returns the auth-layer user from Better Auth's session - `{ id, fullName, firstName, primaryEmailAddress, ... } | null`. Use when you need fields from the OAuth provider's profile.
 
 Different from `useUser()`, which merges in storage-layer fields like role and karma.
 
@@ -106,7 +106,7 @@ const availableCredits = user?.credits?.total ?? 0
 </Warning>
 
 <Warning>
-Destructure as `const { user } = useUser()` and read fields off `user`. **Don't** write `const { id } = useUser()` — `id` is not at the top level of the return.
+Destructure as `const { user } = useUser()` and read fields off `user`. **Don't** write `const { id } = useUser()` - `id` is not at the top level of the return.
 </Warning>
 
 ### `useDisplayName(): string | null`
@@ -213,5 +213,5 @@ import { signOut } from 'deepspace'
 
 ## See also
 
-- [Authentication guide](/guides/authentication) — public, gated, and mixed configurations
-- [Worker auth reference](/sdk-reference/worker/auth) — `verifyJwt` for custom routes
+- [Authentication guide](/guides/authentication) - public, gated, and mixed configurations
+- [Worker auth reference](/sdk-reference/worker/auth) - `verifyJwt` for custom routes

@@ -68,7 +68,7 @@ function onAddRect(x: number, y: number) {
 }
 ```
 
-The `type` is a free-form string — define your own vocabulary (`rect`, `circle`, `arrow`, `text`, `image`). The `props` field holds whatever metadata you need.
+The `type` is a free-form string - define your own vocabulary (`rect`, `circle`, `arrow`, `text`, `image`). The `props` field holds whatever metadata you need.
 
 Mutation methods are all positional and return `void`:
 
@@ -76,13 +76,13 @@ Mutation methods are all positional and return `void`:
 moveShape(shapeId, 200, 150)                  // (shapeId, x, y)
 resizeShape(shapeId, 200, 120)                // (shapeId, width, height, x?, y?)
 resizeShape(shapeId, 200, 120, 50, 80)        // also reposition while resizing
-updateShape(shapeId, { color: 'red' })        // (shapeId, props) — props is merged
+updateShape(shapeId, { color: 'red' })        // (shapeId, props) - props is merged
 deleteShape(shapeId)
 ```
 
 ## Rendering shapes
 
-`shapes` is a flat array of `CanvasShapeClient` records. Render them however you like — SVG, canvas, DOM:
+`shapes` is a flat array of `CanvasShapeClient` records. Render them however you like - SVG, canvas, DOM:
 
 ```tsx
 <svg width={800} height={600}>
@@ -123,13 +123,13 @@ function onPan(x: number, y: number, zoom: number, width: number, height: number
   setViewport({ x, y, zoom, width, height })
 }
 
-// viewports is a ViewportClient[] — one entry per peer. Each entry includes `userId`.
+// viewports is a ViewportClient[] - one entry per peer. Each entry includes `userId`.
 for (const vp of viewports) {
   console.log(`${vp.userId} is at (${vp.x}, ${vp.y}) zoomed ${vp.zoom}`)
 }
 ```
 
-Viewports are ephemeral — they're not persisted. When a peer disconnects, their viewport disappears.
+Viewports are ephemeral - they're not persisted. When a peer disconnects, their viewport disappears.
 
 ## Undo and redo
 
@@ -142,7 +142,7 @@ const { undo, redo } = useCanvas(canvasId)
 <button onClick={redo}>Redo</button>
 ```
 
-Undo applies inverse operations on the peer's recent edits — it doesn't undo other users' actions.
+Undo applies inverse operations on the peer's recent edits - it doesn't undo other users' actions.
 
 ## Worker setup
 
@@ -216,6 +216,6 @@ Canvas is the right pick for whiteboards, mood boards, and most diagram tools. Y
 
 ## Next steps
 
-- [Collaborative editing](/guides/collaborative-editing) — Yjs-backed text and structured documents.
-- [Presence and cursors](/guides/presence-and-cursors) — live cursors with `usePresenceRoom`.
-- [Real-time sync](/concepts/realtime-sync) — how updates propagate.
+- [Collaborative editing](/guides/collaborative-editing) - Yjs-backed text and structured documents.
+- [Presence and cursors](/guides/presence-and-cursors) - live cursors with `usePresenceRoom`.
+- [Real-time sync](/concepts/realtime-sync) - how updates propagate.

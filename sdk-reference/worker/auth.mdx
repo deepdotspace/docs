@@ -22,7 +22,7 @@ import type {
 
 ## `verifyJwt(config, token)`
 
-Verifies a JWT against a public key. **Does not throw** — returns a `{ result, error?, debug? }` envelope.
+Verifies a JWT against a public key. **Does not throw** - returns a `{ result, error?, debug? }` envelope.
 
 ```ts
 function verifyJwt(
@@ -65,7 +65,7 @@ interface JwtClaims {
 }
 ```
 
-`VerifyResult` is **not** a flat JWT-claims object — it's a `{ userId, claims }` envelope. Read `result.userId` for the subject, and `result.claims.email` / `result.claims.name` / `result.claims.image` for the optional profile fields:
+`VerifyResult` is **not** a flat JWT-claims object - it's a `{ userId, claims }` envelope. Read `result.userId` for the subject, and `result.claims.email` / `result.claims.name` / `result.claims.image` for the optional profile fields:
 
 ```ts
 app.get('/api/me', async (c) => {
@@ -107,7 +107,7 @@ Returns `undefined` if the token is missing or malformed.
 Never use as a substitute for `verifyJwt` on the trust boundary. Decoded but unverified claims can be spoofed by anyone, and `TokenDebugInfo` deliberately omits `sub` to discourage that.
 </Warning>
 
-## HMAC primitives — internal signing
+## HMAC primitives - internal signing
 
 For platform → app internal calls (and cron's `ctx.integrations.call`, which signs requests with `INTERNAL_STORAGE_HMAC_SECRET`). All of these are async and use `crypto.subtle` on the Workers runtime (with a Node fallback for testing).
 
@@ -136,7 +136,7 @@ interface InternalSignature {
   signature: string
 }
 
-const DEFAULT_MAX_SKEW_MS: number   // 5 * 60_000 — verification window
+const DEFAULT_MAX_SKEW_MS: number   // 5 * 60_000 - verification window
 ```
 
 `buildInternalPayload` returns a **plain string** (JSON-stringified body, or the input string passed through). The timestamp lives on the signature object returned by `signInternalPayload`, not on the payload.
@@ -145,7 +145,7 @@ These are exported so apps can verify inbound internal calls (e.g., custom webho
 
 ## `createDeepSpaceAuth(config)`
 
-Construct a Better Auth instance pre-wired for DeepSpace conventions (cookie names, JWT issuance, plugin set). The scaffold doesn't build its own auth surface — it proxies to the platform auth-worker — so you only reach for this when standing up a custom auth-worker variant.
+Construct a Better Auth instance pre-wired for DeepSpace conventions (cookie names, JWT issuance, plugin set). The scaffold doesn't build its own auth surface - it proxies to the platform auth-worker - so you only reach for this when standing up a custom auth-worker variant.
 
 ```ts
 function createDeepSpaceAuth(config: DeepSpaceAuthConfig): DeepSpaceAuth
@@ -170,7 +170,7 @@ interface DeepSpaceAuthConfig {
 type DeepSpaceAuth = ReturnType<typeof createDeepSpaceAuth>
 ```
 
-`DeepSpaceAuth` is the `better-auth` `Auth` instance with the DeepSpace defaults (organization + twoFactor plugins, `*.deep.space` / `*.app.space` / `localhost:*` trusted origins) applied. There are no `privateKey` / `publicKey` / `issuer` fields on the config — JWT signing keys live in the auth-worker's environment, not in this object.
+`DeepSpaceAuth` is the `better-auth` `Auth` instance with the DeepSpace defaults (organization + twoFactor plugins, `*.deep.space` / `*.app.space` / `localhost:*` trusted origins) applied. There are no `privateKey` / `publicKey` / `issuer` fields on the config - JWT signing keys live in the auth-worker's environment, not in this object.
 
 ## See also
 

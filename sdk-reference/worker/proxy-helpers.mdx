@@ -19,7 +19,7 @@ import type {
 ```
 
 <Warning>
-**Do not replace these with raw `c.env.X.fetch(...)`.** `wrangler dev` doesn't surface service bindings cross-process for SDK apps — the binding is `undefined` locally and the raw fetch silently fails. The helpers paper over the dev/prod mismatch.
+**Do not replace these with raw `c.env.X.fetch(...)`.** `wrangler dev` doesn't surface service bindings cross-process for SDK apps - the binding is `undefined` locally and the raw fetch silently fails. The helpers paper over the dev/prod mismatch.
 </Warning>
 
 ## `apiWorkerFetch(env, path, init?)`
@@ -70,7 +70,7 @@ app.get('/ws/:roomId', async (c) => {
 })
 ```
 
-`wsRoute` in the example above is **not** an SDK export — it's a small helper defined locally in the scaffolded `worker.ts` (around line 345 of `templates/starter/worker.ts`). It owns the JWT verification + URL rewriting boilerplate for WebSocket routes. Apps are free to edit or replace it.
+`wsRoute` in the example above is **not** an SDK export - it's a small helper defined locally in the scaffolded `worker.ts` (around line 345 of `templates/starter/worker.ts`). It owns the JWT verification + URL rewriting boilerplate for WebSocket routes. Apps are free to edit or replace it.
 
 ## `authWorkerFetch(env, path, init?)`
 
@@ -93,7 +93,7 @@ interface AuthWorkerEnv {
 }
 ```
 
-URL-only by design — the auth-worker has no service binding, which keeps `Set-Cookie` headers verbatim over plain HTTPS. (Service bindings strip some headers in transit.) Throws if `AUTH_WORKER_URL` is missing.
+URL-only by design - the auth-worker has no service binding, which keeps `Set-Cookie` headers verbatim over plain HTTPS. (Service bindings strip some headers in transit.) Throws if `AUTH_WORKER_URL` is missing.
 
 ## `resolveApiTransport(env)`
 
@@ -125,7 +125,7 @@ service = "deepspace-platform"
 
 ### `createScopedR2Handler(config)`
 
-Factory that builds a route handler for prefix-scoped R2 reads/writes. The scaffold uses this implicitly via the `useR2Files` client hook — most apps don't call it directly.
+Factory that builds a route handler for prefix-scoped R2 reads/writes. The scaffold uses this implicitly via the `useR2Files` client hook - most apps don't call it directly.
 
 ```ts
 function createScopedR2Handler(config: ScopedR2Config): ScopedR2Handler
@@ -161,5 +161,5 @@ Security guarantees: download/delete keys are validated against the resolved pre
 
 ## See also
 
-- [Architecture concepts](/concepts/architecture#cross-app-shared-scopes) — when to add the platform binding
+- [Architecture concepts](/concepts/architecture#cross-app-shared-scopes) - when to add the platform binding
 - [File uploads guide](/guides/file-uploads)

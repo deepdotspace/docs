@@ -26,7 +26,7 @@ interface CronTask {
 
 Each task declares **either** `intervalMinutes` OR `schedule` + `timezone`. Declaring both or neither throws at DO construction.
 
-Cron mode is DST-aware — the wall-clock comparison happens after the timezone shift.
+Cron mode is DST-aware - the wall-clock comparison happens after the timezone shift.
 
 ## `CronExecution`
 
@@ -78,23 +78,23 @@ interface CronContext {
 
 `roomId` defaults to `'default'`. Pass `app:${env.APP_NAME}` to target the per-app RecordRoom (the scaffold convention).
 
-The `records.*` methods are intentionally typed loosely (`Promise<any>` / `Promise<any[]>`) — they call the underlying RecordRoom tools API and surface its `data` field directly. At runtime:
+The `records.*` methods are intentionally typed loosely (`Promise<any>` / `Promise<any[]>`) - they call the underlying RecordRoom tools API and surface its `data` field directly. At runtime:
 
 - `query` resolves to an array of record envelopes (`{ recordId, data, createdAt, updatedAt, ... }`).
 - `create` / `update` resolve to `{ recordId, record }` (the envelope of the row that was written).
 - `delete` resolves to a delete confirmation payload.
 
-There is **no `records.get` method** on `CronContext` — use `records.query` with a `where` clause when you need a single row.
+There is **no `records.get` method** on `CronContext` - use `records.query` with a `where` clause when you need a single row.
 
 <Warning>
-**Shapes differ from server actions.** `ctx.records.query` returns the unwrapped array directly (no `ActionResult` envelope). The methods throw on failure rather than returning a `{ success: false }` envelope — wrap in `try/catch` if you need to handle denied writes inline.
+**Shapes differ from server actions.** `ctx.records.query` returns the unwrapped array directly (no `ActionResult` envelope). The methods throw on failure rather than returning a `{ success: false }` envelope - wrap in `try/catch` if you need to handle denied writes inline.
 </Warning>
 
 ## Properties
 
-- `ctx.records.*` — RBAC-bypassing record operations (results already unwrapped from the `ActionResult` envelope).
-- `ctx.integrations.call(endpoint, params)` — proxies through the api-worker via signed internal HMAC, billed to the app owner (uses `INTERNAL_STORAGE_HMAC_SECRET`).
-- `ctx.ownerUserId` — convenience accessor for the owner's user ID.
+- `ctx.records.*` - RBAC-bypassing record operations (results already unwrapped from the `ActionResult` envelope).
+- `ctx.integrations.call(endpoint, params)` - proxies through the api-worker via signed internal HMAC, billed to the app owner (uses `INTERNAL_STORAGE_HMAC_SECRET`).
+- `ctx.ownerUserId` - convenience accessor for the owner's user ID.
 
 ## Pattern
 
@@ -136,7 +136,7 @@ export class AppCronRoom extends CronRoom<Env> {
 }
 ```
 
-Don't edit the WebSocket route or DO binding wiring — add tasks in `src/cron.ts` and the DO picks them up at construction.
+Don't edit the WebSocket route or DO binding wiring - add tasks in `src/cron.ts` and the DO picks them up at construction.
 
 ## Outbound calls
 
@@ -162,6 +162,6 @@ const { text } = await generateText({ model: ai('claude-haiku-4-5'), prompt: '..
 
 ## See also
 
-- [Scheduled jobs guide](/guides/scheduled-jobs) — patterns and worked examples
-- [Rooms reference](/sdk-reference/worker/rooms#cronroom-e) — class signature
-- [Real-time reference](/sdk-reference/client/realtime#usecronmonitor-roomid) — client-side monitor
+- [Scheduled jobs guide](/guides/scheduled-jobs) - patterns and worked examples
+- [Rooms reference](/sdk-reference/worker/rooms#cronroom-e) - class signature
+- [Real-time reference](/sdk-reference/client/realtime#usecronmonitor-roomid) - client-side monitor

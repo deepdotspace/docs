@@ -10,14 +10,14 @@ description: "How DeepSpace deploys your app to Cloudflare Workers for Platforms
 A deploy runs through seven steps:
 
 1. **Build the frontend** with Vite.
-2. **Build the worker** with esbuild — the SDK and your code are bundled together.
+2. **Build the worker** with esbuild - the SDK and your code are bundled together.
 3. **Validate the binding manifest** against allowed types and reserved names.
 4. **Auto-provision resources** (D1, KV, R2, Vectorize, Queues) whose IDs are set to `"auto"`.
-5. **Upload to Workers for Platforms** — the worker is registered in the platform's dispatch namespace.
+5. **Upload to Workers for Platforms** - the worker is registered in the platform's dispatch namespace.
 6. **Sync user secrets** from `.dev.vars` to `secret_text` bindings.
-7. **Register the subdomain** — your app is live at `<name>.app.space`.
+7. **Register the subdomain** - your app is live at `<name>.app.space`.
 
-Each step is idempotent. Re-running `deploy` with no source changes is safe — already-provisioned resources are reused, and unchanged code is uploaded as a no-op.
+Each step is idempotent. Re-running `deploy` with no source changes is safe - already-provisioned resources are reused, and unchanged code is uploaded as a no-op.
 
 ## Subdomains
 
@@ -30,9 +30,9 @@ name = "my-app"
 
 Rules:
 
-- Must match `^[a-z0-9](?:-?[a-z0-9])+$` — lowercase, 2–63 chars, no leading / trailing / double dashes
+- Must match `^[a-z0-9](?:-?[a-z0-9])+$` - lowercase, 2–63 chars, no leading / trailing / double dashes
 - Names that don't conform are sanitized at deploy time; a warning surfaces in the CLI
-- Renaming `name` after deploy and re-deploying gives you a new subdomain — the old one becomes orphaned (still accessible until explicitly undeployed)
+- Renaming `name` after deploy and re-deploying gives you a new subdomain - the old one becomes orphaned (still accessible until explicitly undeployed)
 
 To attach a real domain to your app, see [Custom domains](/guides/custom-domains).
 
@@ -45,7 +45,7 @@ A deploy **does not** wipe Durable Object state. Your records, conversations, fi
 | Durable Object SQLite tables (records) | Worker module-level globals |
 | R2 bucket contents | In-memory caches |
 | Auto-provisioned bindings (D1, KV, etc.) | DO instances reload on the next request |
-| User secrets in `.dev.vars` | — |
+| User secrets in `.dev.vars` | - |
 
 If you change a schema in a way that's not backwards-compatible (e.g., removing a column), you're responsible for the migration. The SDK does not run schema migrations on DO data.
 
@@ -143,7 +143,7 @@ Before your first deploy, walk through this list:
     Anything below the `# --- not managed` divider in `.dev.vars` ships with the deploy.
   </Step>
   <Step title="Run tests">
-    `npx deepspace test` — at minimum, smoke + api specs should pass.
+    `npx deepspace test` - at minimum, smoke + api specs should pass.
   </Step>
   <Step title="Deploy">
     `npx deepspace deploy`. The CLI prints the live URL when it's done.
@@ -152,7 +152,7 @@ Before your first deploy, walk through this list:
 
 ## Next steps
 
-- [Deploy command reference](/cli-reference/commands#deploy) — flags, environment variables, and edge cases.
-- [Custom bindings](/guides/custom-bindings) — declare Vectorize, R2, D1, and more.
-- [Custom domains](/guides/custom-domains) — buy and attach a real domain from the CLI.
-- [Testing](/guides/testing) — run Playwright specs before you ship.
+- [Deploy command reference](/cli-reference/commands#deploy) - flags, environment variables, and edge cases.
+- [Custom bindings](/guides/custom-bindings) - declare Vectorize, R2, D1, and more.
+- [Custom domains](/guides/custom-domains) - buy and attach a real domain from the CLI.
+- [Testing](/guides/testing) - run Playwright specs before you ship.

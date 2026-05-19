@@ -3,13 +3,13 @@ title: "Data model"
 description: "Collections, records, the envelope shape, and how data flows from your worker to the client."
 ---
 
-DeepSpace stores app data in **collections** — typed tables backed by SQLite inside a Durable Object. Each collection is declared in a schema, baked into your worker at deploy time, and exposed to the client through `useQuery` / `useMutations` hooks.
+DeepSpace stores app data in **collections** - typed tables backed by SQLite inside a Durable Object. Each collection is declared in a schema, baked into your worker at deploy time, and exposed to the client through `useQuery` / `useMutations` hooks.
 
 <Info>
 **Three things to remember:**
 - A collection is a typed table. You declare it in `src/schemas/`, register it in `src/schemas.ts`, and the worker compiles it at deploy time.
 - Every record is an envelope: `{ recordId, data, createdBy, createdAt, updatedAt }`. Your fields live under `.data`.
-- Mutations resolve **optimistically** — the local store updates before the server confirms.
+- Mutations resolve **optimistically** - the local store updates before the server confirms.
 </Info>
 
 ## Collections and records
@@ -32,7 +32,7 @@ Your own fields live under `.data`. When you query a `todos` collection:
 const { records } = useQuery<{ title: string; completed: boolean }>('todos')
 records[0].data.title       // ✓ "Buy milk"
 records[0].recordId         // ✓ "rec_abc123"
-records[0].title            // ✗ undefined — this is a common bug
+records[0].title            // ✗ undefined - this is a common bug
 ```
 
 <Warning>
@@ -70,7 +70,7 @@ Register it:
 export const schemas = [usersSchema, settingsSchema, itemsSchema]
 ```
 
-Schemas are **baked in at deploy time** — there is no runtime schema registry. Adding or changing a schema requires a redeploy.
+Schemas are **baked in at deploy time** - there is no runtime schema registry. Adding or changing a schema requires a redeploy.
 
 ## Column types
 
@@ -81,7 +81,7 @@ Every column has a `storage` type and an `interpretation`:
 | `'text'` | Strings, IDs, ISO timestamps, JSON blobs |
 | `'number'` | Integers, floats, booleans (stored as `0`/`1`), and date/datetime values (stored as Unix seconds) |
 
-`storage` is the underlying SQLite affinity. There are only two values — everything that isn't a string lands in `'number'`.
+`storage` is the underlying SQLite affinity. There are only two values - everything that isn't a string lands in `'number'`.
 
 `interpretation` tells the SDK how to encode/decode the value. It is either the bare string `'plain'` or an object with a `kind` discriminator:
 
@@ -100,12 +100,12 @@ Every column has a `storage` type and an `interpretation`:
 | `{ kind: 'json' }` | `'text'` | Auto `JSON.stringify` on write, auto `JSON.parse` on read. |
 | `{ kind: 'reference', targetTable, displayColumn }` | `'text'` | Foreign-key-style pointer to another collection. |
 
-The full union is defined as `ColumnInterpretation` in `deepspace/worker`. Only `'plain'` works as a bare string; every other kind must be passed as an object. There is no `'number'` interpretation — express numeric columns as `storage: 'number'` with `interpretation: 'plain'`.
+The full union is defined as `ColumnInterpretation` in `deepspace/worker`. Only `'plain'` works as a bare string; every other kind must be passed as an object. There is no `'number'` interpretation - express numeric columns as `storage: 'number'` with `interpretation: 'plain'`.
 
 ```ts
 { name: 'tags', storage: 'text', interpretation: { kind: 'json' } }
-// On write: pass the array directly — mutations.create({ tags: ['a', 'b'] })
-// On read:  record.data.tags is already an array — don't JSON.parse
+// On write: pass the array directly - mutations.create({ tags: ['a', 'b'] })
+// On read:  record.data.tags is already an array - don't JSON.parse
 ```
 
 ## Hooks: `useQuery` and `useMutations`
@@ -137,7 +137,7 @@ The hooks subscribe to a WebSocket the moment they mount and stream updates in r
 
 ### Optimistic vs confirmed mutations
 
-`create` / `put` / `remove` apply changes locally first, then sync to the server. They resolve as soon as the local store is updated — usually before the server confirms.
+`create` / `put` / `remove` apply changes locally first, then sync to the server. They resolve as soon as the local store is updated - usually before the server confirms.
 
 For workflows that must wait for the server (e.g., capturing a server-generated ID), use the `*Confirmed` variants:
 
@@ -149,7 +149,7 @@ navigate(`/items/${recordId}`)
 
 `createConfirmed` doesn't resolve until the server has acknowledged the write.
 
-## Scopes — picking the room
+## Scopes - picking the room
 
 Records live inside a Durable Object. The `roomId` (or "scope") chooses which DO.
 
@@ -161,9 +161,9 @@ Records live inside a Durable Object. The `roomId` (or "scope") chooses which DO
 </RecordProvider>
 ```
 
-`SCOPE_ID` from `src/constants.ts` defaults to `app:${APP_NAME}` — your app's main RecordRoom. Each scope is an independent DO with its own data.
+`SCOPE_ID` from `src/constants.ts` defaults to `app:${APP_NAME}` - your app's main RecordRoom. Each scope is an independent DO with its own data.
 
-Nesting `<RecordScope>` lets you mount additional rooms — for example, a per-conversation DO:
+Nesting `<RecordScope>` lets you mount additional rooms - for example, a per-conversation DO:
 
 ```tsx
 <RecordScope roomId={`conv:${convId}`} schemas={CONVERSATION_SCHEMAS}>
@@ -182,13 +182,13 @@ When you call `useMutations.create(...)`, the SDK runs through six steps:
 5. **Broadcast.** The DO sends a `core.record_change` envelope (with `changeType: 'create' | 'update' | 'delete'`) to every connected client whose RBAC allows read access.
 6. **Reconcile.** Other clients apply the update; the originating client confirms its optimistic state.
 
-On the wire there is a single record-change message: `core.record_change`, carrying a `changeType` discriminator. The client store fans this out into internal `record_created` / `record_updated` / `record_removed` notifications for the React subscriptions — those names are SDK-internal and not part of the wire vocabulary.
+On the wire there is a single record-change message: `core.record_change`, carrying a `changeType` discriminator. The client store fans this out into internal `record_created` / `record_updated` / `record_removed` notifications for the React subscriptions - those names are SDK-internal and not part of the wire vocabulary.
 
-If the server rejects the write — an RBAC denial or a schema validation failure — the optimistic update rolls back automatically.
+If the server rejects the write - an RBAC denial or a schema validation failure - the optimistic update rolls back automatically.
 
 ## What about big data?
 
-DeepSpace records are tuned for **operational data** — collections of hundreds to tens of thousands of small rows, queried by client filters and updated frequently. For larger or analytical workloads:
+DeepSpace records are tuned for **operational data** - collections of hundreds to tens of thousands of small rows, queried by client filters and updated frequently. For larger or analytical workloads:
 
 - **Files / blobs** → use [R2 file storage](/guides/file-uploads).
 - **Vector search** → declare a [custom Vectorize binding](/guides/custom-bindings) and call it from your worker.
@@ -197,7 +197,7 @@ DeepSpace records are tuned for **operational data** — collections of hundreds
 
 ## Next steps
 
-- [Permissions](/concepts/permissions) — role-based access control on collections.
-- [Real-time sync](/concepts/realtime-sync) — the WebSocket protocol and consistency guarantees.
-- [Data storage guide](/guides/data-storage) — walkthrough for defining a schema and wiring up CRUD.
-- [Records reference](/sdk-reference/client/records) — full API for `useQuery` and `useMutations`.
+- [Permissions](/concepts/permissions) - role-based access control on collections.
+- [Real-time sync](/concepts/realtime-sync) - the WebSocket protocol and consistency guarantees.
+- [Data storage guide](/guides/data-storage) - walkthrough for defining a schema and wiring up CRUD.
+- [Records reference](/sdk-reference/client/records) - full API for `useQuery` and `useMutations`.

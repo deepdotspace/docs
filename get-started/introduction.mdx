@@ -3,22 +3,22 @@ title: "Introduction"
 description: "What DeepSpace is, who it's for, and why you'd use it."
 ---
 
-DeepSpace is a batteries-included SDK for building real-time collaborative applications. It is opinionated where opinions save you time, and unopinionated everywhere else — your app is a normal Vite + React project on the frontend and a Hono-based Cloudflare Worker on the backend. The SDK is the glue: providers, hooks, Durable Object base classes, a CLI, and a deploy pipeline that takes you from `npm create` to a live URL in minutes.
+DeepSpace is a batteries-included SDK for building real-time collaborative applications. It is opinionated where opinions save you time, and unopinionated everywhere else - your app is a normal Vite + React project on the frontend and a Hono-based Cloudflare Worker on the backend. The SDK is the glue: providers, hooks, Durable Object base classes, a CLI, and a deploy pipeline that takes you from `npm create` to a live URL in minutes.
 
 ## What you get out of the box
 
 When you scaffold a new app, you get a working starter with all of this already wired up:
 
-- **Authentication** — Better Auth with GitHub, Google, and email/password sign-in. JWTs are minted by the DeepSpace platform's auth service; you don't run an auth server.
-- **Data sync** — A SQLite-backed Durable Object per app, with WebSocket-based subscriptions, optimistic local mutations, and per-collection role-based access control.
-- **Real-time primitives** — Channel messaging, DMs, reactions, presence, live cursors, Yjs-backed collaborative text and shapes, and a turn-tick game-room base class.
-- **File storage** — R2-backed uploads with scoped buckets.
-- **AI** — Streamed Claude, OpenAI, and Cerebras with multi-turn tool use, persistent chat history, and automatic context compaction.
-- **Payments** — Stripe subscriptions, one-time products, ad-hoc charges, refunds, and self-service billing portals.
-- **Scheduled jobs** — Per-app cron via a built-in Durable Object, with an admin monitor hook.
-- **Third-party integrations** — A proxy that fronts 215+ external API endpoints (OpenAI, Anthropic, Stripe, Gmail, Calendar, LiveKit, finance, search, media, and more), with billing routed to the developer or the end-user.
-- **Custom Cloudflare bindings** — Declare Vectorize, KV, D1, Queues, Browser Rendering, Hyperdrive, or your own R2 buckets and the deploy pipeline auto-provisions them.
-- **Custom domains** — Buy and attach a real domain (`.com`, `.ai`, `.io`, and others) directly from the CLI.
+- **Authentication** - Better Auth with GitHub, Google, and email/password sign-in. JWTs are minted by the DeepSpace platform's auth service; you don't run an auth server.
+- **Data sync** - A SQLite-backed Durable Object per app, with WebSocket-based subscriptions, optimistic local mutations, and per-collection role-based access control.
+- **Real-time primitives** - Channel messaging, DMs, reactions, presence, live cursors, Yjs-backed collaborative text and shapes, and a turn-tick game-room base class.
+- **File storage** - R2-backed uploads with scoped buckets.
+- **AI** - Streamed Claude, OpenAI, and Cerebras with multi-turn tool use, persistent chat history, and automatic context compaction.
+- **Payments** - Stripe subscriptions, one-time products, ad-hoc charges, refunds, and self-service billing portals.
+- **Scheduled jobs** - Per-app cron via a built-in Durable Object, with an admin monitor hook.
+- **Third-party integrations** - A proxy that fronts 215+ external API endpoints (OpenAI, Anthropic, Stripe, Gmail, Calendar, LiveKit, finance, search, media, and more), with billing routed to the developer or the end-user.
+- **Custom Cloudflare bindings** - Declare Vectorize, KV, D1, Queues, Browser Rendering, Hyperdrive, or your own R2 buckets and the deploy pipeline auto-provisions them.
+- **Custom domains** - Buy and attach a real domain (`.com`, `.ai`, `.io`, and others) directly from the CLI.
 
 ## Who it's for
 
@@ -36,20 +36,20 @@ DeepSpace runs on Cloudflare's global network, so apps are low-latency by defaul
 
 ## What it isn't
 
-- **Not a no-code platform.** You write TypeScript and React. The CLI scaffolds, runs, and deploys — it doesn't generate features.
+- **Not a no-code platform.** You write TypeScript and React. The CLI scaffolds, runs, and deploys - it doesn't generate features.
 - **Not a UI library.** Scaffolds include a shadcn-style primitives kit and 15 theme presets, but you own the design.
 - **Not a backend framework.** The worker is a normal Hono app; you can add routes, middleware, and bindings freely.
-- **Not a SaaS lock-in.** Apps deploy to Cloudflare Workers — you own the runtime, the data sits in your own Durable Objects, and you can eject at any time.
+- **Not a SaaS lock-in.** Apps deploy to Cloudflare Workers - you own the runtime, the data sits in your own Durable Objects, and you can eject at any time.
 
 ## Architecture at a glance
 
-Each DeepSpace app is two pieces deployed together. **Your worker** is a Cloudflare Worker that hosts the React SPA, exposes API routes, and owns the per-app Durable Objects that hold records, Yjs documents, canvases, presence, and scheduled jobs. **The DeepSpace platform** is a set of shared workers — auth, billing, integrations, cross-app data — that your worker addresses over service bindings. You write and deploy the first; you never touch the second.
+Each DeepSpace app is two pieces deployed together. **Your worker** is a Cloudflare Worker that hosts the React SPA, exposes API routes, and owns the per-app Durable Objects that hold records, Yjs documents, canvases, presence, and scheduled jobs. **The DeepSpace platform** is a set of shared workers - auth, billing, integrations, cross-app data - that your worker addresses over service bindings. You write and deploy the first; you never touch the second.
 
 See [Architecture](/concepts/architecture) for the full breakdown.
 
 ## Next steps
 
-- [Quickstart](/get-started/quickstart) — scaffold and deploy your first app.
-- [Installation](/get-started/installation) — prerequisites, account setup, and CLI login.
-- [Project structure](/get-started/project-structure) — a tour of the scaffolded files.
-- [Architecture](/concepts/architecture) — workers, Durable Objects, and scopes.
+- [Quickstart](/get-started/quickstart) - scaffold and deploy your first app.
+- [Installation](/get-started/installation) - prerequisites, account setup, and CLI login.
+- [Project structure](/get-started/project-structure) - a tour of the scaffolded files.
+- [Architecture](/concepts/architecture) - workers, Durable Objects, and scopes.

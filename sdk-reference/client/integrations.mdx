@@ -23,7 +23,7 @@ const integration: {
 }
 ```
 
-`get` takes a query-parameter object as its middle argument; the others take an optional JSON body. `delete` also accepts a body — the api-worker dispatches `DELETE` with a JSON payload when one is provided.
+`get` takes a query-parameter object as its middle argument; the others take an optional JSON body. `delete` also accepts a body - the api-worker dispatches `DELETE` with a JSON payload when one is provided.
 
 Endpoint names are two segments: `<integration>/<endpoint>` (e.g. `openai/chat-completion`).
 
@@ -46,7 +46,7 @@ Endpoint names are two segments: `<integration>/<endpoint>` (e.g. `openai/chat-c
   </Tab>
 
   <Tab title="GET">
-    For idempotent reads. Pass query parameters as the second argument — they're serialised onto the URL automatically (null/undefined values are skipped).
+    For idempotent reads. Pass query parameters as the second argument - they're serialised onto the URL automatically (null/undefined values are skipped).
 
     ```ts
     const result = await integration.get('finnhub/market-news', {
@@ -96,7 +96,7 @@ type ValidationIssue = {
 }
 ```
 
-`issues` appears when the api-worker's Zod validator rejects the body shape. Read it instead of guessing field names — or run [`deepspace integrations info <endpoint>`](/cli-reference/commands#integrations-and-invoke) to print the schema before you call.
+`issues` appears when the api-worker's Zod validator rejects the body shape. Read it instead of guessing field names - or run [`deepspace integrations info <endpoint>`](/cli-reference/commands#integrations-and-invoke) to print the schema before you call.
 
 ## `RequestOptions`
 
@@ -116,7 +116,7 @@ const r = await integration.post('exa/search', body, {
 
 ## Cross-app platform context
 
-These exports support a small set of cross-app surfaces (inbox, platform fetch). The scaffold does **not** include `<PlatformProvider>` — wrap manually if you need this surface.
+These exports support a small set of cross-app surfaces (inbox, platform fetch). The scaffold does **not** include `<PlatformProvider>` - wrap manually if you need this surface.
 
 ```ts
 import { PlatformProvider, usePlatform, useInbox, usePlatformWS } from 'deepspace'
@@ -135,7 +135,7 @@ function usePlatform(): {
 }
 ```
 
-`platformFetch` prepends `/platform` and adds the auth header automatically. Throws if no `<PlatformProvider>` is mounted. `subscribeInbox` is the primitive `useInbox()` calls under the hood — apps rarely call it directly.
+`platformFetch` prepends `/platform` and adds the auth header automatically. Throws if no `<PlatformProvider>` is mounted. `subscribeInbox` is the primitive `useInbox()` calls under the hood - apps rarely call it directly.
 
 ### `useInbox()`
 
@@ -167,9 +167,9 @@ function usePlatformWS<S extends { status: ConnectionStatus }>(
 ): PlatformWSResult<S>
 
 type PlatformWSOptions<S> = {
-  /** DO path segment — e.g. 'orders' for /platform/ws/orders/{scopeId} */
+  /** DO path segment - e.g. 'orders' for /platform/ws/orders/{scopeId} */
   path: string
-  /** Scope ID — e.g. 'app:demo-corp'. Pass undefined to skip the connection. */
+  /** Scope ID - e.g. 'app:demo-corp'. Pass undefined to skip the connection. */
   scopeId: string | undefined
   initialState: S
   onMessage: (msg: Record<string, unknown>, prev: S) => S
@@ -211,6 +211,6 @@ Redirect the user to `connectUrl` (or call `/api/integrations/oauth/google/conne
 
 ## See also
 
-- [External APIs guide](/guides/external-apis) — patterns, billing routing, and discovery.
-- [CLI integrations command](/cli-reference/commands#integrations-and-invoke) — `list` / `info` / `invoke`.
-- [AI chat guide](/guides/ai-chat) — streamed LLM responses with tool use (uses a different pipeline).
+- [External APIs guide](/guides/external-apis) - patterns, billing routing, and discovery.
+- [CLI integrations command](/cli-reference/commands#integrations-and-invoke) - `list` / `info` / `invoke`.
+- [AI chat guide](/guides/ai-chat) - streamed LLM responses with tool use (uses a different pipeline).

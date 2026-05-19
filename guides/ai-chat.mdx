@@ -1,6 +1,6 @@
 ---
 title: "AI chat"
-description: "Streamed multi-turn chat with Claude, GPT, and Cerebras — tool use, persistent history, and context compaction included."
+description: "Streamed multi-turn chat with Claude, GPT, and Cerebras - tool use, persistent history, and context compaction included."
 ---
 
 DeepSpace ships a complete AI chat backend. The scaffold registers four endpoints, persists every chat to a Durable Object, streams responses via Vercel AI SDK v5, and exposes the underlying LLMs (Claude, GPT-5, Cerebras) for tool use over your records. You can use the bundled `ChatPanel` component for a turnkey UI or build your own surface with the wire helpers the SDK exports.
@@ -15,9 +15,9 @@ npx deepspace add ai-chat
 
 This installs three files:
 
-- `src/components/ChatPanel.tsx` — a reusable chat surface with model picker, abort button, and Markdown rendering.
-- `src/pages/assistant.tsx` — a full-page assistant with a chat history rail.
-- `src/schemas/ai-chat-schema.ts` — re-exports `[AI_CHATS_SCHEMA, AI_MESSAGES_SCHEMA]` for spreading into `src/schemas.ts`.
+- `src/components/ChatPanel.tsx` - a reusable chat surface with model picker, abort button, and Markdown rendering.
+- `src/pages/assistant.tsx` - a full-page assistant with a chat history rail.
+- `src/schemas/ai-chat-schema.ts` - re-exports `[AI_CHATS_SCHEMA, AI_MESSAGES_SCHEMA]` for spreading into `src/schemas.ts`.
 
 The feature also adds `react-markdown`, `remark-gfm`, `remark-breaks`, `rehype-highlight`, and `highlight.js` as dependencies and runs `npm install`.
 
@@ -79,7 +79,7 @@ The scaffold registers four endpoints in `src/ai/chat-routes.ts`. The first thre
     { "title": "Renamed" }
     ```
 
-    Owner-checked — 404 on cross-user.
+    Owner-checked - 404 on cross-user.
   </Tab>
 
   <Tab title="Delete chat">
@@ -118,7 +118,7 @@ The `POST /api/ai/chat` handler runs through these steps:
     Return 404 if the chat doesn't exist or belongs to another user.
   </Step>
   <Step title="Load history without persisting the new message">
-    The new user turn is appended in memory only — both user and assistant rows persist together inside `onFinish` so a stream error leaves zero orphan rows.
+    The new user turn is appended in memory only - both user and assistant rows persist together inside `onFinish` so a stream error leaves zero orphan rows.
   </Step>
   <Step title="Prepare messages with compaction">
     Truncate old tool results, apply a cached summary if one exists, and summarize the older half of the conversation if still over the context budget.
@@ -147,7 +147,7 @@ const ALLOWED_MODELS: Record<string, 'anthropic' | 'openai' | 'cerebras'> = {
 const DEFAULT_MODEL = 'claude-sonnet-4-6'
 ```
 
-Unknown `modelId` values are rejected with 400 — there is no silent fallback.
+Unknown `modelId` values are rejected with 400 - there is no silent fallback.
 
 Provider routing happens via `createDeepSpaceAI`:
 
@@ -159,8 +159,8 @@ const provider = createDeepSpaceAI(env, 'anthropic', { authToken: jwt })
 
 | `authToken` | Who pays |
 |---|---|
-| Passed | The caller (signed-in user) — billed against their DeepSpace credits |
-| Omitted | The app owner — billed via `APP_OWNER_JWT` |
+| Passed | The caller (signed-in user) - billed against their DeepSpace credits |
+| Omitted | The app owner - billed via `APP_OWNER_JWT` |
 
 The scaffold's chat routes pass the caller's JWT, so each user pays for their own conversation. Omit `authToken` for autonomous server-side calls (cron, server actions).
 
@@ -180,7 +180,7 @@ The assistant can read and modify your records via a built-in tool catalog. The 
 | `user.current` | Look up the caller's user record |
 
 <Note>
-**Per-collection RBAC at the DO is the security boundary.** The user's own role determines what each tool call can do — the assistant cannot escalate. To run a stricter assistant, trim `ALLOWED_TOOL_NAMES` to reads only.
+**Per-collection RBAC at the DO is the security boundary.** The user's own role determines what each tool call can do - the assistant cannot escalate. To run a stricter assistant, trim `ALLOWED_TOOL_NAMES` to reads only.
 </Note>
 
 ### Adding custom tools
@@ -212,7 +212,7 @@ For long conversations, the SDK automatically compacts older turns to stay under
 
 ```ts
 DEFAULT_CONTEXT_CONFIG = {
-  contextBudget: 240_000,    // chars — ≈60–80K tokens
+  contextBudget: 240_000,    // chars - ≈60–80K tokens
   toolResultCap: 30_000,     // bytes per tool result
   keepRecentToolResults: 5,
   minKept: 10,               // sliding-window floor
@@ -294,7 +294,7 @@ For the canonical message list, mount `useQuery<AiMessageData>('ai-messages', { 
     The Durable Object serializes individual writes, but not the per-request 3-write group (user → assistant → metadata). Two tabs sending turns simultaneously to the same `chatId` can produce a non-strictly-paired history. Realistic impact is rare.
   </Accordion>
   <Accordion title="`stopWhen: stepCountIs(5)` caps tool loops">
-    Each turn can chain up to 5 tool calls. Raise this in `chat-routes.ts` for agentic workflows that need more steps — each step is a full LLM round-trip with proportional cost.
+    Each turn can chain up to 5 tool calls. Raise this in `chat-routes.ts` for agentic workflows that need more steps - each step is a full LLM round-trip with proportional cost.
   </Accordion>
   <Accordion title="Reasoning content is stripped">
     `toUIMessageStreamResponse({ sendReasoning: false })` removes `reasoning-*` chunks. The default UI has no "thinking" disclosure block; flipping this on without UI changes leaves users staring at a stuck spinner.
@@ -306,6 +306,6 @@ For the canonical message list, mount `useQuery<AiMessageData>('ai-messages', { 
 
 ## Next steps
 
-- [Worker AI reference](/sdk-reference/worker/ai) — `createDeepSpaceAI`, compaction helpers, chat-history wrappers.
-- [Server actions](/guides/server-actions) — privileged routes that bypass user RBAC.
-- [External APIs](/guides/external-apis) — call LLMs and other services through `integration.post`.
+- [Worker AI reference](/sdk-reference/worker/ai) - `createDeepSpaceAI`, compaction helpers, chat-history wrappers.
+- [Server actions](/guides/server-actions) - privileged routes that bypass user RBAC.
+- [External APIs](/guides/external-apis) - call LLMs and other services through `integration.post`.

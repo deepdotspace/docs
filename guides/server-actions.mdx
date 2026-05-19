@@ -3,7 +3,7 @@ title: "Server actions"
 description: "Privileged worker-side functions that bypass user RBAC for orchestration and admin operations."
 ---
 
-Server actions are app-defined functions called from the client with the user's JWT. They run **as the app** — [RBAC](/concepts/permissions) checks are bypassed, so they can do things the user themselves can't, like updating two collections atomically or running owner-only operations.
+Server actions are app-defined functions called from the client with the user's JWT. They run **as the app** - [RBAC](/concepts/permissions) checks are bypassed, so they can do things the user themselves can't, like updating two collections atomically or running owner-only operations.
 
 Reach for server actions when you need to:
 
@@ -12,7 +12,7 @@ Reach for server actions when you need to:
 - Spend owner credits via an [integration](/guides/external-apis) on behalf of the user
 - Wrap business logic that needs server-side validation
 
-If the operation can be done with the caller's own RBAC, prefer [`useMutations`](/sdk-reference/client/records#usemutations-t-collection) on the client — keep server actions for cases that genuinely need escalation.
+If the operation can be done with the caller's own RBAC, prefer [`useMutations`](/sdk-reference/client/records#usemutations-t-collection) on the client - keep server actions for cases that genuinely need escalation.
 
 ## Define an action
 
@@ -73,9 +73,9 @@ type ActionContext<TEnv> = {
 }
 ```
 
-### `tools` — RBAC-bypassing operations
+### `tools` - RBAC-bypassing operations
 
-Every method returns `ActionResult<T>` — narrow with `if (result.success)` before reading `result.data`.
+Every method returns `ActionResult<T>` - narrow with `if (result.success)` before reading `result.data`.
 
 | Method | `data` shape on success | Notes |
 |---|---|---|
@@ -87,7 +87,7 @@ Every method returns `ActionResult<T>` — narrow with `if (result.success)` bef
 | `tools.integration(endpoint, data?)` | the integration's response body directly | Call a third-party integration. Billing follows `src/integrations.ts`. |
 
 <Note>
-**Type tip.** `tools.create/update/remove` all resolve to `ActionResult<MutateActionData>` where `MutateActionData` is just `{ recordId: string }` — there is no `record` field on the result. To read the resulting row after a mutation, follow up with `tools.get(coll, recordId)`.
+**Type tip.** `tools.create/update/remove` all resolve to `ActionResult<MutateActionData>` where `MutateActionData` is just `{ recordId: string }` - there is no `record` field on the result. To read the resulting row after a mutation, follow up with `tools.get(coll, recordId)`.
 </Note>
 
 ```ts
@@ -100,7 +100,7 @@ if (r.success) {
 ```
 
 <Note>
-`tools.query` bypasses caller RBAC — your action sees every record in the collection, not just records the caller could read. If you want caller-scoped reads, do them client-side with `useQuery`, or pass a `where` clause that scopes by caller.
+`tools.query` bypasses caller RBAC - your action sees every record in the collection, not just records the caller could read. If you want caller-scoped reads, do them client-side with `useQuery`, or pass a `where` clause that scopes by caller.
 </Note>
 
 ## Action return shape
@@ -149,7 +149,7 @@ export const recomputeAnalytics: ActionHandler<OwnerEnv> = async (ctx) => {
 
 `OWNER_USER_ID` is set on every deployed app to the user who owns it. Use it as the trust anchor for owner-only operations.
 
-## Integration calls — billing routing
+## Integration calls - billing routing
 
 `tools.integration(endpoint, body)` proxies through the api-worker. Billing depends on `src/integrations.ts`:
 
@@ -166,7 +166,7 @@ export const integrations = {
 | `'developer'` | The app owner. Anonymous callers allowed. |
 | `'user'` | The signed-in caller. Anonymous callers get 401. |
 
-The api-worker reads the JWT subject to bill — there's no client-supplied override.
+The api-worker reads the JWT subject to bill - there's no client-supplied override.
 
 ## When to use actions vs other patterns
 
@@ -211,6 +211,6 @@ test('inviteAttendee requires auth', async ({ request }) => {
 
 ## Next steps
 
-- [Server actions reference](/sdk-reference/worker/server-actions) — `ActionHandler`, `ActionContext`, `ActionResult` types.
-- [Permissions](/concepts/permissions) — collection-level RBAC.
-- [External APIs](/guides/external-apis) — call third-party services from actions.
+- [Server actions reference](/sdk-reference/worker/server-actions) - `ActionHandler`, `ActionContext`, `ActionResult` types.
+- [Permissions](/concepts/permissions) - collection-level RBAC.
+- [External APIs](/guides/external-apis) - call third-party services from actions.

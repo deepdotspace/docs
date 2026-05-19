@@ -3,7 +3,7 @@ title: "External APIs"
 description: "Call third-party APIs through the platform's integration proxy."
 ---
 
-DeepSpace fronts 215+ third-party API endpoints — LLMs (Claude, GPT, Cerebras), search (Exa, Tavily), media (LiveKit, Resend), finance (Finnhub, Alpha Vantage), social (Discord, Slack), Google Workspace, weather, and more — through a single signed proxy. You don't store API keys, configure webhooks, or build per-vendor SDKs. You call `integration.post(...)`, the platform handles billing, rate-limiting, and provider routing.
+DeepSpace fronts 215+ third-party API endpoints - LLMs (Claude, GPT, Cerebras), search (Exa, Tavily), media (LiveKit, Resend), finance (Finnhub, Alpha Vantage), social (Discord, Slack), Google Workspace, weather, and more - through a single signed proxy. You don't store API keys, configure webhooks, or build per-vendor SDKs. You call `integration.post(...)`, the platform handles billing, rate-limiting, and provider routing.
 
 ## Calling an integration
 
@@ -37,9 +37,9 @@ if (!result.success && result.issues) {
 }
 ```
 
-## Discover endpoints — `deepspace integrations`
+## Discover endpoints - `deepspace integrations`
 
-The CLI exposes the full catalog and lets you invoke endpoints interactively. **Discovery is free; calls are billed** — `list` and `info` work without authentication, so you can scope integration work before deciding whether to log in.
+The CLI exposes the full catalog and lets you invoke endpoints interactively. **Discovery is free; calls are billed** - `list` and `info` work without authentication, so you can scope integration work before deciding whether to log in.
 
 <Tabs>
   <Tab title="List catalog">
@@ -64,7 +64,7 @@ The CLI exposes the full catalog and lets you invoke endpoints interactively. **
     npx deepspace integrations info openai/chat-completion --json
     ```
 
-    Prints the input schema (Zod), output schema, and an example body. Use this before guessing field names — the schemas are the source of truth.
+    Prints the input schema (Zod), output schema, and an example body. Use this before guessing field names - the schemas are the source of truth.
   </Tab>
 
   <Tab title="Invoke (test call)">
@@ -88,7 +88,7 @@ The CLI exposes the full catalog and lets you invoke endpoints interactively. **
 
 See the [CLI reference](/cli-reference/commands#integrations-and-invoke) for the full flag list.
 
-## Billing — developer vs user
+## Billing - developer vs user
 
 Every integration has a billing setting in `src/integrations.ts`:
 
@@ -131,7 +131,7 @@ if (r.success) {
 ```
 
 <Note>
-**Empty results are not errors.** Some endpoints return `success: true` with empty data when the upstream has no matches. Check for empty state explicitly. For example, `finnhub/stock-price` returns an all-zero quote for an invalid symbol — the call "succeeds" but the data is meaningless.
+**Empty results are not errors.** Some endpoints return `success: true` with empty data when the upstream has no matches. Check for empty state explicitly. For example, `finnhub/stock-price` returns an all-zero quote for an invalid symbol - the call "succeeds" but the data is meaningless.
 </Note>
 
 ## Calling from your worker
@@ -155,7 +155,7 @@ export async function runTask(name: string, env: Env) {
 }
 ```
 
-Both routes go through the api-worker proxy. Billing follows `src/integrations.ts` — when called from a server action, `'user'` integrations bill the caller and `'developer'` ones bill the owner.
+Both routes go through the api-worker proxy. Billing follows `src/integrations.ts` - when called from a server action, `'user'` integrations bill the caller and `'developer'` ones bill the owner.
 
 ## Request options
 
@@ -208,9 +208,9 @@ Integration calls hit real third-party services and **cost real money**. Keep in
 
 - One `integration.post(...)` per endpoint per test run, not a matrix
 - Never put integration calls inside `for` loops or retry-until-success polls
-- Skip `'user'`-billed endpoint calls in `api.spec.ts` — test accounts have no credits and will 402
+- Skip `'user'`-billed endpoint calls in `api.spec.ts` - test accounts have no credits and will 402
 
-For the integration call itself, assert the envelope shape — not the upstream provider's exact response:
+For the integration call itself, assert the envelope shape - not the upstream provider's exact response:
 
 ```ts
 test('weather lookup returns coords', async ({ request }) => {
@@ -227,12 +227,12 @@ test('weather lookup returns coords', async ({ request }) => {
 
 ## Tips
 
-- **Run `info` before guessing a body shape.** The Zod schemas the api-worker validates against are the source of truth — `npx deepspace integrations info <endpoint>` prints them with an example body.
+- **Run `info` before guessing a body shape.** The Zod schemas the api-worker validates against are the source of truth - `npx deepspace integrations info <endpoint>` prints them with an example body.
 - **Use `tools.integration` from server actions for owner-pays endpoints.** Keeps the JWT scope correct and centralizes routing.
 - **For LLM streaming**, use the AI chat pipeline (see [AI chat](/guides/ai-chat)) rather than `integration.post`. The proxy returns the full response; the AI helpers stream it.
 
 ## Next steps
 
-- [AI chat](/guides/ai-chat) — streamed LLM responses with tool use.
-- [Server actions](/guides/server-actions) — call integrations from worker code.
-- [Integrations reference](/sdk-reference/client/integrations) — full `integration` API.
+- [AI chat](/guides/ai-chat) - streamed LLM responses with tool use.
+- [Server actions](/guides/server-actions) - call integrations from worker code.
+- [Integrations reference](/sdk-reference/client/integrations) - full `integration` API.

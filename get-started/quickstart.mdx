@@ -44,7 +44,7 @@ You'll need a DeepSpace account to deploy. One-time setup:
 npx deepspace login
 ```
 
-This opens your browser for GitHub or Google OAuth and stores a long-lived session at `~/.deepspace/session`. The same session covers every app on the machine — you only do this once.
+This opens your browser for GitHub or Google OAuth and stores a long-lived session at `~/.deepspace/session`. The same session covers every app on the machine - you only do this once.
 
 Check status anytime with:
 
@@ -56,11 +56,11 @@ npx deepspace whoami
 
 Open the project in your editor. The interesting files:
 
-- `src/pages/home.tsx` — the landing route. Edit the H1 and intro.
-- `src/schemas.ts` — collection schemas. Add a new collection alongside the seeded `users` and `settings`.
-- `src/pages/_app.tsx` — the provider stack. Auth, storage, and theming are already wired.
-- `worker.ts` — the Hono worker. Add custom routes here.
-- `index.html` — change the `<title>` and `data-theme` attribute to pick a preset.
+- `src/pages/home.tsx` - the landing route. Edit the H1 and intro.
+- `src/schemas.ts` - collection schemas. Add a new collection alongside the seeded `users` and `settings`.
+- `src/pages/_app.tsx` - the provider stack. Auth, storage, and theming are already wired.
+- `worker.ts` - the Hono worker. Add custom routes here.
+- `index.html` - change the `<title>` and `data-theme` attribute to pick a preset.
 
 Try adding a `todos` [collection](/concepts/data-model). For the full schema reference, see [worker schemas](/sdk-reference/worker/schemas).
 
@@ -125,7 +125,7 @@ export default function TodosPage() {
 }
 ```
 
-The page lives at `/todos` — generouted picks it up automatically. The `(protected)` route group means it's gated behind sign-in (see [authentication](/guides/authentication)). Save the file; the change is visible in your browser before you can tab back.
+The page lives at `/todos` - generouted picks it up automatically. The `(protected)` route group means it's gated behind sign-in (see [authentication](/guides/authentication)). Save the file; the change is visible in your browser before you can tab back.
 
 ## 5. Deploy
 
@@ -147,7 +147,7 @@ Visit the URL, sign in, and add a todo. Data syncs to all open tabs in real-time
 
 You have a working app. Where to go from here:
 
-- [Authentication](/guides/authentication) — pick a public, gated, or mixed model.
-- [Presence and cursors](/guides/presence-and-cursors) — show who's online and broadcast cursor positions.
-- [Payments](/guides/payments) — subscriptions and one-time products via Stripe.
-- [AI chat](/guides/ai-chat) — streamed Claude or GPT with tool use over your records.
+- [Authentication](/guides/authentication) - pick a public, gated, or mixed model.
+- [Presence and cursors](/guides/presence-and-cursors) - show who's online and broadcast cursor positions.
+- [Payments](/guides/payments) - subscriptions and one-time products via Stripe.
+- [AI chat](/guides/ai-chat) - streamed Claude or GPT with tool use over your records.

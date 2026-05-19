@@ -5,11 +5,11 @@ description: "Subscriptions, one-time products, and ad-hoc charges via Stripe Ch
 
 DeepSpace ships a Stripe-backed payment system. You declare your plans and products in two manifest files; the SDK gives you hooks for paywalls, checkouts, and self-service billing. The platform charges customers and routes funds to the developer's connected Stripe account.
 
-You don't write Stripe code, register webhooks, or hold API keys. You don't even need a Stripe account to start declaring plans — funds accumulate until the developer connects their Stripe account in the DeepSpace dashboard at `/earnings`.
+You don't write Stripe code, register webhooks, or hold API keys. You don't even need a Stripe account to start declaring plans - funds accumulate until the developer connects their Stripe account in the DeepSpace dashboard at `/earnings`.
 
 ## Declare what you sell
 
-### Subscription plans — `src/subscriptions.ts`
+### Subscription plans - `src/subscriptions.ts`
 
 ```ts
 export const subscriptionPlans = [
@@ -17,7 +17,7 @@ export const subscriptionPlans = [
   {
     slug: 'pro',
     name: 'Pro',
-    priceCents: 900,        // $9/month — minimum $3/mo
+    priceCents: 900,        // $9/month - minimum $3/mo
     yearlyCents: 9000,      // optional; minimum $12/year
     trialDays: 7,           // optional; max 90 days
     taxCode: 'txcd_10000000', // optional; defaults to digital services
@@ -27,14 +27,14 @@ export const subscriptionPlans = [
 
 | Field | Required | Notes |
 |---|---|---|
-| `slug` | ✓ | Stable identifier. **Never rename** — see [Common pitfalls](#common-pitfalls). |
+| `slug` | ✓ | Stable identifier. **Never rename** - see [Common pitfalls](#common-pitfalls). |
 | `name` | ✓ | Display name. Safe to change. |
 | `priceCents` | ✓ | Monthly price in USD cents. `0` = free tier. Min $3/mo. |
-| `yearlyCents` | — | Annual price. Min $12/yr. |
-| `trialDays` | — | Free trial length, max 90 days. |
-| `taxCode` | — | Stripe tax code. Defaults to digital services. |
+| `yearlyCents` | - | Annual price. Min $12/yr. |
+| `trialDays` | - | Free trial length, max 90 days. |
+| `taxCode` | - | Stripe tax code. Defaults to digital services. |
 
-### One-time products — `src/products.ts`
+### One-time products - `src/products.ts`
 
 ```ts
 export const oneTimeProducts = [
@@ -47,7 +47,7 @@ export const oneTimeProducts = [
 | `productId` | ✓ | Stable entitlement key. Used in `useCheckout({ productId })`. |
 | `name` | ✓ | Display name. |
 | `amountCents` | ✓ | Price in USD cents. Min $1.00. |
-| `description` | — | Shown in Checkout. |
+| `description` | - | Shown in Checkout. |
 
 After editing either file, deploy:
 
@@ -57,7 +57,7 @@ npx deepspace deploy
 
 The deploy syncs Stripe Products and Prices to match your manifest. The CLI warns about grandfathered subscribers when you change prices.
 
-## Subscriptions — `useSubscription`
+## Subscriptions - `useSubscription`
 
 ```tsx
 import { useSubscription } from 'deepspace'
@@ -92,10 +92,10 @@ function Paywall() {
 | `refresh()` | `() => Promise<void>` | Re-pull subscription state. |
 
 <Warning>
-**Gate on `hasTier` / `isAtLeast`, never on `tier` alone.** A user whose card just failed has `tier: 'pro'` and `status: 'past_due'` — they keep the slug but lose entitlement. `sub.tier === 'pro'` leaks paid features to past-due, canceled, and unpaid users.
+**Gate on `hasTier` / `isAtLeast`, never on `tier` alone.** A user whose card just failed has `tier: 'pro'` and `status: 'past_due'` - they keep the slug but lose entitlement. `sub.tier === 'pro'` leaks paid features to past-due, canceled, and unpaid users.
 </Warning>
 
-## Server-side enforcement — `requireSubscription`
+## Server-side enforcement - `requireSubscription`
 
 For API routes that must be paywalled, import the server helper:
 
@@ -127,9 +127,9 @@ const r = await fetch('/api/premium', {
 
 `getSubscription(c)` is the read-only variant that returns the subscription shape without throwing.
 
-## One-time charges — `useCheckout`
+## One-time charges - `useCheckout`
 
-The [`useCheckout`](/sdk-reference/client/payments#usecheckout-productid--) hook has two modes — **product mode** for durable entitlements declared in `src/products.ts`, and **ad-hoc mode** for tips and donations.
+The [`useCheckout`](/sdk-reference/client/payments#usecheckout-productid--) hook has two modes - **product mode** for durable entitlements declared in `src/products.ts`, and **ad-hoc mode** for tips and donations.
 
 <Tabs>
   <Tab title="Product mode">
@@ -150,7 +150,7 @@ The [`useCheckout`](/sdk-reference/client/payments#usecheckout-productid--) hook
     }
     ```
 
-    Product entitlements survive across sessions and devices — the platform tracks them per user.
+    Product entitlements survive across sessions and devices - the platform tracks them per user.
   </Tab>
 
   <Tab title="Ad-hoc mode">
@@ -200,9 +200,9 @@ The [`useCheckout`](/sdk-reference/client/payments#usecheckout-productid--) hook
 | `error` | `string \| null` | Last fetch / charge error, if any. |
 | `refresh()` | `() => Promise<void>` | Re-pull. |
 
-Each `Purchase` row has the shape `{ id, productId, name, amount, currency, paidAt }` — `amount` is in cents (post-tax `amount_total`), `productId` is `null` for ad-hoc charges, and `paidAt` is an ISO timestamp.
+Each `Purchase` row has the shape `{ id, productId, name, amount, currency, paidAt }` - `amount` is in cents (post-tax `amount_total`), `productId` is `null` for ad-hoc charges, and `paidAt` is an ISO timestamp.
 
-## Cancellation — `cancelSubscription`
+## Cancellation - `cancelSubscription`
 
 ```ts
 import { cancelSubscription } from 'deepspace/server'
@@ -215,11 +215,11 @@ let res = await cancelSubscription(c, { planSlug: 'legacy_pro', atPeriodEnd: tru
 while (res.hasMore) res = await cancelSubscription(c, { planSlug: 'legacy_pro' })
 ```
 
-- Requires the inbound `Authorization` header — the platform verifies the JWT subject owns the app.
+- Requires the inbound `Authorization` header - the platform verifies the JWT subject owns the app.
 - Pass `atPeriodEnd: false` for immediate cancellation.
 - Batched at 50 per call; loop on `hasMore`.
 
-## Refunds — `refundInvoice`
+## Refunds - `refundInvoice`
 
 ```ts
 import { refundInvoice } from 'deepspace/server'
@@ -238,7 +238,7 @@ Constraints:
 
 - 90-day refund window from `paidAt`
 - 50 refunds per 24h per app
-- No overdraw — partial refunds can't exceed the original charge
+- No overdraw - partial refunds can't exceed the original charge
 
 Dashboard-initiated refunds reconcile automatically.
 
@@ -252,10 +252,10 @@ Dashboard-initiated refunds reconcile automatically.
     Subscription minimums are $3/month and $12/year. One-time minimum is $1.00. Below these, Stripe's per-charge fee consumes the entire price. The deploy worker rejects the manifest before syncing to Stripe.
   </Accordion>
   <Accordion title="Never rename a plan's slug">
-    The slug is the stable identifier for existing subscribers, server-side gates, and the underlying Stripe Product. Renaming on deploy is interpreted as "delete + create" — existing subscribers stay billed on the orphaned price. For branding changes, edit `name` instead.
+    The slug is the stable identifier for existing subscribers, server-side gates, and the underlying Stripe Product. Renaming on deploy is interpreted as "delete + create" - existing subscribers stay billed on the orphaned price. For branding changes, edit `name` instead.
   </Accordion>
   <Accordion title="Local state lags Checkout by 1–2 seconds">
-    The Stripe webhook fires shortly after the user returns from Checkout. Call `sub.refresh()` / `co.refresh()` once on return. If state is still stale, refresh again on user action — don't write a tight retry loop.
+    The Stripe webhook fires shortly after the user returns from Checkout. Call `sub.refresh()` / `co.refresh()` once on return. If state is still stale, refresh again on user action - don't write a tight retry loop.
   </Accordion>
   <Accordion title="Connect onboarding lives in the dashboard, not your app">
     Developer Stripe Connect onboarding happens at `deep.space/earnings`, outside the app. Don't build any Stripe Connect UI yourself. Funds accumulate on the platform balance until onboarding completes.
@@ -281,10 +281,10 @@ function Pricing() {
 }
 ```
 
-`PricingTable` is stateless — `plans` and `currentTier` come from `useSubscription()`, and the required `onSelect(planSlug, interval)` callback decides what happens on click (typically forwarding to `subscribe`). Pass `interval="year"` to render yearly prices.
+`PricingTable` is stateless - `plans` and `currentTier` come from `useSubscription()`, and the required `onSelect(planSlug, interval)` callback decides what happens on click (typically forwarding to `subscribe`). Pass `interval="year"` to render yearly prices.
 
 ## Next steps
 
-- [Payments reference](/sdk-reference/client/payments) — full `useSubscription` and `useCheckout` API.
-- [Authentication](/guides/authentication) — gate UI behind sign-in.
-- [Server actions](/guides/server-actions) — admin-only routes for cancellations and refunds.
+- [Payments reference](/sdk-reference/client/payments) - full `useSubscription` and `useCheckout` API.
+- [Authentication](/guides/authentication) - gate UI behind sign-in.
+- [Server actions](/guides/server-actions) - admin-only routes for cancellations and refunds.

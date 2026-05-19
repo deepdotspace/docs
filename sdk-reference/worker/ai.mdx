@@ -46,8 +46,8 @@ type DeepSpaceModelFactory = (modelId: string) => LanguageModel
 
 | Option | Effect |
 |---|---|
-| `authToken` (passed) | Caller pays — JWT subject is billed |
-| `authToken` (omitted) | Owner pays — falls back to `env.APP_OWNER_JWT` |
+| `authToken` (passed) | Caller pays - JWT subject is billed |
+| `authToken` (omitted) | Owner pays - falls back to `env.APP_OWNER_JWT` |
 
 Use the returned factory with `streamText` / `generateText` from the `ai` package:
 
@@ -81,11 +81,11 @@ function prepareMessagesWithCompaction(
 }>
 ```
 
-`cachedSummary` is the previous turn's summary (if any), anchored to a known message id. When the helper produces a fresh summary, it returns `newSummary` for persistence — store it on the chat row so the next turn can pass it back as `cachedSummary`.
+`cachedSummary` is the previous turn's summary (if any), anchored to a known message id. When the helper produces a fresh summary, it returns `newSummary` for persistence - store it on the chat row so the next turn can pass it back as `cachedSummary`.
 
 Order of operations:
 
-1. `truncateOldToolResults` — replace old tool-result payloads with a small marker.
+1. `truncateOldToolResults` - replace old tool-result payloads with a small marker.
 2. Apply `cachedSummary` if its `throughId` is found in the history.
 3. Summarize the older half if still over budget; return as `newSummary`.
 4. Fall back to `applySlidingWindow` on summarizer error or missing message ids.
@@ -129,7 +129,7 @@ function unwrapToolOutput(output: unknown): unknown
 
 `turnsToCoreMessages` converts persisted UI-shape `ChatTurn` rows into Vercel AI SDK v5 `ModelMessage`s, splitting assistant rows at each tool-call boundary so Anthropic's `tool_use → tool_result` pairing is preserved.
 
-`buildUiParts` is the inverse — converts `onFinish` response messages into the flat UI-shape `parts` array we persist on `ai-messages` rows.
+`buildUiParts` is the inverse - converts `onFinish` response messages into the flat UI-shape `parts` array we persist on `ai-messages` rows.
 
 `unwrapToolOutput` unwraps v5's tagged `output` (`{ type: 'json' | 'text' | ..., value }`) into the flat shape we persist.
 
@@ -148,7 +148,7 @@ function makeDefaultSummarizer(
 
 Omit `authToken` to bill the owner (compaction as infrastructure cost). Pass the caller's JWT to bill the user (compaction as part of chat cost).
 
-The default summary anchors on the last real message ID in the older half (skipping prior-summary system rows so re-summarization doesn't loop) — preserve that anchoring if you replace it.
+The default summary anchors on the last real message ID in the older half (skipping prior-summary system rows so re-summarization doesn't loop) - preserve that anchoring if you replace it.
 
 ### `Summarizer` type
 
@@ -160,7 +160,7 @@ Roll your own implementation if you want a different model or strategy.
 
 ## Chat history helpers (DO tools API wrappers)
 
-These read and write the `ai-chats` and `ai-messages` collections with `X-App-Action: 'true'` (bypassing user RBAC). **The worker is the trust boundary** — callers MUST verify chat ownership before invoking write helpers.
+These read and write the `ai-chats` and `ai-messages` collections with `X-App-Action: 'true'` (bypassing user RBAC). **The worker is the trust boundary** - callers MUST verify chat ownership before invoking write helpers.
 
 ```ts
 function getChat(
@@ -235,7 +235,7 @@ interface ToolSchema {
 }
 ```
 
-`BUILT_IN_TOOLS` is an **array** of tool schemas, not a record keyed by name. Each entry declares its parameters as a flat `{ type, description, required?, default? }` map — this is an MCP-like description used by the worker's tools API and by app authors who want to surface SDK tools to an LLM.
+`BUILT_IN_TOOLS` is an **array** of tool schemas, not a record keyed by name. Each entry declares its parameters as a flat `{ type, description, required?, default? }` map - this is an MCP-like description used by the worker's tools API and by app authors who want to surface SDK tools to an LLM.
 
 The catalog (records, schemas, users, storage, backup, Yjs):
 
@@ -254,9 +254,9 @@ The catalog (records, schemas, users, storage, backup, Yjs):
 | `backup.create` / `list` / `restore` / `delete` | Yjs doc backups |
 | `yjs.list` / `getText` / `setText` | Collaborative doc text access |
 
-See `src/ai/tools.ts` in the scaffold for `buildSystemPrompt(appName, schemas)` and `buildReadOnlyTools(executor)` — both are app-local references you can edit to customize the assistant's tool surface and system prompt.
+See `src/ai/tools.ts` in the scaffold for `buildSystemPrompt(appName, schemas)` and `buildReadOnlyTools(executor)` - both are app-local references you can edit to customize the assistant's tool surface and system prompt.
 
 ## See also
 
-- [AI chat guide](/guides/ai-chat) — end-to-end usage
-- [Server actions reference](/sdk-reference/worker/server-actions) — `tools.integration` for non-streamed calls
+- [AI chat guide](/guides/ai-chat) - end-to-end usage
+- [Server actions reference](/sdk-reference/worker/server-actions) - `tools.integration` for non-streamed calls

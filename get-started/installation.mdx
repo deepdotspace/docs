@@ -11,7 +11,7 @@ You don't install DeepSpace globally. The CLI ships inside the `deepspace` packa
 - **npm, pnpm, or yarn.** Examples in these docs use npm; substitute your favorite if you prefer.
 - **A GitHub or Google account.** Used for signing in to the CLI and your deployed apps. There's no separate DeepSpace account.
 
-You do **not** need a Cloudflare account. DeepSpace deploys to a shared Workers for Platforms namespace operated by the platform. If you want a custom domain, you'll buy it through the CLI (Cloudflare Registrar or Porkbun under the hood) — no DNS setup on your side.
+You do **not** need a Cloudflare account. DeepSpace deploys to a shared Workers for Platforms namespace operated by the platform. If you want a custom domain, you'll buy it through the CLI (Cloudflare Registrar or Porkbun under the hood) - no DNS setup on your side.
 
 ## Create a new app
 
@@ -27,7 +27,7 @@ This:
 3. Installs `deepspace` and a small set of peer dependencies.
 4. Initializes a git repository.
 
-The scaffold takes about 30 seconds. When it finishes, you have a working app — but you'll need to log in before you can run it. `npx deepspace dev` calls into the platform to mint a development JWT and refuses to start without a session.
+The scaffold takes about 30 seconds. When it finishes, you have a working app - but you'll need to log in before you can run it. `npx deepspace dev` calls into the platform to mint a development JWT and refuses to start without a session.
 
 ### Scaffold options
 
@@ -47,7 +47,7 @@ npm create deepspace@latest -- --help
 
 ## Log in to the CLI
 
-Login is required for every CLI command that touches the platform — including `dev`, `deploy`, test-account management, and billable integration endpoints. Plan to log in once before your first `npx deepspace dev`.
+Login is required for every CLI command that touches the platform - including `dev`, `deploy`, test-account management, and billable integration endpoints. Plan to log in once before your first `npx deepspace dev`.
 
 ```bash
 npx deepspace login
@@ -55,10 +55,10 @@ npx deepspace login
 
 This opens your default browser for OAuth and waits for up to 10 minutes. After you authorize, the CLI writes two files into `~/.deepspace/`:
 
-- `~/.deepspace/session` — the long-lived refresh token used to mint new JWTs.
-- `~/.deepspace/token` — the current short-lived JWT, refreshed automatically by other commands.
+- `~/.deepspace/session` - the long-lived refresh token used to mint new JWTs.
+- `~/.deepspace/token` - the current short-lived JWT, refreshed automatically by other commands.
 
-The same session covers every DeepSpace app on the machine — you don't log in per project.
+The same session covers every DeepSpace app on the machine - you don't log in per project.
 
 Check your login state:
 
@@ -67,7 +67,7 @@ npx deepspace whoami
 npx deepspace whoami --json   # machine-readable
 ```
 
-If the JWT has expired, `whoami` prints `Not logged in.` and exits with code 1 — re-run `login`.
+If the JWT has expired, `whoami` prints `Not logged in.` and exits with code 1 - re-run `login`.
 
 <Warning>
 The session file holds a long-lived refresh token. Treat `~/.deepspace/session`, `~/.deepspace/token`, and your app's `.dev.vars` file as secret. Never commit any of them to version control.
@@ -81,7 +81,7 @@ DeepSpace ships frequently. To pull in the latest SDK and CLI, run:
 npm install deepspace@latest
 ```
 
-The CLI and the SDK are the same package — bumping the version updates both.
+The CLI and the SDK are the same package - bumping the version updates both.
 
 ## Verify your setup
 
@@ -96,5 +96,5 @@ npx deepspace whoami       # prints your account, after `login`
 
 ## Next steps
 
-- [Quickstart](/get-started/quickstart) — build and deploy your first app.
-- [Project structure](/get-started/project-structure) — tour of the scaffolded files.
+- [Quickstart](/get-started/quickstart) - build and deploy your first app.
+- [Project structure](/get-started/project-structure) - tour of the scaffolded files.

@@ -3,7 +3,7 @@ title: "Permissions"
 description: "Role-based access control on collections, evaluated server-side in your Durable Object."
 ---
 
-DeepSpace enforces permissions in the Durable Object — the server checks every read and write before it broadcasts to clients. Permissions are declared per-collection in the schema, and the rules cover the common cases without custom logic.
+DeepSpace enforces permissions in the Durable Object - the server checks every read and write before it broadcasts to clients. Permissions are declared per-collection in the schema, and the rules cover the common cases without custom logic.
 
 <Info>
 Client-side filtering is not a security boundary. The DO drops records the caller can't read **before** sending them over the WebSocket, so anything that arrives on the client is data the caller is allowed to see.
@@ -21,7 +21,7 @@ Every user has a role on each app's RecordRoom. The built-in roles are:
 
 New authenticated users get `member` by default. You can override that with `defaultRole` on the users schema. Promotion happens via `useUsers().setRole(userId, 'admin')` (admin-only) or via the dashboard.
 
-Unauthenticated callers use the `'*'` wildcard key in the permissions block — there is no `anonymous` role identifier.
+Unauthenticated callers use the `'*'` wildcard key in the permissions block - there is no `anonymous` role identifier.
 
 ## The permissions block
 
@@ -36,7 +36,7 @@ permissions: {
 }
 ```
 
-`read`, `update`, and `delete` each accept a `PermissionLevel` — the union of `boolean | 'own' | 'unclaimed-or-own' | 'collaborator' | 'team' | 'access' | 'published' | 'shared'`. `create` is the exception: it accepts a `boolean` only — you either let a role create rows or you don't.
+`read`, `update`, and `delete` each accept a `PermissionLevel` - the union of `boolean | 'own' | 'unclaimed-or-own' | 'collaborator' | 'team' | 'access' | 'published' | 'shared'`. `create` is the exception: it accepts a `boolean` only - you either let a role create rows or you don't.
 
 The levels that cover ~95% of apps:
 
@@ -50,9 +50,9 @@ The levels that cover ~95% of apps:
 
 Less common (check the `PermissionLevel` export in `deepspace/worker` before using):
 
-- `'unclaimed-or-own'` — no owner set, OR caller is owner
-- `'collaborator'` — owner OR in `collaboratorsField` (owners always pass)
-- `'access'` — equivalent to `'team'`; prefer `'team'` for clarity
+- `'unclaimed-or-own'` - no owner set, OR caller is owner
+- `'collaborator'` - owner OR in `collaboratorsField` (owners always pass)
+- `'access'` - equivalent to `'team'`; prefer `'team'` for clarity
 
 ## `visibilityField` and `collaboratorsField`
 
@@ -78,9 +78,9 @@ When you use `'published'` or `'shared'`, you tell the SDK which column to check
 - `visibilityField` declares which field gates the `'published'` rule.
 - `collaboratorsField` declares which field holds the list of explicit collaborator userIds.
 
-## `ownerField` — when the creator isn't the owner
+## `ownerField` - when the creator isn't the owner
 
-By default, `'own'` checks against `record.createdBy` (set automatically when the record was created). If you want to tie ownership to a different field — say, "this todo belongs to the `assignedTo` user, not the creator" — set `ownerField`:
+By default, `'own'` checks against `record.createdBy` (set automatically when the record was created). If you want to tie ownership to a different field - say, "this todo belongs to the `assignedTo` user, not the creator" - set `ownerField`:
 
 ```ts
 {
@@ -134,9 +134,9 @@ Each user sees only their own records. Useful for things like personal preferenc
 
 The rules are enforced inside the Durable Object's `canRead()` / `canWrite()` checks. Three things follow from this:
 
-1. **Permissions are checked before data ships over the wire.** A user without read access never receives the records — they're filtered out at the DO before the WebSocket broadcast.
-2. **Client-side filtering is not enough.** Don't rely on the UI to hide records the user shouldn't see. A determined attacker reading WebSocket frames sees what the DO sent — so make sure the DO never sends what it shouldn't.
-3. **Bypassing RBAC requires a server action.** See [Server actions](/guides/server-actions) — they call privileged worker code with the `X-App-Action` header, which bypasses RBAC for orchestration that the user themselves couldn't perform.
+1. **Permissions are checked before data ships over the wire.** A user without read access never receives the records - they're filtered out at the DO before the WebSocket broadcast.
+2. **Client-side filtering is not enough.** Don't rely on the UI to hide records the user shouldn't see. A determined attacker reading WebSocket frames sees what the DO sent - so make sure the DO never sends what it shouldn't.
+3. **Bypassing RBAC requires a server action.** See [Server actions](/guides/server-actions) - they call privileged worker code with the `X-App-Action` header, which bypasses RBAC for orchestration that the user themselves couldn't perform.
 
 ## Roles vs. visibility
 
@@ -145,7 +145,7 @@ It's tempting to model "private messages" via `read: 'own'`. For DMs and convers
 - For **app-scoped channels** (`CHANNELS_SCHEMA`): set the channel's `type` to `'private'` or `'dm'`. The message schema filters by channel membership.
 - For **directory conversations** (`DIRECTORY_SCHEMAS`): set `Visibility: 'private'` and populate `ParticipantIds`. The platform DO checks visibility on every read.
 
-Don't rely on `read: 'own'` for shared messaging — every participant needs read access, but only that exact set.
+Don't rely on `read: 'own'` for shared messaging - every participant needs read access, but only that exact set.
 
 ## Debugging "why can't this user see X?"
 
@@ -160,5 +160,5 @@ Add a temporary `console.log` of the full record envelope in a development build
 
 ## Next steps
 
-- [Schemas reference](/sdk-reference/worker/schemas) — full schema and permissions type signatures.
-- [Server actions](/guides/server-actions) — privileged writes that bypass user RBAC.
+- [Schemas reference](/sdk-reference/worker/schemas) - full schema and permissions type signatures.
+- [Server actions](/guides/server-actions) - privileged writes that bypass user RBAC.

@@ -3,7 +3,7 @@ title: "Architecture"
 description: "How DeepSpace apps are structured, deployed, and connected to the platform."
 ---
 
-A DeepSpace app is a normal Cloudflare Worker. It serves your React SPA, exposes API routes, and owns a set of Durable Objects that hold per-app data. Around your worker, the DeepSpace platform runs a handful of shared services — authentication, payments, integrations, and cross-app data — that your worker talks to over service bindings or HTTPS.
+A DeepSpace app is a normal Cloudflare Worker. It serves your React SPA, exposes API routes, and owns a set of Durable Objects that hold per-app data. Around your worker, the DeepSpace platform runs multiple shared services - authentication, payments, integrations, and cross-app data - that your worker talks to over service bindings or HTTPS.
 
 <Info>
 **New to DeepSpace?** You don't need to understand the platform internals to build an app. Skip to the [Quickstart](/get-started/quickstart) and return here when you need to add cross-app data sharing, declare custom bindings, or debug a deploy.
@@ -13,9 +13,9 @@ A DeepSpace app is a normal Cloudflare Worker. It serves your React SPA, exposes
 
 A DeepSpace deployment has two halves: the worker you write, and the platform workers DeepSpace runs.
 
-**Your app worker** is a Cloudflare Worker compiled from `worker.ts` and the Vite build of `src/`. It serves the SPA, handles HTTP and WebSocket routes, and owns the per-app Durable Objects. You deploy it with `npx deepspace deploy`; it lives at `<name>.app.space`.
+**Your app worker** is a Cloudflare Worker compiled from `worker.ts` and the [Vite](https://vite.dev/) build of `src/`. It serves the SPA, handles HTTP and WebSocket routes, and owns the per-app Durable Objects. You deploy it with `npx deepspace deploy`; it lives at `<name>.app.space`.
 
-**The platform workers** are shared services run by DeepSpace. Your worker addresses them over Cloudflare service bindings (preferred in production) or HTTPS URLs (fallback in local dev). You never deploy or configure them — they're shared infrastructure.
+**The platform workers** are shared services run by DeepSpace. You never deploy or configure them - they're shared infrastructure. Your worker talks to three of them directly at runtime (auth, API, platform) via the helpers in [Talking to platform workers](#talking-to-platform-workers); the deploy and dispatch workers sit outside your request path.
 
 | Platform worker | Responsibility |
 |---|---|
@@ -27,22 +27,25 @@ A DeepSpace deployment has two halves: the worker you write, and the platform wo
 
 ## Your worker
 
-The scaffolded worker is a Hono app that handles six classes of request:
+The scaffolded worker is a [Hono](https://hono.dev/) app. Its main routes:
 
 | Route | What it serves |
 |---|---|
-| `GET /ws/:roomId` (and variants) | WebSocket upgrades for Durable Object rooms — records, Yjs, canvas, presence, cron |
-| `GET/POST /api/auth/*` | Proxied to the platform's auth worker |
-| `GET/POST /api/integrations/*` | Proxied to the platform's API worker |
+| `GET /ws/:roomId` (and variants) | WebSocket upgrades for Durable Object rooms - records, Yjs, canvas, presence, cron |
+| `/api/auth/*` | Proxied to the platform's auth worker (sign-in, OAuth callback, sign-out) |
+| `/api/integrations/*` | Proxied to the platform's API worker - any method, including `DELETE /oauth/:provider/disconnect` |
 | `POST /api/actions/:name` | Server actions defined in `src/actions/index.ts` |
-| `POST /api/ai/chat` | Streamed AI chat (defined in `src/ai/chat-routes.ts`) |
+| `/api/ai/*` | Streamed chat (`POST /chat`) and chat CRUD (`POST/PATCH/DELETE /chats[/:id]`), defined in `src/ai/chat-routes.ts` |
+| `/api/files/*` | Scoped R2 file storage, proxied to the platform worker (`?scope=app` or per-user) |
+| `/_deepspace/*` | Allowlisted same-origin proxy for SDK billing hooks (subscriptions, charges) |
+| `/api/debug/*` | RecordRoom debug endpoints, gated on `ALLOW_DEBUG_ROUTES` (set by `deepspace dev`/`test`, never in production) |
 | Everything else | Static SPA assets (the Vite build output) |
 
 The worker runs on Cloudflare Workers for Platforms, which means each deployed app is isolated in its own namespace. Your app's URL is `<wrangler.toml name>.app.space`.
 
 ## Durable Objects
 
-State that needs to be **shared** — across users, across tabs, in real time — lives in a Durable Object. The scaffold ships five DO classes; each is an SDK base class subclassed in `worker.ts`:
+State that needs to be **shared** - across users, across tabs, in real time - lives in a Durable Object. The scaffold ships five DO classes; each is an SDK base class subclassed in `worker.ts`:
 
 | Class | Purpose | WebSocket route |
 |---|---|---|
@@ -54,7 +57,7 @@ State that needs to be **shared** — across users, across tabs, in real time �
 
 You can add more (such as `GameRoom` for turn-based games) or subclass any of them with custom behavior.
 
-Each DO is keyed by a **scope ID** — the room name. Different scope IDs mean different DO instances with separate state.
+A DO instance is identified by its name. Same name = same instance with the same state; a different name is a different instance with its own.
 
 ## Scopes
 
@@ -62,9 +65,9 @@ A scope is a namespaced identifier that determines which DO instance you're talk
 
 | Scope | What it represents | Hosted on |
 |---|---|---|
-| `app:<APP_NAME>` | Your app's main RecordRoom — everything tied to the app | Your worker |
+| `app:<APP_NAME>` | Your app's main RecordRoom - everything tied to the app | Your worker |
 | `conv:<id>` | A DM or group conversation DO | Your worker |
-| `workspace:default` | Cross-app shared scope (shared user identity) | Platform worker |
+| `workspace:default` | Cross-app business data (teams, tasks, people) | Platform worker |
 | `dir:<appHandle>` | Cross-app directory (conversations, communities, posts) | Platform worker |
 
 The default in the scaffold is `app:<APP_NAME>`, exported as `SCOPE_ID` from `src/constants.ts`. Your `RecordScope` provider mounts this scope; `useQuery` / `useMutations` operate against it.
@@ -73,25 +76,31 @@ To read or write a cross-app scope, see [Cross-app shared scopes](#cross-app-sha
 
 ## Talking to platform workers
 
-The scaffold's `worker.ts` proxies to platform workers via helper functions from `deepspace/worker`:
+The SDK exposes three fetch helpers in `deepspace/worker` for addressing platform services. Each prefers a Cloudflare service binding when one is configured and falls back to an HTTPS URL otherwise, so the same code path works in production and under `deepspace dev`.
 
 ```ts
 import { authWorkerFetch, apiWorkerFetch, platformWorkerFetch } from 'deepspace/worker'
 ```
 
-These helpers prefer service bindings (set up automatically on deploy) and fall back to HTTPS URLs in local dev. Replacing them with raw `c.env.X.fetch(...)` calls fails silently in `wrangler dev` because service bindings don't surface cross-process for SDK apps.
+| Helper | Signature | Use it for |
+|---|---|---|
+| `authWorkerFetch` | `(env, path, init?) => Promise<Response>` | Sign-in flows, JWT issuance, session cookies. URL-only by design - there is no auth-worker service binding. |
+| `apiWorkerFetch` | `(env, path, init?) => Promise<Response>` | Integration proxy, billing, subscriptions, charges. |
+| `platformWorkerFetch` | `(env, pathOrRequest, init?) => Promise<Response>` | Cross-app shared scopes (`workspace:*`, `dir:*`, `conv:*`), scoped R2 files. Accepts a `Request` so you can forward `c.req.raw` verbatim. |
 
-## Security model — WebSocket identity
+Calling `c.env.PLATFORM_WORKER.fetch(...)` directly works in production but breaks under `deepspace dev`, where the binding is absent and the CLI writes a `PLATFORM_WORKER_URL` fallback into `.dev.vars` for the helpers to pick up.
 
-Your Durable Object trusts the identity passed to it. The worker is the only place to scrub spoofed claims, so the SDK enforces two layers of scrubbing:
+## Security model - WebSocket identity
 
-**Per-app WebSocket route (`wsRoute`)** — the scaffold ships a `wsRoute` helper defined inline in `worker.ts` (it is not an SDK export — look for the `function wsRoute(...)` declaration near the bottom of the file). It strips `userId`, `userName`, `userEmail`, `userImageUrl`, `role`, and `token` from the URL on every upgrade, then re-applies identity only from a verified JWT. Three states are possible:
+Durable Objects trust whatever identity the request URL carries. Verifying that identity is the worker's job - it strips anything the client sent, then re-applies it from a verified JWT. The SDK does this at two entry points:
+
+**Per-app WebSocket route (`wsRoute`)** - the scaffold ships a `wsRoute` helper defined inline in `worker.ts` (it is not an SDK export - look for the `function wsRoute(...)` declaration near the bottom of the file). It strips `userId`, `userName`, `userEmail`, `userImageUrl`, `role`, and `token` from the URL on every upgrade, then re-applies identity only from a verified JWT. Three states are possible:
 
 - **No token** → anonymous (DO assigns `anon-<uuid>`)
 - **Invalid token** → 401
 - **Valid token** → identity = JWT `sub` / `name` / `email` / `image`
 
-**Platform worker `/api/*` passthrough** — same scrubbing for WebSocket upgrades, plus overwriting `X-User-Id` and stripping `X-App-Action` on HTTP forwards. Cross-app scopes (`workspace:*`, `dir:*`, `conv:*`) require a valid JWT — no anonymous access.
+**Platform worker (cross-app scopes)** - when a `workspace:*`, `dir:*`, or `conv:*` request reaches the platform worker, the same URL parameters are stripped and re-applied from the JWT before the request reaches the shared DO. On HTTP forwards, `x-user-id` is overwritten from the JWT and `x-app-action` is dropped. These scopes require a valid JWT; unauthenticated requests are rejected with 401.
 
 <Warning>
 **Never put identity in WebSocket URLs or `/api/*` headers.** The scaffold's inline `wsRoute` helper strips them; identity always comes from the JWT subject. There is no client-side override.
@@ -130,6 +139,11 @@ If your app needs to read or write `workspace:*`, `dir:*`, or `conv:*` scopes th
 
   <Step title="Mount the shared scope in your provider tree">
     ```tsx
+    import { RecordScope } from 'deepspace'
+    import { WORKSPACE_SCHEMAS } from 'deepspace/worker'
+    import { SCOPE_ID, APP_NAME } from './constants'
+    import { schemas } from './schemas'
+
     <RecordScope
       roomId={SCOPE_ID}
       schemas={schemas}
@@ -139,6 +153,8 @@ If your app needs to read or write `workspace:*`, `dir:*`, or `conv:*` scopes th
       <App />
     </RecordScope>
     ```
+
+    `WORKSPACE_SCHEMAS` lives in `deepspace/worker` because schemas are server-side data — the import is safe in the browser bundle (Vite tree-shakes the worker-only code).
   </Step>
 </Steps>
 
@@ -149,32 +165,32 @@ Without all three edits, `sharedScopes` writes to your app's own DO instead of t
 `npx deepspace deploy` performs these steps in order:
 
 <Steps>
-  <Step title="Build the frontend">
-    `vite build` outputs static assets and a normalized `config.json`.
+  <Step title="Build with Vite">
+    `npx vite build` runs the Cloudflare Workers Vite plugin, producing the client assets and the worker bundle in a single pass, plus a normalized `wrangler.json` under `.wrangler/deploy/`.
   </Step>
-  <Step title="Build the worker">
-    esbuild bundles `worker.ts` with the SDK and your custom code.
+  <Step title="Extract manifests">
+    The CLI reads the DO bindings, custom bindings (R2, KV, D1, Vectorize, AI, …), and user secrets from `.dev.vars` (below the SDK-managed divider) out of the build output.
   </Step>
   <Step title="Validate the binding manifest">
-    `validateBindingManifest` checks `wrangler.toml` against allowed types and reserved names.
+    `validateBindingManifest` checks custom bindings against allowed types and reserved names. Reserved or duplicate names abort the deploy with a file-pointing error.
+  </Step>
+  <Step title="Upload to the deploy worker">
+    Worker bundle, assets, DO manifest, custom bindings, and user secrets are POSTed as a single FormData to the deploy worker.
   </Step>
   <Step title="Auto-provision resources">
-    Any binding with `id = "auto"` (or `bucket_name = "auto"`, etc.) is created on the platform Cloudflare account on first deploy.
+    Server-side, the deploy worker creates any binding declared with `id = "auto"` (or `bucket_name = "auto"`, etc.) on the platform Cloudflare account on first deploy.
   </Step>
-  <Step title="Upload to Workers for Platforms">
-    The worker is registered in the platform's dispatch namespace.
+  <Step title="Register subdomain and dispatch route">
+    The worker is loaded into the dispatch namespace under `<name>.app.space`; user secrets become `secret_text` bindings on the deployed worker. The dispatch worker routes incoming traffic to your worker's isolate.
   </Step>
-  <Step title="Sync user secrets">
-    Keys in `.dev.vars` (below the SDK-managed divider) become `secret_text` bindings on the deployed worker.
-  </Step>
-  <Step title="Register the subdomain">
-    The `name` in `wrangler.toml` becomes `<name>.app.space`. The dispatch worker routes incoming traffic to your worker's isolate.
+  <Step title="Sync subscription plans and products (optional)">
+    If `src/subscriptions.ts` or `src/products.ts` exist, the CLI bundles them with esbuild and posts the declarations to the API worker. Skipped silently when the files are absent.
   </Step>
 </Steps>
 
 ## Next steps
 
-- [Data model](/concepts/data-model) — collections, records, and how data is shaped.
-- [Permissions](/concepts/permissions) — role-based access control on collections.
-- [Real-time sync](/concepts/realtime-sync) — how WebSocket sync works under the hood.
-- [Deployment](/concepts/deployment) — what happens when you run `deploy`.
+- [Data model](/concepts/data-model) - collections, records, and how data is shaped.
+- [Permissions](/concepts/permissions) - role-based access control on collections.
+- [Real-time sync](/concepts/realtime-sync) - how WebSocket sync works under the hood.
+- [Deployment](/concepts/deployment) - what happens when you run `deploy`.

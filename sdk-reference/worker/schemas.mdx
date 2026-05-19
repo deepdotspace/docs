@@ -3,7 +3,7 @@ title: "Schemas reference"
 description: "`CollectionSchema`, RBAC types, and the pre-built drop-in collections."
 ---
 
-Schemas describe collections — their columns, permissions, and visibility rules. They're declared in `src/schemas/`, registered in `src/schemas.ts`, and baked into the worker at deploy time.
+Schemas describe collections - their columns, permissions, and visibility rules. They're declared in `src/schemas/`, registered in `src/schemas.ts`, and baked into the worker at deploy time.
 
 ```ts
 import type {
@@ -36,7 +36,7 @@ import { ROLES, ROLE_CONFIG, type Role } from 'deepspace'
 ```ts
 interface CollectionSchema {
   name: string
-  /** Column definitions — every collection is stored in a typed SQL table. */
+  /** Column definitions - every collection is stored in a typed SQL table. */
   columns: ColumnDefinition[]
   /** Composite uniqueness constraint (e.g., ['userId', 'taskId']). */
   uniqueOn?: string[]
@@ -83,7 +83,7 @@ interface ColumnDefinition {
 }
 ```
 
-`storage` is `'number' | 'text'` — these are the only two backing SQLite types the SDK uses. `interpretation` can be either a string shortcut (e.g. `'plain'`) or a discriminated-union object.
+`storage` is `'number' | 'text'` - these are the only two backing SQLite types the SDK uses. `interpretation` can be either a string shortcut (e.g. `'plain'`) or a discriminated-union object.
 
 ## `ColumnInterpretation`
 
@@ -103,7 +103,7 @@ type ColumnInterpretation =
   | { kind: 'reference'; targetTable: string; displayColumn: string }
 ```
 
-Some kinds carry required fields — `currency` needs `symbol` and `decimals`; `select` and `multiselect` need `options`; `reference` needs `targetTable` and `displayColumn`. The bare `string` form on `ColumnDefinition.interpretation` is a shortcut for `{ kind: <string> }`.
+Some kinds carry required fields - `currency` needs `symbol` and `decimals`; `select` and `multiselect` need `options`; `reference` needs `targetTable` and `displayColumn`. The bare `string` form on `ColumnDefinition.interpretation` is a shortcut for `{ kind: <string> }`.
 
 ## `RolePermissions`
 
@@ -150,9 +150,9 @@ const ROLE_CONFIG: Record<Role, {
 
 `ROLES` gives you the three string identifiers used in `permissions` blocks. `ROLE_CONFIG` is display metadata for role-badge UIs.
 
-For unauthenticated users, use the `'*'` key in permissions — there is no `anonymous` role identifier.
+For unauthenticated users, use the `'*'` key in permissions - there is no `anonymous` role identifier.
 
-## Drop-in schemas — Users
+## Drop-in schemas - Users
 
 ```ts
 const USERS_COLUMNS: ColumnDefinition[]      // canonical users columns
@@ -161,7 +161,7 @@ const BASE_USERS_SCHEMA: CollectionSchema    // assembled from USERS_COLUMNS
 
 The scaffold's `usersSchema` extends `BASE_USERS_SCHEMA`. Don't replace; extend if you need extra columns.
 
-## Drop-in schemas — Messaging
+## Drop-in schemas - Messaging
 
 | Schema | Collection name | Purpose |
 |---|---|---|
@@ -174,7 +174,7 @@ The scaffold's `usersSchema` extends `BASE_USERS_SCHEMA`. Don't replace; extend 
 
 Add to your app's `schemas` array to enable the corresponding hooks (`useChannels`, `useMessages`, etc.).
 
-## Drop-in schemas — Conversations (`conv:<id>` DOs)
+## Drop-in schemas - Conversations (`conv:<id>` DOs)
 
 ```ts
 const CONVERSATION_SCHEMAS: CollectionSchema[]
@@ -182,16 +182,16 @@ const CONVERSATION_SCHEMAS: CollectionSchema[]
 
 Array of the `conv_messages` / `conv_reactions` / `conv_members` / `conv_read_cursors` collections. Pass as `schemas` to a conversation-scope `RecordRoom` to enable `useConversation`.
 
-## Drop-in schemas — Directory (cross-app)
+## Drop-in schemas - Directory (cross-app)
 
 ```ts
 const DIRECTORY_SCHEMAS: CollectionSchema[]      // conversations, conversation_state, communities, memberships, posts
 const VOTING_SCHEMAS: CollectionSchema[]         // poll-related collections
 ```
 
-Hosted on the platform's directory DO. Rarely instantiated by an app directly — apps mount them via `sharedScopes`.
+Hosted on the platform's directory DO. Rarely instantiated by an app directly - apps mount them via `sharedScopes`.
 
-## Drop-in schemas — Workspace (cross-app shared)
+## Drop-in schemas - Workspace (cross-app shared)
 
 ```ts
 const WORKSPACE_SCHEMAS: CollectionSchema[]      // email handles, teams, etc.
@@ -200,14 +200,14 @@ const workspaceTeamsSchema: CollectionSchema     // teams collection on its own
 
 Mount via `sharedScopes` for `workspace:default`.
 
-## Drop-in schemas — AI chat
+## Drop-in schemas - AI chat
 
 ```ts
 const AI_CHATS_SCHEMA: CollectionSchema          // 'ai-chats'
 const AI_MESSAGES_SCHEMA: CollectionSchema       // 'ai-messages'
 ```
 
-RBAC: members `read/update/delete: 'own'`, `create: false` — writes only flow through the worker's chat routes. **Don't relax `create` to `true`** (see the AI chat guide for why).
+RBAC: members `read/update/delete: 'own'`, `create: false` - writes only flow through the worker's chat routes. **Don't relax `create` to `true`** (see the AI chat guide for why).
 
 ## Global DO type registry
 
@@ -257,6 +257,6 @@ export const itemsSchema: CollectionSchema = {
 
 ## See also
 
-- [Data model concepts](/concepts/data-model) — collections and envelopes
-- [Permissions concepts](/concepts/permissions) — rules and visibility
-- [Records reference](/sdk-reference/client/records) — client-side hooks
+- [Data model concepts](/concepts/data-model) - collections and envelopes
+- [Permissions concepts](/concepts/permissions) - rules and visibility
+- [Records reference](/sdk-reference/client/records) - client-side hooks

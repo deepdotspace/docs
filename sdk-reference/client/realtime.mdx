@@ -3,7 +3,7 @@ title: "Real-time reference"
 description: "Presence, Yjs, canvas, game rooms, and cursor color helpers."
 ---
 
-The real-time hooks beyond records and messaging — presence, collaborative editing, canvas, game rooms, and helpers.
+The real-time hooks beyond records and messaging - presence, collaborative editing, canvas, game rooms, and helpers.
 
 ```ts
 import {
@@ -46,7 +46,7 @@ function useYjsText(
 
 ### `useYjsField(collection, recordId, fieldName)`
 
-Lower-level Yjs binding. Returns the raw `Y.Doc` and `Awareness` so you can build any Yjs type (`Y.Map`, `Y.Array`, `Y.XmlFragment`, etc.) on top of it. Not generic — the hook doesn't model the field shape.
+Lower-level Yjs binding. Returns the raw `Y.Doc` and `Awareness` so you can build any Yjs type (`Y.Map`, `Y.Array`, `Y.XmlFragment`, etc.) on top of it. Not generic - the hook doesn't model the field shape.
 
 ```ts
 function useYjsField(
@@ -58,7 +58,7 @@ function useYjsField(
   awareness: Awareness
   synced: boolean
   canWrite: boolean
-  /** Increments on every local or remote Y.Doc update — useful as a render trigger. */
+  /** Increments on every local or remote Y.Doc update - useful as a render trigger. */
   updateCount: number
 }
 ```
@@ -108,7 +108,7 @@ function useCanvas(roomId: string): {
 }
 ```
 
-All mutation methods are fire-and-forget — they encode and send a typed message and return `void`. `viewports` is an array, not a `Map`.
+All mutation methods are fire-and-forget - they encode and send a typed message and return `void`. `viewports` is an array, not a `Map`.
 
 Each shape:
 
@@ -178,7 +178,7 @@ type PresencePeerClient = {
 
 ## `useGameRoom(roomId)`
 
-Turn-tick or sim-tick game loop DO. Not generic — `state` is `Record<string, unknown>` (cast at the use-site).
+Turn-tick or sim-tick game loop DO. Not generic - `state` is `Record<string, unknown>` (cast at the use-site).
 
 ```ts
 function useGameRoom(roomId: string): {
@@ -198,14 +198,14 @@ type GamePlayer = {
   userName: string
   ready: boolean
   connectedAt: string
-  /** Server-managed per-player slot — always present, never undefined. */
+  /** Server-managed per-player slot - always present, never undefined. */
   data: Record<string, unknown>
 }
 ```
 
-All mutation methods (`sendInput`, `setReady`, `startGame`, `endGame`) are fire-and-forget — they return `void`. The server-side `GameInput` event carries `userId` (not `playerId`), `action`, `data`, and the current `tick`.
+All mutation methods (`sendInput`, `setReady`, `startGame`, `endGame`) are fire-and-forget - they return `void`. The server-side `GameInput` event carries `userId` (not `playerId`), `action`, `data`, and the current `tick`.
 
-State migration on schema bumps lives in the worker — override `onHydrateState(stored)` on your `GameRoom` subclass.
+State migration on schema bumps lives in the worker - override `onHydrateState(stored)` on your `GameRoom` subclass.
 
 ## `useCronMonitor(roomId)`
 
@@ -244,7 +244,7 @@ type CronHistoryEntry = {
 }
 ```
 
-`trigger`, `pause`, and `resume` are fire-and-forget — they return `void`.
+`trigger`, `pause`, and `resume` are fire-and-forget - they return `void`.
 
 <Warning>
 The Cron DO does **not** enforce a role on `trigger` / `pause` / `resume`. Gate the admin UI by `useUser().user?.role === 'admin'`.

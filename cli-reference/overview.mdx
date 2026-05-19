@@ -1,6 +1,6 @@
 ---
 title: "CLI overview"
-description: "The `deepspace` command — scaffold, develop, test, and deploy."
+description: "The `deepspace` command - scaffold, develop, test, and deploy."
 ---
 
 The CLI ships inside the `deepspace` package, which is added to every scaffolded app. You run it via `npx`:
@@ -9,7 +9,7 @@ The CLI ships inside the `deepspace` package, which is added to every scaffolded
 npx deepspace <command> [options]
 ```
 
-No global install is needed. To create a new app, use `npm create deepspace@latest` — it fetches the latest scaffolder on demand.
+No global install is needed. To create a new app, use `npm create deepspace@latest` - it fetches the latest scaffolder on demand.
 
 ## Command index
 
@@ -43,13 +43,13 @@ npx deepspace whoami        # human-readable
 npx deepspace whoami --json # machine-readable
 ```
 
-The session file lives at `~/.deepspace/session`. Treat it as secret — never commit it.
+The session file lives at `~/.deepspace/session`. Treat it as secret - never commit it.
 
 ## Agent-friendly defaults
 
 The CLI is designed to be safely invoked from automation:
 
-- **Non-interactive by default.** Omitting required arguments prints usage and exits 1 — it does not prompt on stdin.
+- **Non-interactive by default.** Omitting required arguments prints usage and exits 1 - it does not prompt on stdin.
 - **`--json` everywhere it matters.** `whoami`, `domain *`, `integrations list/info`, `test-accounts list` all support machine-readable output.
 - **`--yes` skips confirmation prompts** on destructive commands (`domain buy`, `domain detach`, `test-accounts clear`, `managed-repos delete`).
 - **Help is plain text.** `--help` / `-h` produces ANSI-free output suitable for scripting.
@@ -101,5 +101,5 @@ npx deepspace kill --all             # sweep every workerd/wrangler/vite
 
 ## Next steps
 
-- [Command reference](/cli-reference/commands) — every command, every flag.
-- [Quickstart](/get-started/quickstart) — walk through the full dev loop.
+- [Command reference](/cli-reference/commands) - every command, every flag.
+- [Quickstart](/get-started/quickstart) - walk through the full dev loop.

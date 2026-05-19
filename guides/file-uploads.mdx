@@ -3,7 +3,7 @@ title: "File uploads"
 description: "Upload, list, and serve files backed by Cloudflare R2."
 ---
 
-DeepSpace apps get a per-app R2 bucket out of the box. The `useR2Files` hook handles uploads, listings, deletions, and signed URLs — all routed through the platform's file gateway so users never touch raw R2 credentials.
+DeepSpace apps get a per-app R2 bucket out of the box. The `useR2Files` hook handles uploads, listings, deletions, and signed URLs - all routed through the platform's file gateway so users never touch raw R2 credentials.
 
 ## Upload a file
 
@@ -56,7 +56,7 @@ function Gallery() {
       {files.map((f) => (
         <div key={f.key}>
           <img src={getUrl(f)} alt="" />
-          <p>{f.originalName ?? f.key} — {formatFileSize(f.size)}</p>
+          <p>{f.originalName ?? f.key} - {formatFileSize(f.size)}</p>
           <button onClick={async () => { await deleteFile(f); refresh() }}>
             Delete
           </button>
@@ -93,11 +93,11 @@ function Gallery() {
 For authenticated access, use `downloadFile` (which triggers a browser download) or `readFile` (which returns the raw `Response`):
 
 ```ts
-// Trigger a browser download — returns { success, error? }
+// Trigger a browser download - returns { success, error? }
 const result = await downloadFile(file)
 if (!result.success) console.error(result.error)
 
-// Read the bytes yourself — returns a Response you can .text(), .blob(), etc.
+// Read the bytes yourself - returns a Response you can .text(), .blob(), etc.
 const resp = await readFile(file)
 const blob = await resp.blob()
 ```
@@ -109,13 +109,13 @@ const blob = await resp.blob()
 `useR2Files` accepts a single `R2Scope` option object whose only field today is `scope?: 'self'`:
 
 ```tsx
-const { upload, list } = useR2Files()              // default — { scope: 'self' }
+const { upload, list } = useR2Files()              // default - { scope: 'self' }
 const { upload: scopedUpload } = useR2Files({ scope: 'self' })
 ```
 
-The server derives the bucket prefix from the current hostname (the `'self'` scope), so files uploaded by one app are isolated from another app's files automatically. Per-user or per-room sub-scoping isn't exposed through this hook — if you need it, namespace your uploads via the optional `name` argument or store a sidecar record (see [Storing metadata](#storing-metadata)).
+The server derives the bucket prefix from the current hostname (the `'self'` scope), so files uploaded by one app are isolated from another app's files automatically. Per-user or per-room sub-scoping isn't exposed through this hook - if you need it, namespace your uploads via the optional `name` argument or store a sidecar record (see [Storing metadata](#storing-metadata)).
 
-## Programmatic uploads — `uploadBase64`
+## Programmatic uploads - `uploadBase64`
 
 When you have file data as a Base64 string (e.g., from a `<canvas>` `toDataURL()`):
 
@@ -181,13 +181,13 @@ async function uploadWithMeta(file: File) {
 ## Local development
 
 <Warning>
-R2 uploads require an `APP_IDENTITY_TOKEN` minted by the deploy worker. The CLI does not provision this token in local dev, so `upload()` round-trips return 401 from the platform file gateway. In local dev, assert that uploads are *dispatched* (the function is called) — the full upload-and-read flow works only against deployed apps.
+R2 uploads require an `APP_IDENTITY_TOKEN` minted by the deploy worker. The CLI does not provision this token in local dev, so `upload()` round-trips return 401 from the platform file gateway. In local dev, assert that uploads are *dispatched* (the function is called) - the full upload-and-read flow works only against deployed apps.
 </Warning>
 
 If you need full file flows in local dev, deploy your app and run `npx deepspace dev --prod` to point local UI at production workers.
 
 ## Next steps
 
-- [Custom bindings](/guides/custom-bindings) — declare your own R2 bucket with custom permissions.
-- [Data storage](/guides/data-storage) — pair files with sidecar records for metadata.
-- [Files reference](/sdk-reference/client/files) — full `useR2Files` API.
+- [Custom bindings](/guides/custom-bindings) - declare your own R2 bucket with custom permissions.
+- [Data storage](/guides/data-storage) - pair files with sidecar records for metadata.
+- [Files reference](/sdk-reference/client/files) - full `useR2Files` API.

@@ -3,11 +3,11 @@ title: "Collaborative editing"
 description: "Sync text and structured fields across clients with Yjs."
 ---
 
-DeepSpace's collaborative editing layer is backed by [Yjs](https://yjs.dev/), a battle-tested CRDT library. The SDK provides three hooks for binding Yjs documents to React state — collaborative text fields, structured rich data, and standalone collab docs unbacked by a record.
+DeepSpace's collaborative editing layer is backed by [Yjs](https://yjs.dev/), a battle-tested CRDT library. The SDK provides three hooks for binding Yjs documents to React state - collaborative text fields, structured rich data, and standalone collab docs unbacked by a record.
 
 The `YjsRoom` Durable Object handles document hosting, persistence, and update broadcast. You bind to it with one of three hooks depending on what you're syncing.
 
-## Collaborative text — `useYjsText`
+## Collaborative text - `useYjsText`
 
 Bind a `<textarea>` (or any contenteditable surface) to a Yjs `Y.Text` field on a record. Multiple users editing the same record see each other's keystrokes live.
 
@@ -40,9 +40,9 @@ The hook implicitly creates a Yjs document keyed by `(collection, recordId, fiel
 `useYjsText` requires the parent collection's schema to allow writes for the caller. The hook's `canWrite` flag mirrors the underlying RBAC check.
 </Note>
 
-## Structured collab data — `useYjsField`
+## Structured collab data - `useYjsField`
 
-For fields that aren't plain text — lists, maps, ordered arrays — use `useYjsField`. It returns the raw `Y.Doc` plus the awareness instance and sync metadata so you can work with Yjs types directly:
+For fields that aren't plain text - lists, maps, ordered arrays - use `useYjsField`. It returns the raw `Y.Doc` plus the awareness instance and sync metadata so you can work with Yjs types directly:
 
 ```tsx
 import { useEffect, useState } from 'react'
@@ -52,7 +52,7 @@ import * as Y from 'yjs'
 function KanbanBoard({ boardId }: { boardId: string }) {
   const { doc, synced, canWrite, updateCount } = useYjsField('boards', boardId, 'cards')
 
-  // useYjsField does NOT return a `value` field — read directly off the Y.Doc.
+  // useYjsField does NOT return a `value` field - read directly off the Y.Doc.
   // `updateCount` ticks on every doc update so React re-renders.
   const cardsArray = doc.getArray<Card>('cards')
   const [cards, setCards] = useState<Card[]>(() => cardsArray.toArray())
@@ -85,11 +85,11 @@ function KanbanBoard({ boardId }: { boardId: string }) {
 }
 ```
 
-The hook returns `{ doc, awareness, synced, canWrite, updateCount }` — there's no `value`. Read off the Y.Doc with `doc.getArray(name)` / `doc.getMap(name)` and use `updateCount` (or a Yjs `observe`) to trigger React re-renders. For simple text, stick with `useYjsText`.
+The hook returns `{ doc, awareness, synced, canWrite, updateCount }` - there's no `value`. Read off the Y.Doc with `doc.getArray(name)` / `doc.getMap(name)` and use `updateCount` (or a Yjs `observe`) to trigger React re-renders. For simple text, stick with `useYjsText`.
 
-## Standalone collab docs — `useYjsRoom`
+## Standalone collab docs - `useYjsRoom`
 
-Sometimes the collab document isn't tied to a specific record — a shared scratchpad, a meeting whiteboard, an ephemeral session. Use `useYjsRoom` for these:
+Sometimes the collab document isn't tied to a specific record - a shared scratchpad, a meeting whiteboard, an ephemeral session. Use `useYjsRoom` for these:
 
 ```tsx
 import { useYjsRoom } from 'deepspace'
@@ -111,9 +111,9 @@ function Whiteboard({ sessionId }: { sessionId: string }) {
 
 The Yjs ecosystem includes bindings for popular editors. The SDK doesn't ship these, but they work seamlessly because `useYjsText` exposes the underlying `Y.Text`:
 
-- [Tiptap](https://tiptap.dev/docs/editor/getting-started/install/collaboration) — rich-text editor with Yjs collaboration.
-- [ProseMirror](https://github.com/yjs/y-prosemirror) — the `y-prosemirror` binding.
-- [Monaco](https://github.com/yjs/y-monaco) — `y-monaco` for code editors.
+- [Tiptap](https://tiptap.dev/docs/editor/getting-started/install/collaboration) - rich-text editor with Yjs collaboration.
+- [ProseMirror](https://github.com/yjs/y-prosemirror) - the `y-prosemirror` binding.
+- [Monaco](https://github.com/yjs/y-monaco) - `y-monaco` for code editors.
 
 To integrate, grab the Y.Doc and Y.Text from `useYjsField` and pass to the editor's collaboration extension. Example with Tiptap:
 
@@ -124,7 +124,7 @@ import Collaboration from '@tiptap/extension-collaboration'
 import { useYjsField } from 'deepspace'
 
 function RichTextEditor({ docId }: { docId: string }) {
-  // `doc` is always a Y.Doc — useYjsField never returns undefined for it.
+  // `doc` is always a Y.Doc - useYjsField never returns undefined for it.
   const { doc } = useYjsField('docs', docId, 'body')
   const editor = useEditor({
     extensions: [
@@ -137,7 +137,7 @@ function RichTextEditor({ docId }: { docId: string }) {
 }
 ```
 
-## Awareness — cursor and selection state
+## Awareness - cursor and selection state
 
 Yjs's "awareness" protocol broadcasts ephemeral peer state (cursors, selections, names). The SDK exposes the underlying primitives:
 
@@ -145,9 +145,9 @@ Yjs's "awareness" protocol broadcasts ephemeral peer state (cursors, selections,
 import { Awareness, encodeAwarenessMessage, handleAwarenessMessage } from 'deepspace'
 ```
 
-For typical use cases — showing other users' cursors in a Tiptap editor, for example — the editor's Yjs binding handles awareness automatically. You don't need these primitives directly unless you're building a custom collab UI.
+For typical use cases - showing other users' cursors in a Tiptap editor, for example - the editor's Yjs binding handles awareness automatically. You don't need these primitives directly unless you're building a custom collab UI.
 
-For non-Yjs presence (live cursors on a canvas, who's typing in a chat), use [`usePresenceRoom`](/guides/presence-and-cursors) instead — it's a separate, lighter-weight room type.
+For non-Yjs presence (live cursors on a canvas, who's typing in a chat), use [`usePresenceRoom`](/guides/presence-and-cursors) instead - it's a separate, lighter-weight room type.
 
 ## When to use Yjs vs records
 
@@ -160,7 +160,7 @@ The SDK gives you two ways to share data: records (`useQuery` / `useMutations`) 
 | RBAC needs to filter visibility | All editors should see the same content |
 | Updates are coarse-grained | Updates are character-by-character |
 
-Many apps use both — records for the list of documents, Yjs for the content of each document.
+Many apps use both - records for the list of documents, Yjs for the content of each document.
 
 ## Persistence
 
@@ -168,12 +168,12 @@ Yjs documents are persisted to the `YjsRoom` Durable Object. The DO stores the f
 
 - New clients receive the entire document state on connection
 - Documents survive worker redeployments
-- There's no garbage collection — old updates remain until the document is deleted
+- There's no garbage collection - old updates remain until the document is deleted
 
 For large documents (>10MB of accumulated updates), consider periodically calling the Yjs compaction API to reset history. The SDK doesn't run compaction automatically.
 
 ## Next steps
 
-- [Canvas](/guides/canvas) — collaborative shapes and viewports via `useCanvas`.
-- [Presence and cursors](/guides/presence-and-cursors) — live cursors and typing indicators.
-- [Real-time sync](/concepts/realtime-sync) — how sync works under the hood.
+- [Canvas](/guides/canvas) - collaborative shapes and viewports via `useCanvas`.
+- [Presence and cursors](/guides/presence-and-cursors) - live cursors and typing indicators.
+- [Real-time sync](/concepts/realtime-sync) - how sync works under the hood.

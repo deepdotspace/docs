@@ -1,6 +1,6 @@
 ---
 title: "Rooms reference"
-description: "Durable Object base classes — RecordRoom, YjsRoom, CanvasRoom, PresenceRoom, CronRoom, GameRoom."
+description: "Durable Object base classes - RecordRoom, YjsRoom, CanvasRoom, PresenceRoom, CronRoom, GameRoom."
 ---
 
 The SDK ships six Durable Object base classes. Subclass them in `worker.ts`, declare them in `__DO_MANIFEST__`, and the SDK handles WebSocket upgrades, RBAC, persistence, and broadcast.
@@ -21,7 +21,7 @@ Each base class is parameterized over your `Env` interface so `this.env.<binding
 
 ## `BaseRoom<E>`
 
-Abstract parent of all rooms. Provides WebSocket plumbing, JWT identity parsing, and the connection lifecycle. Subclass directly only when none of the specialized rooms fit — rare in practice.
+Abstract parent of all rooms. Provides WebSocket plumbing, JWT identity parsing, and the connection lifecycle. Subclass directly only when none of the specialized rooms fit - rare in practice.
 
 ```ts
 abstract class BaseRoom<E = Record<string, unknown>> {
@@ -64,11 +64,11 @@ interface UserAttachment {
 }
 ```
 
-`onConnect` may return an augmented `UserAttachment` — the returned value (or the default) is serialized on the WebSocket via `state.acceptWebSocket(...)` and survives DO hibernation.
+`onConnect` may return an augmented `UserAttachment` - the returned value (or the default) is serialized on the WebSocket via `state.acceptWebSocket(...)` and survives DO hibernation.
 
 ## `RecordRoom<E>`
 
-Primary data DO — backs every record collection your app declares.
+Primary data DO - backs every record collection your app declares.
 
 ```ts
 class RecordRoom<E = Record<string, unknown>> extends BaseRoom<E> {
@@ -110,7 +110,7 @@ Connected to via `/ws/yjs/:docId`. The DO persists the full Yjs update as a sing
 
 ## `CanvasRoom<E>`
 
-Collaborative canvas — shapes and viewports.
+Collaborative canvas - shapes and viewports.
 
 ```ts
 class CanvasRoom<E = Record<string, unknown>> extends BaseRoom<E> {
@@ -145,7 +145,7 @@ Connected to via `/ws/canvas/:docId`.
 
 ## `PresenceRoom<E>`
 
-Ephemeral peer state — cursors, typing indicators, viewports. **Not persisted.**
+Ephemeral peer state - cursors, typing indicators, viewports. **Not persisted.**
 
 ```ts
 class PresenceRoom<E = Record<string, unknown>> extends BaseRoom<E> {
@@ -181,9 +181,9 @@ interface CronRoomConfig {
 
 interface CronTask {
   name: string
-  /** Interval in minutes — mutually exclusive with `schedule`. */
+  /** Interval in minutes - mutually exclusive with `schedule`. */
   intervalMinutes?: number
-  /** 5-field cron expression — requires `timezone`. */
+  /** 5-field cron expression - requires `timezone`. */
   schedule?: string
   /** IANA timezone string (e.g. "America/New_York"). Required with `schedule`. */
   timezone?: string
@@ -277,7 +277,7 @@ import type { DOManifest, DOManifestEntry, DOBindings } from 'deepspace/worker'
 
 | Export | Type | Description |
 |---|---|---|
-| `DOManifest` | type | `DOManifestEntry[]` — shape of `__DO_MANIFEST__`. |
+| `DOManifest` | type | `DOManifestEntry[]` - shape of `__DO_MANIFEST__`. |
 | `DOManifestEntry` | type | `{ binding: string; className: string; sqlite: boolean }`. |
 | `DOBindings<typeof __DO_MANIFEST__>` | type | Derives the `Env` interface's DO bindings from the manifest. |
 | `DEFAULT_DO_MANIFEST` | const | Two-entry fallback (`RECORD_ROOMS` + `YJS_ROOMS`) used when an app doesn't export `__DO_MANIFEST__`. |
@@ -300,6 +300,6 @@ interface Env extends DOBindings<typeof __DO_MANIFEST__> {
 
 ## See also
 
-- [Architecture concepts](/concepts/architecture) — how DOs fit into the system
-- [Get started → Project structure](/get-started/project-structure) — the DO manifest in context
-- [Cron guide](/guides/scheduled-jobs) — patterns for `CronRoom`
+- [Architecture concepts](/concepts/architecture) - how DOs fit into the system
+- [Get started → Project structure](/get-started/project-structure) - the DO manifest in context
+- [Cron guide](/guides/scheduled-jobs) - patterns for `CronRoom`

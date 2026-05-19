@@ -5,12 +5,12 @@ description: "Show who's online and broadcast live cursor, typing, and viewport 
 
 DeepSpace exposes two distinct primitives for "who else is here right now":
 
-- **`usePresence`** — derived online/offline status from heartbeats stored on the users collection.
-- **`usePresenceRoom`** — high-frequency ephemeral state (cursors, typing, viewport) broadcast through a dedicated Durable Object.
+- **`usePresence`** - derived online/offline status from heartbeats stored on the users collection.
+- **`usePresenceRoom`** - high-frequency ephemeral state (cursors, typing, viewport) broadcast through a dedicated Durable Object.
 
 Pick `usePresence` for "list of online users." Pick `usePresenceRoom` for cursor or typing UIs that need sub-second updates.
 
-## Online / offline — `usePresence`
+## Online / offline - `usePresence`
 
 `usePresence` reads `lastSeenAt` from the users collection in the current `RecordScope` and sends a heartbeat every 60 seconds. A user is "online" if their last heartbeat was within `timeoutMs` (default 5 minutes).
 
@@ -46,11 +46,11 @@ Pass `options.timeoutMs` to tune the online threshold:
 const { isOnline } = usePresence({ timeoutMs: 2 * 60 * 1000 }) // 2 minutes
 ```
 
-`usePresence` writes its heartbeat to the users collection, so heartbeats are visible to anyone with read access to users — and the data persists. Use it for "currently online" lists where 60-second granularity is acceptable.
+`usePresence` writes its heartbeat to the users collection, so heartbeats are visible to anyone with read access to users - and the data persists. Use it for "currently online" lists where 60-second granularity is acceptable.
 
-## Live cursors and typing — `usePresenceRoom`
+## Live cursors and typing - `usePresenceRoom`
 
-For sub-second cursor or typing indicators, use `usePresenceRoom`. It connects to a dedicated `PresenceRoom` Durable Object that holds peer state **in memory only** — nothing is persisted.
+For sub-second cursor or typing indicators, use `usePresenceRoom`. It connects to a dedicated `PresenceRoom` Durable Object that holds peer state **in memory only** - nothing is persisted.
 
 ```tsx
 import { usePresenceRoom } from 'deepspace'
@@ -129,7 +129,7 @@ type PresencePeerClient = {
 }
 ```
 
-Identity fields (`userId`, `userName`, etc.) come from the verified JWT — the client can't spoof them.
+Identity fields (`userId`, `userName`, etc.) come from the verified JWT - the client can't spoof them.
 
 ## Color-coding peers
 
@@ -149,7 +149,7 @@ const color = getUserColor(peer.userId, ['#ff0', '#0f0', '#00f'])
 
 ## Typing indicator example
 
-A common pattern — show "X is typing…" in a chat:
+A common pattern - show "X is typing…" in a chat:
 
 ```tsx
 import { usePresenceRoom } from 'deepspace'
@@ -223,6 +223,6 @@ function CursorOverlay({ scope }: { scope: string }) {
 
 ## Next steps
 
-- [Canvas](/guides/canvas) — real-time shapes and viewports on `useCanvas`.
-- [Collaborative editing](/guides/collaborative-editing) — Yjs-backed text and rich data.
-- [Real-time sync](/concepts/realtime-sync) — how sync works under the hood.
+- [Canvas](/guides/canvas) - real-time shapes and viewports on `useCanvas`.
+- [Collaborative editing](/guides/collaborative-editing) - Yjs-backed text and rich data.
+- [Real-time sync](/concepts/realtime-sync) - how sync works under the hood.

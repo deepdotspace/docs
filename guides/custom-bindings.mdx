@@ -47,7 +47,7 @@ binding = "AI"
 [browser]
 binding = "BROWSER"
 
-# Hyperdrive (cannot use "auto" — provision in CF dashboard first)
+# Hyperdrive (cannot use "auto" - provision in CF dashboard first)
 [[hyperdrive]]
 binding = "PG"
 id = "<your-hyperdrive-config-id>"
@@ -69,13 +69,13 @@ When the ID field is the literal string `"auto"`, the deploy worker creates the 
 | `d1` | `database_id = "auto"` | `database_name` | The `database_name` you supplied |
 | `kv_namespace` | `id = "auto"` | `title` | The `title` you supplied |
 | `vectorize` | `index_name = "auto"` | `dimensions`, `metric` | `app-<appName>-<binding.toLowerCase()>` |
-| `r2_bucket` | `bucket_name = "auto"` | — | `app-<appName>-<binding.toLowerCase()>` |
-| `queue` | `queue = "auto"` | — | `app-<appName>-<binding.toLowerCase()>` |
-| `hyperdrive` | not supported | — | — |
+| `r2_bucket` | `bucket_name = "auto"` | - | `app-<appName>-<binding.toLowerCase()>` |
+| `queue` | `queue = "auto"` | - | `app-<appName>-<binding.toLowerCase()>` |
+| `hyperdrive` | not supported | - | - |
 
-Vectorize / R2 / Queue resources get an `app-<appName>-` prefix to avoid collisions across apps. D1 and KV use the supplied name verbatim — choose unique names yourself.
+Vectorize / R2 / Queue resources get an `app-<appName>-` prefix to avoid collisions across apps. D1 and KV use the supplied name verbatim - choose unique names yourself.
 
-Provisioned IDs persist in `app-resources/<appName>.json` on the platform R2 bucket. If the registry is missing but the resource exists on CF (e.g., a prior failed deploy), the deploy worker adopts on conflict — it looks up the resource by name and writes the ID back into the registry.
+Provisioned IDs persist in `app-resources/<appName>.json` on the platform R2 bucket. If the registry is missing but the resource exists on CF (e.g., a prior failed deploy), the deploy worker adopts on conflict - it looks up the resource by name and writes the ID back into the registry.
 
 ## Reserved names
 
@@ -88,9 +88,9 @@ APP_IDENTITY_TOKEN, APP_OWNER_JWT, INTERNAL_STORAGE_HMAC_SECRET,
 USAGE_EVENTS
 ```
 
-The deploy validator rejects custom bindings using any of these names. It does **not** check against your `__DO_MANIFEST__` DO class names — picking `RECORD_ROOMS` as a custom binding name fails silently at deploy and shadows the DO at runtime.
+The deploy validator rejects custom bindings using any of these names. It does **not** check against your `__DO_MANIFEST__` DO class names - picking `RECORD_ROOMS` as a custom binding name fails silently at deploy and shadows the DO at runtime.
 
-## D1 bootstrap — `runMigrations`
+## D1 bootstrap - `runMigrations`
 
 Auto-provisioned D1 starts empty. Use `runMigrations` to create your tables idempotently on worker startup:
 
@@ -113,7 +113,7 @@ await runMigrations(env.MY_DB, [
 Contract:
 
 - Each array entry is one migration; the runner tracks applied indexes in a `_dpc_migrations` meta-table.
-- Each migration string can contain multiple `;`-separated statements. **Don't put `;` inside string literals** — the split is naive.
+- Each migration string can contain multiple `;`-separated statements. **Don't put `;` inside string literals** - the split is naive.
 - Idempotent: re-running with the same array is a no-op.
 - **Append new migrations to the end. Never reorder or delete entries.**
 - Returns `{ fromVersion, toVersion, applied }`.
@@ -136,7 +136,7 @@ meterVectorize(env, 'docs', 'query', { vectors: 1, dims: 768, storedCount })
 meterUsage(env, 'browser', { id: 'render', units: 1, count: 1 })
 ```
 
-Each helper returns `boolean` — `false` when `USAGE_EVENTS` is absent or AnalyticsEngine throws. **Metering never breaks the calling code path.**
+Each helper returns `boolean` - `false` when `USAGE_EVENTS` is absent or AnalyticsEngine throws. **Metering never breaks the calling code path.**
 
 Cost rollup multipliers live in `COST_RATES` (exported from `deepspace/worker`).
 
@@ -169,6 +169,6 @@ Cost rollup multipliers live in `COST_RATES` (exported from `deepspace/worker`).
 
 ## Next steps
 
-- [Worker bindings reference](/sdk-reference/worker/bindings) — full type signatures for `runMigrations`, `meter*`, manifest exports.
-- [Custom domains](/guides/custom-domains) — attach a real domain to your app.
-- [Deployment](/concepts/deployment) — what happens during a deploy.
+- [Worker bindings reference](/sdk-reference/worker/bindings) - full type signatures for `runMigrations`, `meter*`, manifest exports.
+- [Custom domains](/guides/custom-domains) - attach a real domain to your app.
+- [Deployment](/concepts/deployment) - what happens during a deploy.

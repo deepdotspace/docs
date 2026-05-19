@@ -3,7 +3,7 @@ title: "Messaging"
 description: "Channels, direct messages, reactions, and read receipts with drop-in schemas and hooks."
 ---
 
-DeepSpace ships a complete messaging layer as a set of pre-built schemas and React hooks. You add the schemas to your app's `RecordRoom`, and the SDK gives you channel-style chat — public channels, private channels, DMs, reactions, members, and read receipts — without writing a single message-routing line.
+DeepSpace ships a complete messaging layer as a set of pre-built schemas and React hooks. You add the schemas to your app's `RecordRoom`, and the SDK gives you channel-style chat - public channels, private channels, DMs, reactions, members, and read receipts - without writing a single message-routing line.
 
 ## Add the schemas
 
@@ -31,7 +31,7 @@ export const schemas = [
 ]
 ```
 
-You don't need all five — `CHANNELS_SCHEMA` + `MESSAGES_SCHEMA` is the minimum. Add `REACTIONS_SCHEMA` for reactions, `CHANNEL_MEMBERS_SCHEMA` if you need explicit membership records, and `READ_RECEIPTS_SCHEMA` for unread tracking.
+You don't need all five - `CHANNELS_SCHEMA` + `MESSAGES_SCHEMA` is the minimum. Add `REACTIONS_SCHEMA` for reactions, `CHANNEL_MEMBERS_SCHEMA` if you need explicit membership records, and `READ_RECEIPTS_SCHEMA` for unread tracking.
 
 The schemas include sensible [RBAC](/concepts/permissions) defaults: anyone can read public channels; only members can post; only authors can edit or delete their own messages.
 
@@ -98,14 +98,14 @@ The [`useChannels`](/sdk-reference/client/messaging#usechannels) hook exposes th
     update(channelId, { description: 'Updated description' })
     ```
 
-    `update` returns `void` and accepts only `name` and/or `description` (`Partial<Pick<Channel, 'name' | 'description'>>`). [Merge semantics](/sdk-reference/client/records#usemutations-t-collection) apply — only the fields you pass are changed. Use `archive` to flip the archived flag.
+    `update` returns `void` and accepts only `name` and/or `description` (`Partial<Pick<Channel, 'name' | 'description'>>`). [Merge semantics](/sdk-reference/client/records#usemutations-t-collection) apply - only the fields you pass are changed. Use `archive` to flip the archived flag.
   </Tab>
 
   <Tab title="Archive / delete">
     ```tsx
     const { archive, remove } = useChannels()
 
-    // Hide without deleting (reversible) — returns void
+    // Hide without deleting (reversible) - returns void
     archive(channelId)
 
     // Permanently delete
@@ -122,7 +122,7 @@ The [`useMessages(channelId)`](/sdk-reference/client/messaging#usemessages-chann
 
 <Tabs>
   <Tab title="Send">
-    Identity (author) is derived from the verified JWT — you don't pass an `authorId`.
+    Identity (author) is derived from the verified JWT - you don't pass an `authorId`.
 
     ```tsx
     import { useMessages } from 'deepspace'
@@ -184,15 +184,15 @@ The [`useMessages(channelId)`](/sdk-reference/client/messaging#usemessages-chann
   </Tab>
 
   <Tab title="Delete">
-    Two flavors. Prefer `softDelete` — it sets a tombstone flag instead of removing the row, which preserves chat history continuity. Both return `void`.
+    Two flavors. Prefer `softDelete` - it sets a tombstone flag instead of removing the row, which preserves chat history continuity. Both return `void`.
 
     ```tsx
     const { softDelete, remove } = useMessages(channelId)
 
-    // Preferred — tombstone flag
+    // Preferred - tombstone flag
     softDelete(messageId)
 
-    // Hard delete — use sparingly
+    // Hard delete - use sparingly
     remove(messageId)
     ```
   </Tab>
@@ -220,7 +220,7 @@ function MessageActions({ messageId, channelId }: { messageId: string; channelId
 }
 ```
 
-`getReactionsForMessage` returns `GroupedReaction[]` — each entry has `{ emoji, count, currentUserReacted, userIds }` (already aggregated by emoji). `toggle` returns `void` and adds the caller's reaction or removes it if it already exists.
+`getReactionsForMessage` returns `GroupedReaction[]` - each entry has `{ emoji, count, currentUserReacted, userIds }` (already aggregated by emoji). `toggle` returns `void` and adds the caller's reaction or removes it if it already exists.
 
 ## Direct messages
 
@@ -267,7 +267,7 @@ const { markAsRead, getUnreadCount } = useReadReceipts()
 
 useEffect(() => {
   if (messages.length > 0) {
-    // markAsRead takes a single channelId — it stamps "now" as lastReadAt for the current user.
+    // markAsRead takes a single channelId - it stamps "now" as lastReadAt for the current user.
     markAsRead(channelId)
   }
 }, [messages, channelId])
@@ -346,6 +346,6 @@ function ChannelView({ channelId }: { channelId: string }) {
 
 ## Next steps
 
-- [Presence and cursors](/guides/presence-and-cursors) — add typing indicators and online status.
-- [Permissions](/concepts/permissions) — make a channel private to specific roles.
-- [Messaging reference](/sdk-reference/client/messaging) — full API for channels, messages, reactions, and read receipts.
+- [Presence and cursors](/guides/presence-and-cursors) - add typing indicators and online status.
+- [Permissions](/concepts/permissions) - make a channel private to specific roles.
+- [Messaging reference](/sdk-reference/client/messaging) - full API for channels, messages, reactions, and read receipts.
