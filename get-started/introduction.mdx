@@ -3,16 +3,16 @@ title: "Introduction"
 description: "What DeepSpace is, who it's for, and why you'd use it."
 ---
 
-DeepSpace is a batteries-included SDK for building real-time collaborative applications. It is opinionated where opinions save you time, and unopinionated everywhere else - your app is a normal Vite + React project on the frontend and a Hono-based Cloudflare Worker on the backend. The SDK is the glue: providers, hooks, Durable Object base classes, a CLI, and a deploy pipeline that takes you from `npm create` to a live URL in minutes.
+DeepSpace is an SDK for building real-time collaborative applications on Cloudflare Workers. The frontend is a standard Vite + React project. The backend is a Hono-based Cloudflare Worker. The SDK provides React providers and hooks, Durable Object base classes for sync and presence, a CLI, and a deploy pipeline that takes a project from `npm create` to a live URL.
 
 ## What you get out of the box
 
 When you scaffold a new app, you get a working starter with all of this already wired up:
 
-- **Authentication** - Better Auth with GitHub, Google, and email/password sign-in. JWTs are minted by the DeepSpace platform's auth service; you don't run an auth server.
+- **Authentication** - Better Auth with GitHub and Google OAuth. JWTs are minted by the DeepSpace platform's auth service; you don't run an auth server.
 - **Data sync** - A SQLite-backed Durable Object per app, with WebSocket-based subscriptions, optimistic local mutations, and per-collection role-based access control.
-- **Real-time primitives** - Channel messaging, DMs, reactions, presence, live cursors, Yjs-backed collaborative text and shapes, and a turn-tick game-room base class.
-- **File storage** - R2-backed uploads with scoped buckets.
+- **Real-time primitives** - Channel messaging, DMs, reactions, presence (live cursors, typing, viewport), Yjs-backed collaborative text and shapes, and a tick-based authoritative game-loop room.
+- **File storage** - Per-app scoped R2 uploads.
 - **AI** - Streamed Claude, OpenAI, and Cerebras with multi-turn tool use, persistent chat history, and automatic context compaction.
 - **Payments** - Stripe subscriptions, one-time products, ad-hoc charges, refunds, and self-service billing portals.
 - **Scheduled jobs** - Per-app cron via a built-in Durable Object, with an admin monitor hook.
@@ -22,7 +22,7 @@ When you scaffold a new app, you get a working starter with all of this already 
 
 ## Who it's for
 
-DeepSpace is designed for developers building apps where state is shared across users or sessions. If your app needs any of the following, you're in the right place:
+DeepSpace fits applications where state is shared across users or sessions. Common use cases:
 
 - Real-time updates across multiple browsers or devices
 - Per-user roles and access control on shared data
@@ -32,7 +32,7 @@ DeepSpace is designed for developers building apps where state is shared across 
 - A billing model with subscriptions or one-time purchases
 - Cron jobs or background work without standing up new infrastructure
 
-DeepSpace runs on Cloudflare's global network, so apps are low-latency by default. You write your worker once; it runs everywhere.
+Apps deploy to Cloudflare's global network, so requests terminate close to the user.
 
 ## What it isn't
 
@@ -43,7 +43,7 @@ DeepSpace runs on Cloudflare's global network, so apps are low-latency by defaul
 
 ## Architecture at a glance
 
-Each DeepSpace app is two pieces deployed together. **Your worker** is a Cloudflare Worker that hosts the React SPA, exposes API routes, and owns the per-app Durable Objects that hold records, Yjs documents, canvases, presence, and scheduled jobs. **The DeepSpace platform** is a set of shared workers - auth, billing, integrations, cross-app data - that your worker addresses over service bindings. You write and deploy the first; you never touch the second.
+A DeepSpace app has two parts. **Your worker** is a Cloudflare Worker that serves the React SPA, exposes API routes, and owns the per-app Durable Objects holding records, Yjs documents, canvases, presence, and scheduled jobs. **The DeepSpace platform** is a set of shared workers - auth, billing, integrations, cross-app data - that your worker calls over service bindings. You deploy your worker; the platform workers are managed by DeepSpace.
 
 See [Architecture](/concepts/architecture) for the full breakdown.
 
