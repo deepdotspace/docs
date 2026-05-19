@@ -19,7 +19,7 @@ The scaffold ships a Vite + React frontend, a Hono worker, file-based routing, T
 
 ## The SDK
 
-Three entry points cover every surface.
+Three entry points cover the surfaces most apps need.
 
 ```ts
 // Frontend (React)
@@ -42,7 +42,7 @@ A single CLI ships in the same package: `npx deepspace dev`, `deploy`, `add`, `d
 
 ## What you can build
 
-DeepSpace is opinionated for apps where state is shared. The SDK ships the primitives so you don't write them yourself.
+DeepSpace is built for apps where state is shared across users. The SDK ships the primitives so you don't write them yourself.
 
 - **Multiplayer apps.** Live cursors, presence, and per-collection RBAC out of the box.
 - **Collaborative editors.** Yjs-backed text fields and shapes synced over WebSocket.
@@ -56,10 +56,10 @@ DeepSpace is opinionated for apps where state is shared. The SDK ships the primi
 | Section | What you'll find |
 |---|---|
 | [Get started](/get-started/introduction) | Introduction, quickstart, installation, and a tour of the scaffolded project. |
-| [Core concepts](/concepts/architecture) | The mental model - architecture, the data model, permissions, real-time sync, deployment. |
-| [Build with DeepSpace](/guides/authentication) | Task-shaped walkthroughs for the features you'll use most: auth, messaging, payments, AI chat, and the rest. |
+| [Core concepts](/concepts/architecture) | Architecture, the data model, permissions, real-time sync, and deployment. |
+| [Build with DeepSpace](/guides/authentication) | Step-by-step guides for the features you'll use most: auth, data, messaging, collaborative editing, presence, files, AI chat, and payments. |
 | [Worker & server](/guides/server-actions) | Server actions, scheduled jobs, external APIs, and custom Cloudflare bindings. |
-| [Going to production](/guides/testing) | Testing patterns, custom domains, and deploy mechanics. |
+| [Going to production](/guides/custom-domains) | Custom domains and testing patterns. |
 | [SDK reference](/sdk-reference/overview) | Every export from `deepspace`, `deepspace/worker`, and `deepspace/testing`. |
 | [CLI reference](/cli-reference/overview) | Every CLI command, every flag. |
 
