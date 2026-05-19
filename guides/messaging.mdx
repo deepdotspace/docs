@@ -59,7 +59,7 @@ The [`useChannels`](/sdk-reference/client/messaging#usechannels) hook exposes th
           type: 'public',
           description: 'Company-wide announcements',
         })
-        navigate(`/channels/${channelId}`)
+        if (channelId) navigate(`/channels/${channelId}`)
       }
 
       return <button onClick={newChannel}>New channel</button>
@@ -95,18 +95,18 @@ The [`useChannels`](/sdk-reference/client/messaging#usechannels) hook exposes th
     ```tsx
     const { update } = useChannels()
 
-    await update(channelId, { description: 'Updated description' })
+    update(channelId, { description: 'Updated description' })
     ```
 
-    [Merge semantics](/sdk-reference/client/records#usemutations-t-collection) apply — only the fields you pass are changed.
+    `update` returns `void` and accepts only `name` and/or `description` (`Partial<Pick<Channel, 'name' | 'description'>>`). [Merge semantics](/sdk-reference/client/records#usemutations-t-collection) apply — only the fields you pass are changed. Use `archive` to flip the archived flag.
   </Tab>
 
   <Tab title="Archive / delete">
     ```tsx
     const { archive, remove } = useChannels()
 
-    // Hide without deleting (reversible)
-    await archive(channelId)
+    // Hide without deleting (reversible) — returns void
+    archive(channelId)
 
     // Permanently delete
     await remove(channelId)
@@ -132,9 +132,9 @@ The [`useMessages(channelId)`](/sdk-reference/client/messaging#usemessages-chann
       const { send } = useMessages(channelId)
       const [draft, setDraft] = useState('')
 
-      async function handleSend() {
+      function handleSend() {
         if (!draft.trim()) return
-        await send({ content: draft })
+        send(draft)
         setDraft('')
       }
 
@@ -177,23 +177,23 @@ The [`useMessages(channelId)`](/sdk-reference/client/messaging#usemessages-chann
     ```tsx
     const { edit } = useMessages(channelId)
 
-    await edit(messageId, { content: 'Updated text' })
+    edit(messageId, 'Updated text')
     ```
 
-    The default [`MESSAGES_SCHEMA`](/sdk-reference/worker/schemas) allows authors to edit their own messages.
+    `edit` takes the new content as a positional string and returns `void`. The default [`MESSAGES_SCHEMA`](/sdk-reference/worker/schemas) allows authors to edit their own messages.
   </Tab>
 
   <Tab title="Delete">
-    Two flavors. Prefer `softDelete` — it sets a tombstone flag instead of removing the row, which preserves chat history continuity.
+    Two flavors. Prefer `softDelete` — it sets a tombstone flag instead of removing the row, which preserves chat history continuity. Both return `void`.
 
     ```tsx
     const { softDelete, remove } = useMessages(channelId)
 
     // Preferred — tombstone flag
-    await softDelete(messageId)
+    softDelete(messageId)
 
     // Hard delete — use sparingly
-    await remove(messageId)
+    remove(messageId)
     ```
   </Tab>
 </Tabs>
@@ -220,7 +220,7 @@ function MessageActions({ messageId, channelId }: { messageId: string; channelId
 }
 ```
 
-`getReactionsForMessage` is an O(1) lookup. `toggle` adds the caller's reaction or removes it if it already exists.
+`getReactionsForMessage` returns `GroupedReaction[]` — each entry has `{ emoji, count, currentUserReacted, userIds }` (already aggregated by emoji). `toggle` returns `void` and adds the caller's reaction or removes it if it already exists.
 
 ## Direct messages
 
@@ -249,7 +249,8 @@ import { useChannelMembers } from 'deepspace'
 
 const { members, join, leave, isMember } = useChannelMembers(channelId)
 
-if (!isMember(currentUserId)) {
+// `isMember` is a boolean reflecting whether the *current* user is a member.
+if (!isMember) {
   return <button onClick={() => join()}>Join channel</button>
 }
 ```
@@ -259,17 +260,20 @@ if (!isMember(currentUserId)) {
 Track which messages each user has seen:
 
 ```tsx
-import { useReadReceipts } from 'deepspace'
+import { useReadReceipts, useMessages } from 'deepspace'
 
+const { messages } = useMessages(channelId)
 const { markAsRead, getUnreadCount } = useReadReceipts()
 
 useEffect(() => {
   if (messages.length > 0) {
-    markAsRead(channelId, messages[messages.length - 1].recordId)
+    // markAsRead takes a single channelId — it stamps "now" as lastReadAt for the current user.
+    markAsRead(channelId)
   }
 }, [messages, channelId])
 
-const unread = getUnreadCount(channelId)
+// getUnreadCount needs the channel's messages so it can count how many arrived after lastReadAt.
+const unread = getUnreadCount(channelId, messages)
 ```
 
 ## Display helpers
@@ -331,7 +335,7 @@ function ChannelView({ channelId }: { channelId: string }) {
           </li>
         ))}
       </ul>
-      <form onSubmit={(e) => { e.preventDefault(); send({ content: draft }); setDraft('') }}>
+      <form onSubmit={(e) => { e.preventDefault(); send(draft); setDraft('') }}>
         <input value={draft} onChange={(e) => setDraft(e.target.value)} />
         <button>Send</button>
       </form>

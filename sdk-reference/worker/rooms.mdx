@@ -21,17 +21,50 @@ Each base class is parameterized over your `Env` interface so `this.env.<binding
 
 ## `BaseRoom<E>`
 
-Abstract parent of all rooms. Provides WebSocket plumbing, JWT verification, and the connection lifecycle. Subclass directly only when none of the specialized rooms fit — rare in practice.
+Abstract parent of all rooms. Provides WebSocket plumbing, JWT identity parsing, and the connection lifecycle. Subclass directly only when none of the specialized rooms fit — rare in practice.
 
 ```ts
 abstract class BaseRoom<E = Record<string, unknown>> {
-  constructor(state: DurableObjectState, env: E)
+  constructor(state: DurableObjectState, env: unknown)
+
   // Lifecycle hooks subclasses override
-  onConnect?(attachment: UserAttachment): Promise<void>
-  onDisconnect?(attachment: UserAttachment): Promise<void>
-  onMessage?(attachment: UserAttachment, data: unknown): Promise<void>
+  protected onConnect(
+    ws: WebSocket,
+    user: UserAttachment,
+  ): UserAttachment | void | Promise<UserAttachment | void>
+
+  protected abstract onMessage(
+    ws: WebSocket,
+    user: UserAttachment,
+    message: { type: string; [key: string]: unknown },
+  ): void | Promise<void>
+
+  protected onBinaryMessage?(
+    ws: WebSocket,
+    user: UserAttachment,
+    data: ArrayBuffer,
+  ): void | Promise<void>
+
+  protected onDisconnect(
+    ws: WebSocket,
+    user: UserAttachment,
+  ): void | Promise<void>
+
+  protected onRequest?(request: Request): Response | Promise<Response>
+  protected onAlarm?(): void | Promise<void>
+}
+
+interface UserAttachment {
+  userId: string
+  userName: string
+  userEmail: string
+  userImageUrl?: string
+  // Subclass-specific data is serialized alongside user info
+  [key: string]: unknown
 }
 ```
+
+`onConnect` may return an augmented `UserAttachment` — the returned value (or the default) is serialized on the WebSocket via `state.acceptWebSocket(...)` and survives DO hibernation.
 
 ## `RecordRoom<E>`
 
@@ -41,15 +74,15 @@ Primary data DO — backs every record collection your app declares.
 class RecordRoom<E = Record<string, unknown>> extends BaseRoom<E> {
   constructor(
     state: DurableObjectState,
-    env: E,
-    schemas: CollectionSchema[],
+    env: unknown,
+    schemas?: CollectionSchema[],
     config?: RecordRoomConfig,
   )
 }
 
-type RecordRoomConfig = {
-  ownerUserId?: string                    // owner for 'own' RBAC checks
-  // ...additional flags for specialized behavior
+interface RecordRoomConfig {
+  /** User ID of the app owner. Automatically gets the `admin` role on connect. */
+  ownerUserId?: string
 }
 ```
 
@@ -69,11 +102,11 @@ Per-document collaborative state (Y.Text, Y.Map, Y.Array).
 
 ```ts
 class YjsRoom<E = Record<string, unknown>> extends BaseRoom<E> {
-  constructor(state: DurableObjectState, env: E)
+  constructor(state: DurableObjectState, env: unknown)
 }
 ```
 
-Connected to via `/ws/yjs/:docId`. The DO persists the full Yjs update history in SQLite.
+Connected to via `/ws/yjs/:docId`. The DO persists the full Yjs update as a single binary blob in SQLite.
 
 ## `CanvasRoom<E>`
 
@@ -81,20 +114,31 @@ Collaborative canvas — shapes and viewports.
 
 ```ts
 class CanvasRoom<E = Record<string, unknown>> extends BaseRoom<E> {
-  constructor(state: DurableObjectState, env: E)
+  constructor(state: DurableObjectState, env: unknown)
 }
 
-type CanvasShape = {
-  shapeId: string
+interface CanvasShape {
+  id: string
   type: string
-  x: number; y: number
-  width: number; height: number
-  data?: object
+  x: number
+  y: number
+  width: number
+  height: number
+  rotation?: number
+  props: Record<string, unknown>
   createdBy: string
   createdAt: string
+  updatedAt: string
 }
 
-type Viewport = { x: number; y: number; zoom: number }
+interface Viewport {
+  userId: string
+  x: number
+  y: number
+  width: number
+  height: number
+  zoom: number
+}
 ```
 
 Connected to via `/ws/canvas/:docId`.
@@ -105,15 +149,16 @@ Ephemeral peer state — cursors, typing indicators, viewports. **Not persisted.
 
 ```ts
 class PresenceRoom<E = Record<string, unknown>> extends BaseRoom<E> {
-  constructor(state: DurableObjectState, env: E)
+  constructor(state: DurableObjectState, env: unknown)
 }
 
-type PresencePeer = {
+interface PresencePeer {
   userId: string
   userName: string
   userEmail: string
   userImageUrl?: string
   joinedAt: string
+  /** Arbitrary per-user state (cursor, typing, viewport, etc.) */
   state: Record<string, unknown>
 }
 ```
@@ -125,25 +170,32 @@ Connected to via `/ws/presence/:scopeId`.
 Scheduled-task DO. Declare tasks in the constructor config and override `onTask`.
 
 ```ts
-class CronRoom<E = Record<string, unknown>> extends BaseRoom<E> {
-  constructor(state: DurableObjectState, env: E, config: CronRoomConfig)
-  protected abstract onTask(taskName: string): Promise<void>
+abstract class CronRoom<E = Record<string, unknown>> extends BaseRoom<E> {
+  constructor(state: DurableObjectState, env: unknown, config: CronRoomConfig)
+  protected abstract onTask(taskName: string): void | Promise<void>
 }
 
-type CronRoomConfig = { tasks: CronTask[] }
+interface CronRoomConfig {
+  tasks: CronTask[]
+}
 
-type CronTask = {
+interface CronTask {
   name: string
-  intervalMinutes?: number     // mutually exclusive with schedule
-  schedule?: string            // 5-field cron expression
-  timezone?: string            // IANA timezone (required with schedule)
-  paused?: boolean             // start disabled
+  /** Interval in minutes — mutually exclusive with `schedule`. */
+  intervalMinutes?: number
+  /** 5-field cron expression — requires `timezone`. */
+  schedule?: string
+  /** IANA timezone string (e.g. "America/New_York"). Required with `schedule`. */
+  timezone?: string
+  /** Whether the task starts paused. */
+  paused?: boolean
 }
 
-type CronExecution = {
+interface CronExecution {
   taskName: string
   startedAt: string
-  completedAt: string
+  /** Null while the task is still running. */
+  completedAt: string | null
   success: boolean
   durationMs: number
   error?: string
@@ -167,27 +219,48 @@ Connected to via `/ws/cron/:roomId` (admin/monitor stream).
 
 ## `GameRoom<E>`
 
-Turn-tick or sim-tick game loop DO.
+Authoritative tick-based game loop DO.
 
 ```ts
-class GameRoom<E = Record<string, unknown>> extends BaseRoom<E> {
-  constructor(state: DurableObjectState, env: E, config?: GameRoomConfig)
-  // Override to migrate persisted state on schema bumps
-  protected onHydrateState?(stored: unknown): unknown
+abstract class GameRoom<E = Record<string, unknown>> extends BaseRoom<E> {
+  constructor(state: DurableObjectState, env: unknown, config?: GameRoomConfig)
+
+  protected abstract onTick(
+    state: Record<string, unknown>,
+    inputs: GameInput[],
+    tick: number,
+  ): Record<string, unknown> | undefined | Promise<Record<string, unknown> | undefined>
+
+  protected onPlayerJoin(player: Player): void
+  protected onPlayerLeave(player: Player): void
+  protected onGameStart(): void
+  protected onGameEnd(finalState: Record<string, unknown>): void
+
+  /** Override to migrate persisted state on schema bumps. */
+  protected onHydrateState(stored: Record<string, unknown>): Record<string, unknown>
 }
 
-type Player = {
+interface GameRoomConfig {
+  /** Ticks per second (default: 20) */
+  tickRate?: number
+  /** Minimum players to start (default: 1) */
+  minPlayers?: number
+  /** Maximum players (default: unlimited) */
+  maxPlayers?: number
+}
+
+interface Player {
   userId: string
   userName: string
   ready: boolean
   connectedAt: string
-  data?: object
+  data: Record<string, unknown>
 }
 
-type GameInput<A = unknown> = {
+interface GameInput {
+  userId: string
   action: string
-  data?: A
-  playerId: string
+  data: Record<string, unknown>
   tick: number
 }
 ```
@@ -199,26 +272,26 @@ Connected to via `/ws/game/:roomId`.
 ## The DO manifest
 
 ```ts
-import type { DOManifest, DOBindings } from 'deepspace/worker'
+import type { DOManifest, DOManifestEntry, DOBindings } from 'deepspace/worker'
 ```
 
 | Export | Type | Description |
 |---|---|---|
-| `DOManifest` | type | Shape of `__DO_MANIFEST__`. |
-| `DOManifestEntry` | type | Entry shape: `{ class: string; sqlite: true }`. |
+| `DOManifest` | type | `DOManifestEntry[]` — shape of `__DO_MANIFEST__`. |
+| `DOManifestEntry` | type | `{ binding: string; className: string; sqlite: boolean }`. |
 | `DOBindings<typeof __DO_MANIFEST__>` | type | Derives the `Env` interface's DO bindings from the manifest. |
-| `DEFAULT_DO_MANIFEST` | const | Two-class fallback (`RECORD_ROOMS` + `YJS_ROOMS`) used when an app doesn't export `__DO_MANIFEST__`. |
+| `DEFAULT_DO_MANIFEST` | const | Two-entry fallback (`RECORD_ROOMS` + `YJS_ROOMS`) used when an app doesn't export `__DO_MANIFEST__`. |
 
 The scaffold's pattern:
 
 ```ts
-export const __DO_MANIFEST__ = {
-  RECORD_ROOMS:   { class: 'AppRecordRoom',   sqlite: true },
-  YJS_ROOMS:      { class: 'AppYjsRoom',      sqlite: true },
-  CANVAS_ROOMS:   { class: 'AppCanvasRoom',   sqlite: true },
-  PRESENCE_ROOMS: { class: 'AppPresenceRoom', sqlite: true },
-  CRON_ROOMS:     { class: 'AppCronRoom',     sqlite: true },
-} as const satisfies DOManifest
+export const __DO_MANIFEST__ = [
+  { binding: 'RECORD_ROOMS',   className: 'AppRecordRoom',   sqlite: true },
+  { binding: 'YJS_ROOMS',      className: 'AppYjsRoom',      sqlite: true },
+  { binding: 'CANVAS_ROOMS',   className: 'AppCanvasRoom',   sqlite: true },
+  { binding: 'PRESENCE_ROOMS', className: 'AppPresenceRoom', sqlite: true },
+  { binding: 'CRON_ROOMS',     className: 'AppCronRoom',     sqlite: true },
+] as const satisfies DOManifest
 
 interface Env extends DOBindings<typeof __DO_MANIFEST__> {
   // ...secrets and custom bindings

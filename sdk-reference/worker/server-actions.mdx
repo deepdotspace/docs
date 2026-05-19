@@ -8,7 +8,7 @@ Server actions are defined in `src/actions/index.ts` and exposed at `POST /api/a
 ```ts
 import type {
   ActionHandler, ActionContext, ActionTools, ActionResult,
-  MutateActionData, GetActionData, QueryActionData, IntegrationActionData,
+  MutateActionData, GetActionData, QueryActionData,
 } from 'deepspace/worker'
 ```
 
@@ -35,7 +35,7 @@ The handler name (the key) becomes the endpoint path: `/api/actions/inviteAttend
 ## `ActionContext<TEnv>`
 
 ```ts
-type ActionContext<TEnv> = {
+interface ActionContext<TEnv = Record<string, unknown>> {
   userId: string                       // verified JWT subject
   params: Record<string, unknown>      // request body
   tools: ActionTools
@@ -48,24 +48,70 @@ type ActionContext<TEnv> = {
 ## `ActionTools`
 
 ```ts
-type ActionTools = {
-  create<T>: (coll: string, data: T) => Promise<ActionResult<MutateActionData<T>>>
-  update<T>: (coll: string, id: string, patch: Partial<T>) => Promise<ActionResult<MutateActionData<T>>>
-  remove:    (coll: string, id: string) => Promise<ActionResult<{ deleted: true }>>
-  get<T>:    (coll: string, id: string) => Promise<ActionResult<GetActionData<T>>>
-  query<T>:  (coll: string, opts?: QueryOpts) => Promise<ActionResult<QueryActionData<T>>>
-  integration<T>: (endpoint: string, body?: object) => Promise<ActionResult<IntegrationActionData<T>>>
+interface ActionTools {
+  create<T extends Record<string, unknown> = Record<string, unknown>>(
+    collection: string,
+    data: T,
+  ): Promise<ActionResult<MutateActionData>>
+
+  update<T extends Record<string, unknown> = Record<string, unknown>>(
+    collection: string,
+    recordId: string,
+    data: Partial<T>,
+  ): Promise<ActionResult<MutateActionData>>
+
+  remove(
+    collection: string,
+    recordId: string,
+  ): Promise<ActionResult<MutateActionData>>
+
+  get<T extends Record<string, unknown> = Record<string, unknown>>(
+    collection: string,
+    recordId: string,
+  ): Promise<ActionResult<GetActionData<T>>>
+
+  query<T extends Record<string, unknown> = Record<string, unknown>>(
+    collection: string,
+    options?: {
+      where?: Record<string, unknown>
+      orderBy?: string
+      orderDir?: 'asc' | 'desc'
+      limit?: number
+    },
+  ): Promise<ActionResult<QueryActionData<T>>>
+
+  integration<T = unknown>(
+    endpoint: string,
+    data?: unknown,
+  ): Promise<ActionResult<T>>
+}
+```
+
+The per-operation data shapes:
+
+```ts
+interface MutateActionData { recordId: string }
+
+interface GetActionData<T = Record<string, unknown>> {
+  record: RecordResult & { data: T }
+}
+
+interface QueryActionData<T = Record<string, unknown>> {
+  records: Array<RecordResult & { data: T }>
+  count: number
 }
 ```
 
 | Method | Returns (under `.data`) |
 |---|---|
-| `tools.get(coll, id)` | `{ record: Envelope<T> }` |
-| `tools.query(coll, opts?)` | `{ records: Envelope<T>[]; count: number }` |
-| `tools.create(coll, data)` | `{ recordId: string; record: Envelope<T> }` |
-| `tools.update(coll, id, patch)` | `{ recordId: string; record: Envelope<T> }` |
-| `tools.remove(coll, id)` | `{ deleted: true }` |
-| `tools.integration(endpoint, body)` | `{ response: T; status?: number }` |
+| `tools.get(coll, id)` | `{ record }` — full envelope with `data` typed as `T` |
+| `tools.query(coll, opts?)` | `{ records, count }` |
+| `tools.create(coll, data)` | `{ recordId }` |
+| `tools.update(coll, id, patch)` | `{ recordId }` |
+| `tools.remove(coll, id)` | `{ recordId }` |
+| `tools.integration(endpoint, body)` | The integration's response body directly (typed as `T`) |
+
+`tools.integration` does **not** wrap the response in `{ response }` — on success, `result.data` IS the integration's body. An OpenAI chat call yields `result.data.choices`; a Freepik image call yields `result.data.images`.
 
 All operations bypass caller RBAC. **`tools.query` sees every record in the collection** regardless of the caller's role — pass a `where` clause to scope.
 
@@ -82,7 +128,7 @@ Narrow with `if (result.success)` before reading `result.data`:
 ```ts
 const r = await tools.get<EventData>('events', eventId)
 if (!r.success) return r
-const event = r.data.record   // typed as Envelope<EventData>
+const event = r.data.record   // typed as RecordResult & { data: EventData }
 ```
 
 ## Integration billing
@@ -130,21 +176,17 @@ const result = await res.json() as ActionResult
 
 The action's `success` / `data` / `error` shape is forwarded verbatim in the HTTP response body. HTTP status is 200 on success, 401 if unauthenticated, 404 if the action name doesn't exist, 500 on uncaught throws.
 
-## Type tip — post-write record envelope
+## Type tip — fetching the post-write envelope
 
-The published `MutateActionData` declares only `{ recordId }`. TypeScript rejects `result.data.record` even though the value exists at runtime. If you need the post-write envelope, either:
+`tools.create` / `update` / `remove` resolve to `ActionResult<MutateActionData>` — only `{ recordId }` is returned, never the full envelope. To inspect the row after a mutation, re-fetch it:
 
 ```ts
-// Re-query
-const r = await tools.update('events', id, patch)
-if (r.success) {
-  const event = (await tools.get('events', r.data.recordId)).data
-}
-
-// Or cast
 const r = await tools.update<EventData>('events', id, patch)
 if (r.success) {
-  const event = (r.data as { recordId: string; record: Envelope<EventData> }).record
+  const got = await tools.get<EventData>('events', r.data.recordId)
+  if (got.success) {
+    const event = got.data.record
+  }
 }
 ```
 

@@ -26,7 +26,7 @@ function Whiteboard({ canvasId }: { canvasId: string }) {
   } = useCanvas(canvasId)
 
   // shapes is an array of CanvasShapeClient
-  // viewports maps peer userId → their current viewport
+  // viewports is an array of ViewportClient (one entry per peer, includes userId)
 }
 ```
 
@@ -34,28 +34,49 @@ function Whiteboard({ canvasId }: { canvasId: string }) {
 
 ## Shape lifecycle
 
-A shape is an object with a position, size, and arbitrary `data` payload. Add one with:
+A shape is an object with a position, size, and an arbitrary `props` payload. Each shape has:
+
+```ts
+type CanvasShapeClient = {
+  id: string
+  type: string
+  x: number
+  y: number
+  width: number
+  height: number
+  rotation?: number
+  props: Record<string, unknown>
+  createdBy: string
+  createdAt: string
+  updatedAt: string
+}
+```
+
+Add one with:
 
 ```tsx
-async function onAddRect(x: number, y: number) {
-  const id = await addShape({
+function onAddRect(x: number, y: number) {
+  // addShape is synchronous and returns void. The server assigns the shape id
+  // and broadcasts it back; let the next `shapes` render pick it up.
+  addShape({
     type: 'rect',
     x, y,
     width: 100,
     height: 60,
-    data: { color: 'blue', label: 'New' },
+    props: { color: 'blue', label: 'New' },
   })
 }
 ```
 
-The `type` is a free-form string — define your own vocabulary (`rect`, `circle`, `arrow`, `text`, `image`). The `data` field holds whatever metadata you need.
+The `type` is a free-form string — define your own vocabulary (`rect`, `circle`, `arrow`, `text`, `image`). The `props` field holds whatever metadata you need.
 
-Update operations are merge-semantics:
+Mutation methods are all positional and return `void`:
 
 ```ts
-moveShape(shapeId, { x: 200, y: 150 })
-resizeShape(shapeId, { width: 200, height: 120 })
-updateShape(shapeId, { data: { color: 'red' } })  // patch data
+moveShape(shapeId, 200, 150)                  // (shapeId, x, y)
+resizeShape(shapeId, 200, 120)                // (shapeId, width, height, x?, y?)
+resizeShape(shapeId, 200, 120, 50, 80)        // also reposition while resizing
+updateShape(shapeId, { color: 'red' })        // (shapeId, props) — props is merged
 deleteShape(shapeId)
 ```
 
@@ -69,18 +90,18 @@ deleteShape(shapeId)
     if (s.type === 'rect') {
       return (
         <rect
-          key={s.shapeId}
+          key={s.id}
           x={s.x}
           y={s.y}
           width={s.width}
           height={s.height}
-          fill={s.data?.color ?? 'gray'}
+          fill={(s.props.color as string) ?? 'gray'}
         />
       )
     }
     if (s.type === 'circle') {
       return (
-        <circle key={s.shapeId} cx={s.x} cy={s.y} r={s.width / 2} />
+        <circle key={s.id} cx={s.x} cy={s.y} r={s.width / 2} />
       )
     }
     return null
@@ -97,13 +118,14 @@ Each connected peer broadcasts a viewport (position, zoom). Use it to show "wher
 ```tsx
 const { viewports, setViewport } = useCanvas(canvasId)
 
-function onPan(x: number, y: number, zoom: number) {
-  setViewport({ x, y, zoom })
+function onPan(x: number, y: number, zoom: number, width: number, height: number) {
+  // setViewport requires width and height (the visible viewport rect) in addition to x/y/zoom.
+  setViewport({ x, y, zoom, width, height })
 }
 
-// viewports is a Map<userId, ViewportClient>
-for (const [userId, vp] of viewports) {
-  console.log(`${userId} is at (${vp.x}, ${vp.y}) zoomed ${vp.zoom}`)
+// viewports is a ViewportClient[] — one entry per peer. Each entry includes `userId`.
+for (const vp of viewports) {
+  console.log(`${vp.userId} is at (${vp.x}, ${vp.y}) zoomed ${vp.zoom}`)
 }
 ```
 
@@ -154,21 +176,21 @@ export default function Whiteboard({ canvasId }: { canvasId: string }) {
       y: e.clientY - rect.top,
       width: 80,
       height: 50,
-      data: { color: '#1D4ED8' },
+      props: { color: '#1D4ED8' },
     })
   }
 
   return (
     <svg width="100%" height="100vh" onClick={onCanvasClick}>
       {shapes.map((s) => (
-        <g key={s.shapeId} onClick={(e) => { e.stopPropagation(); setSelected(s.shapeId) }}>
+        <g key={s.id} onClick={(e) => { e.stopPropagation(); setSelected(s.id) }}>
           <rect
             x={s.x}
             y={s.y}
             width={s.width}
             height={s.height}
-            fill={s.data?.color}
-            stroke={selected === s.shapeId ? '#000' : 'none'}
+            fill={s.props.color as string}
+            stroke={selected === s.id ? '#000' : 'none'}
           />
         </g>
       ))}

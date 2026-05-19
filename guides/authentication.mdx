@@ -120,11 +120,11 @@ Render `<AuthOverlay />` without an `onClose` prop and gate on `!isSignedIn`. It
 
 ### Providers
 
-By default `<AuthOverlay />` shows Google, GitHub, and email/password. Restrict the list with the `providers` prop:
+By default `<AuthOverlay />` shows GitHub, Google, and email/password. The `providers` prop only controls the OAuth provider buttons — its type is `Array<'github' | 'google'>`. Email/password sign-in is always rendered regardless of `providers`:
 
 ```tsx
-<AuthOverlay providers={['google']} />              // Google only
-<AuthOverlay providers={['google', 'github']} />    // Google + GitHub
+<AuthOverlay providers={['google']} />              // Google + email/password
+<AuthOverlay providers={['google', 'github']} />    // Google + GitHub + email/password
 ```
 
 ## Conditional rendering — `<SignedIn>` and `<SignedOut>`
@@ -176,11 +176,11 @@ app.get('/api/me', async (c) => {
   }, token)
 
   if (!outcome.result) return c.json({ error: 'unauthorized' }, 401)
-  return c.json({ userId: outcome.result.sub })
+  return c.json({ userId: outcome.result.userId, claims: outcome.result.claims })
 })
 ```
 
-`verifyJwt` does not throw on invalid input — it returns a `{ result, error? }` envelope. Always check `result` before reading claims.
+`verifyJwt` does not throw on invalid input — it returns a `{ result, error? }` envelope. On success `result` is `{ userId, claims }` (use `result.userId` for the subject, `result.claims` for the full JWT payload). Always check `result` before reading either.
 
 The scaffold's `wsRoute` handler already calls `verifyJwt` for every WebSocket upgrade, so you only need this pattern for custom HTTP routes.
 

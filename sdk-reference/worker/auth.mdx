@@ -13,14 +13,16 @@ import {
 } from 'deepspace/worker'
 
 import type {
-  JwtVerifierConfig, VerifyOutcome, VerifyResult,
+  JwtVerifierConfig, VerifyOutcome, VerifyResult, VerifiedAuth, JwtClaims,
+  TokenDebugInfo,
+  InternalSignature,
   DeepSpaceAuth, DeepSpaceAuthConfig,
 } from 'deepspace/worker'
 ```
 
 ## `verifyJwt(config, token)`
 
-Verifies a JWT against a public key. **Does not throw** — returns a `{ result, error? }` envelope.
+Verifies a JWT against a public key. **Does not throw** — returns a `{ result, error?, debug? }` envelope.
 
 ```ts
 function verifyJwt(
@@ -28,32 +30,42 @@ function verifyJwt(
   token: string | null | undefined,
 ): Promise<VerifyOutcome>
 
-type JwtVerifierConfig = {
-  publicKey: string         // PEM-encoded; env.AUTH_JWT_PUBLIC_KEY
-  issuer: string            // env.AUTH_JWT_ISSUER
-  audience?: string
-  authorizedParties?: string[]
-  clockSkewMs?: number      // default DEFAULT_MAX_SKEW_MS
+interface JwtVerifierConfig {
+  publicKey: string                 // PEM-encoded ES256; env.AUTH_JWT_PUBLIC_KEY
+  issuer: string                    // env.AUTH_JWT_ISSUER
+  audience?: string | string[]      // single value or list
+  authorizedParties?: string[]      // azp patterns; supports "*" wildcards
+  clockSkewMs?: number              // default 5000
 }
 
-type VerifyOutcome = {
-  result: VerifyResult | null    // null on failure
-  error?: string
+interface VerifyOutcome {
+  result: VerifyResult | null       // null on failure
+  debug?: TokenDebugInfo            // unverified claims, for logging
+  error?: unknown                   // underlying error (not stringified)
 }
 
-type VerifyResult = {
-  sub: string                    // userId
+interface VerifyResult extends VerifiedAuth {}
+
+interface VerifiedAuth {
+  userId: string                    // claims.sub, surfaced for convenience
+  claims: JwtClaims                 // full verified payload
+}
+
+interface JwtClaims {
+  sub: string
+  iss?: string
+  aud?: string | string[]
+  azp?: string
+  exp?: number
+  iat?: number
   name?: string
   email?: string
   image?: string
-  iss: string
-  iat: number
-  exp: number
-  // ...standard JWT claims
+  [key: string]: unknown
 }
 ```
 
-Extract the JWT from the request yourself (Bearer header or cookie) before calling:
+`VerifyResult` is **not** a flat JWT-claims object — it's a `{ userId, claims }` envelope. Read `result.userId` for the subject, and `result.claims.email` / `result.claims.name` / `result.claims.image` for the optional profile fields:
 
 ```ts
 app.get('/api/me', async (c) => {
@@ -66,60 +78,99 @@ app.get('/api/me', async (c) => {
   }, token)
 
   if (!result) return c.json({ error: 'unauthorized' }, 401)
-  return c.json({ userId: result.sub })
+  return c.json({
+    userId: result.userId,
+    email: result.claims.email,
+  })
 })
 ```
 
 ## `decodeJwtPayload(token)`
 
-Base64url-decode the JWT payload **without verification**. Useful for inspecting `sub` / `email` / `name` for logging or routing where verification has already happened upstream.
+Base64url-decode the JWT payload **without verification**. Useful for inspecting `iss` / `aud` / `azp` / `exp` for logging or debugging where verification has already happened upstream.
 
 ```ts
-function decodeJwtPayload(token: string): VerifyResult | null
+function decodeJwtPayload(token: string | null | undefined): TokenDebugInfo | undefined
+
+interface TokenDebugInfo {
+  iss?: string | null
+  aud?: string | string[] | null
+  azp?: string | null
+  exp?: number | null
+  iat?: number | null
+}
 ```
 
+Returns `undefined` if the token is missing or malformed.
+
 <Warning>
-Never use as a substitute for `verifyJwt` on the trust boundary. Decoded but unverified claims can be spoofed by anyone.
+Never use as a substitute for `verifyJwt` on the trust boundary. Decoded but unverified claims can be spoofed by anyone, and `TokenDebugInfo` deliberately omits `sub` to discourage that.
 </Warning>
 
 ## HMAC primitives — internal signing
 
-For platform → app internal calls (and cron's `ctx.integrations.call`, which signs requests with `INTERNAL_STORAGE_HMAC_SECRET`).
+For platform → app internal calls (and cron's `ctx.integrations.call`, which signs requests with `INTERNAL_STORAGE_HMAC_SECRET`). All of these are async and use `crypto.subtle` on the Workers runtime (with a Node fallback for testing).
 
 ```ts
-function buildInternalPayload(body: object): { payload: string; timestamp: number }
-function signInternalPayload(secret: string, payload: string, timestamp: number): string
-function verifyInternalSignature(opts: {
+function buildInternalPayload(body: unknown): string
+
+function signInternalPayload(input: {
   secret: string
   payload: string
+  timestamp?: string                // defaults to Date.now().toString()
+}): Promise<InternalSignature>
+
+function verifyInternalSignature(input: {
+  secret: string | undefined
+  timestamp: string | null | undefined
+  signature: string | null | undefined
+  payload: string
+  maxSkewMs?: number                // defaults to DEFAULT_MAX_SKEW_MS
+}): Promise<boolean>
+
+function computeHmacHex(secret: string, data: string): Promise<string>
+function timingSafeEqualHex(a: string, b: string): Promise<boolean>
+
+interface InternalSignature {
+  timestamp: string
   signature: string
-  timestamp: number
-}): { valid: boolean; reason?: string }
+}
 
-function computeHmacHex(secret: string, data: string): string
-function timingSafeEqualHex(a: string, b: string): boolean
-
-const DEFAULT_MAX_SKEW_MS: number   // verification tolerance for `timestamp`
+const DEFAULT_MAX_SKEW_MS: number   // 5 * 60_000 — verification window
 ```
+
+`buildInternalPayload` returns a **plain string** (JSON-stringified body, or the input string passed through). The timestamp lives on the signature object returned by `signInternalPayload`, not on the payload.
 
 These are exported so apps can verify inbound internal calls (e.g., custom webhook endpoints from the platform) using the same HMAC contract the rest of the SDK uses. Most apps never call these directly.
 
 ## `createDeepSpaceAuth(config)`
 
-Construct a Better Auth instance pre-wired for DeepSpace conventions (cookie names, JWT issuance, scope claims). The scaffold doesn't build its own auth surface — it proxies to the platform auth-worker — so you only reach for this when standing up a custom auth-worker variant.
+Construct a Better Auth instance pre-wired for DeepSpace conventions (cookie names, JWT issuance, plugin set). The scaffold doesn't build its own auth surface — it proxies to the platform auth-worker — so you only reach for this when standing up a custom auth-worker variant.
 
 ```ts
 function createDeepSpaceAuth(config: DeepSpaceAuthConfig): DeepSpaceAuth
 
-type DeepSpaceAuthConfig = {
+interface DeepSpaceAuthConfig {
+  /** D1 database binding */
   database: D1Database
-  trustedOrigins: string[]
-  privateKey: string
-  publicKey: string
-  issuer: string
-  // ...standard Better Auth options
+  /** Base URL for the auth worker (e.g. "https://auth.deep.space") */
+  baseURL: string
+  /** Secret for session signing */
+  secret: string
+  /** Google OAuth credentials (optional) */
+  google?: { clientId: string; clientSecret: string }
+  /** GitHub OAuth credentials (optional) */
+  github?: { clientId: string; clientSecret: string }
+  /** Enable email/password authentication (default: true) */
+  emailAndPassword?: boolean
+  /** Trusted origins for CORS */
+  trustedOrigins?: string[]
 }
+
+type DeepSpaceAuth = ReturnType<typeof createDeepSpaceAuth>
 ```
+
+`DeepSpaceAuth` is the `better-auth` `Auth` instance with the DeepSpace defaults (organization + twoFactor plugins, `*.deep.space` / `*.app.space` / `localhost:*` trusted origins) applied. There are no `privateKey` / `publicKey` / `issuer` fields on the config — JWT signing keys live in the auth-worker's environment, not in this object.
 
 ## See also
 

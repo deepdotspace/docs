@@ -35,16 +35,20 @@ The fixture caches `storageState` per account, so each test account signs in onc
 
 **Requires `baseURL`** in `tests/playwright.config.ts`. The scaffold sets this; tests error with `users fixture requires a baseURL` if it's missing.
 
-## `users(N | string[])` — the fixture
+## `users(N | string[], options?)` — the fixture
 
 ```ts
-type UsersFixture = (n: number | string[]) => Promise<MultiplayerUser[]>
+type UsersFixture = (
+  selector: number | string[],
+  options?: { label?: string },
+) => Promise<MultiplayerUser[]>
 
-type MultiplayerUser = {
+interface MultiplayerUser {
   context: BrowserContext
   page: Page
   email: string
   name: string
+  /** Test account user ID, if known from the accounts registry. */
   userId?: string
 }
 ```
@@ -55,6 +59,9 @@ const [a, b] = await users(2)
 
 // Specific accounts by name
 const [alice, bob] = await users(['Alice', 'Bob'])
+
+// First N filtered by label
+const [team] = await users(1, { label: 'team-fixture' })
 ```
 
 Contexts auto-close when the test finishes — no manual cleanup needed for contexts. You still need to clean up records you create during the test (see [Testing guide → Test data cleanup](/guides/testing#test-data-cleanup)).
@@ -65,36 +72,62 @@ When the fixture is too high-level, import the underlying helpers directly:
 
 | Helper | Signature |
 |---|---|
-| `loadAllTestAccounts()` | `() => Promise<TestAccount[]>` — every cached account |
-| `pickTestAccounts(n, opts?)` | `(n: number, opts?: { label?: string }) => Promise<TestAccount[]>` — first N, optionally filtered by label |
-| `findTestAccountByName(name)` | `(name: string) => Promise<TestAccount \| undefined>` |
-| `ensureStorageState(browser, account, baseURL)` | Sign in once and return the cached `storageState` path |
-| `newSignedInContext(email, browser)` | One-liner for a signed-in `BrowserContext` |
-| `getStatePathForEmail(email)` | Direct cache lookup |
-| `readCachedState(path)` | Direct cache read |
+| `loadAllTestAccounts()` | `() => TestAccount[]` — every cached account (sync) |
+| `pickTestAccounts(n, opts?)` | `(n: number, opts?: { label?: string }) => TestAccount[]` (sync); throws if not enough accounts |
+| `findTestAccountByName(name)` | `(name: string) => TestAccount` (sync); throws if not found |
+| `ensureStorageState(browser, account, baseURL, options?)` | Sign in once and return the cached `storageState` path |
+| `newSignedInContext(browser, account, baseURL, options?)` | One-liner for a signed-in `BrowserContext` |
+| `getStatePathForEmail(email)` | Direct cache-path lookup for an email |
+| `readCachedState(email)` | Direct cache read by email |
+
+All three account loaders read from `~/.deepspace/test-accounts.json` synchronously — they don't return promises.
 
 ### `TestAccount`
 
 ```ts
-type TestAccount = {
+interface TestAccount {
   email: string
   password: string
-  name: string
-  label?: string
-  createdAt: string
+  name?: string
+  label?: string | null
+  id?: string
+  userId?: string
+  createdAt?: number
 }
 ```
 
-Loaded from `~/.deepspace/test-accounts.json`, populated by `npx deepspace test-accounts create`.
+Loaded from `~/.deepspace/test-accounts.json`, populated by `npx deepspace test-accounts create`. `createdAt` is a numeric epoch millisecond timestamp, not an ISO string.
 
 ### `EnsureStorageStateOptions`
 
 ```ts
-type EnsureStorageStateOptions = {
-  signInUrl?: string         // override the sign-in path
-  forceFresh?: boolean       // bypass cache and re-sign in
+interface EnsureStorageStateOptions {
+  /** Max age of a cached state file before we re-sign in. Default 7 days. */
+  maxAgeMs?: number
+  /** Force a fresh sign-in even if the cache is fresh. */
+  force?: boolean
 }
 ```
+
+### `ensureStorageState` / `newSignedInContext` signatures
+
+```ts
+function ensureStorageState(
+  browser: Browser,
+  account: { email: string; password: string },
+  baseURL: string,
+  options?: EnsureStorageStateOptions,
+): Promise<string>
+
+function newSignedInContext(
+  browser: Browser,
+  account: { email: string; password: string },
+  baseURL: string,
+  options?: EnsureStorageStateOptions,
+): Promise<BrowserContext>
+```
+
+`browser` is always the first argument, then the account record, then `baseURL`, then options.
 
 ## Patterns
 
@@ -123,7 +156,7 @@ import { test } from '@playwright/test'
 import { ensureStorageState, loadAllTestAccounts } from 'deepspace/testing'
 
 test('custom flow', async ({ browser }) => {
-  const accounts = await loadAllTestAccounts()
+  const accounts = loadAllTestAccounts()
   const statePath = await ensureStorageState(browser, accounts[0], 'http://localhost:5173')
   const context = await browser.newContext({ storageState: statePath })
   // ... use context.newPage(), etc.

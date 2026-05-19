@@ -57,17 +57,37 @@ Different from `useUser()`, which merges in storage-layer fields like role and k
 
 ### `useUser(): { user, isLoading, refetch }`
 
-Returns the storage-layer user, merged with role and credits from the app's users collection.
+Returns the storage-layer user, merged with the room-specific role from the app's users collection. Karma and credits are loaded from the API as nested objects when available.
 
 ```ts
+type UserKarma = {
+  total: number
+  breakdown: { publishing: number; content: number; comment: number; curation: number }
+  rank: number
+  monthlyKarma: number
+  monthlyRank: number
+}
+
+type UserCredits = {
+  total: number
+  subscription: number
+  bonus: number
+  purchased: number
+}
+
 type StorageUser = {
   id: string
   name: string
   email: string
-  role: 'viewer' | 'member' | 'admin'
-  karma?: number
-  credits?: number
+  /** Free-form role string from the user-roles collection; defaults to `'viewer'`. */
+  role: string
   imageUrl?: string
+  isAdmin?: boolean
+  publicUsername?: string | null
+  subscriptionTier?: string | null
+  subscriptionStatus?: string | null
+  karma?: UserKarma | null
+  credits?: UserCredits | null
 }
 ```
 
@@ -75,7 +95,15 @@ type StorageUser = {
 const { user, isLoading } = useUser()
 if (isLoading) return null
 if (user?.role !== 'admin') return <p>Admins only</p>
+
+// Karma and credits are objects, not numbers:
+const totalKarma = user?.karma?.total ?? 0
+const availableCredits = user?.credits?.total ?? 0
 ```
+
+<Warning>
+`useUser` reads the merged profile + room-role from the record store, so it must be rendered inside a `RecordProvider` ancestor (not just `DeepSpaceAuthProvider`). Outside a `RecordProvider`, `user` will be `null`.
+</Warning>
 
 <Warning>
 Destructure as `const { user } = useUser()` and read fields off `user`. **Don't** write `const { id } = useUser()` — `id` is not at the top level of the return.
@@ -97,7 +125,7 @@ Modal sign-in UI. Render without an `onClose` prop and gate on `!isSignedIn`; au
 
 | Prop | Type | Description |
 |---|---|---|
-| `providers` | `('google' \| 'github' \| 'email')[]` | Restrict available sign-in methods. Default shows all. |
+| `providers` | `Array<'github' \| 'google'>` | Which OAuth buttons to show. Defaults to `['github', 'google']`. Email/password sign-in is always available below the OAuth options. |
 | `onClose` | `() => void` | If provided, renders a close button. Omit for non-dismissible. |
 
 ```tsx

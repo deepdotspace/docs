@@ -9,7 +9,6 @@ The records API is the primary surface for working with [collections](/concepts/
 import {
   RecordProvider, RecordScope, ScopeRegistryProvider,
   useQuery, useMutations, useUsers, useUserLookup, useRecordContext,
-  RecordStore,
 } from 'deepspace'
 ```
 
@@ -23,11 +22,12 @@ Initializes the WebSocket and in-memory record store. Required ancestor of every
 
 | Prop | Type | Description |
 |---|---|---|
-| `roomId` | `string` | Scope ID for the default room (usually `app:<APP_NAME>`). |
-| `schemas` | `CollectionSchema[]` | All collections this provider tree may query. |
+| `roomId` | `string` *(optional)* | Scope ID for the default room (usually `app:<APP_NAME>`). Omit for multi-scope mode and use `<RecordScope>` to mount scopes instead. |
+| `schemas` | `CollectionSchema[]` *(optional)* | All collections this provider tree may query. |
 | `wsUrl` | `string` *(optional)* | Override the WebSocket URL. Defaults to current origin. |
-| `allowAnonymous` | `boolean` | Connect without a JWT (default `false`). Required for public pages. See [authentication](/guides/authentication). |
-| `getAuthToken` | `() => Promise<string>` | Custom token fetcher. Defaults to the SDK's. |
+| `fetchUser` | `() => Promise<UserProfile \| null>` *(optional)* | Custom user-profile fetcher. Defaults to using the Better Auth session. |
+| `allowAnonymous` | `boolean` *(optional)* | Connect without a JWT (default `false`). Required for public pages. See [authentication](/guides/authentication). |
+| `getAuthToken` | `() => Promise<string \| null>` *(optional)* | Custom token fetcher. Defaults to the SDK's. |
 
 ```tsx
 <RecordProvider allowAnonymous>
@@ -158,7 +158,7 @@ function useMutations<T>(collection: string): {
 
 <Tabs>
   <Tab title="Create">
-    `create` takes the full row shape and returns the server-generated `recordId`. The local store updates immediately; the server confirms milliseconds later.
+    `create` takes the full row shape and returns the new `recordId`. The ID is generated on the client (timestamp + random suffix) before the write is sent, so the promise resolves with the ID immediately while the server processes the mutation in the background.
 
     ```tsx
     const { create } = useMutations<Note>('notes')
@@ -170,7 +170,7 @@ function useMutations<T>(collection: string): {
     })
     ```
 
-    If you need the `recordId` before navigating, use `createConfirmed` to wait for server acknowledgment:
+    If you need to confirm the row was actually persisted (e.g., before navigating away), use `createConfirmed` instead — it awaits server acknowledgment:
 
     ```tsx
     const id = await createConfirmed({ title: 'New', body: '', pinned: false })
@@ -227,7 +227,7 @@ function useMutations<T>(collection: string): {
 
 | Method | Semantics | Returns |
 |---|---|---|
-| `create` | Optimistic | `Promise<string>` (new `recordId`) |
+| `create` | Optimistic | `Promise<string>` (client-generated `recordId`) |
 | `put` | Optimistic, merge | `Promise<void>` |
 | `remove` | Optimistic | `Promise<void>` |
 | `createConfirmed` | Waits for DO ack | `Promise<string>` |
@@ -239,28 +239,46 @@ function useMutations<T>(collection: string): {
 Returns the users collection with role-management helpers.
 
 ```ts
+type RoomUser = {
+  id: string
+  email: string
+  name: string
+  imageUrl?: string
+  role: string
+  createdAt: string
+  lastSeenAt: string
+}
+
 function useUsers(): {
-  users: User[]
+  users: RoomUser[]
   usersLoaded: boolean
-  setRole: (userId: string, role: 'viewer' | 'member' | 'admin') => Promise<void>
-  refresh: () => Promise<void>
+  setRole: (userId: string, role: string) => void
+  refresh: () => void
 }
 ```
 
-`setRole` is admin-only — the Durable Object rejects non-admin callers. See [permissions](/concepts/permissions#roles) for how roles map onto collection RBAC rules.
+`setRole` accepts a free-form role string (e.g. `'admin'`, `'intern'`, or any value your schema understands) and dispatches the change without waiting for an ack. The Durable Object enforces who is allowed to call it. See [permissions](/concepts/permissions#roles) for how roles map onto collection RBAC rules.
 
 ## `useUserLookup()`
 
 O(1) wrapper around `useUsers()` for resolving `userId`s to display fields.
 
 ```ts
+type UserInfo = {
+  id: string
+  email: string
+  name: string
+  imageUrl?: string
+  role: string
+}
+
 function useUserLookup(): {
-  users: User[]
+  users: RoomUser[]
   usersLoaded: boolean
-  userMap: Map<string, User>
-  getUser:  (userId: string) => User | undefined
-  getEmail: (userId: string) => string | undefined
-  getName:  (userId: string) => string | undefined
+  userMap: Map<string, UserInfo>
+  getUser:  (userId: string) => UserInfo | null
+  getEmail: (userId: string) => string | null
+  getName:  (userId: string) => string | null
 }
 ```
 
@@ -273,7 +291,7 @@ There is no `getRole` or `getImageUrl` — read those off `getUser(id)?.role` or
 
 ## `useRecordContext()`
 
-Low-level access to the underlying `RecordStore`. Useful for building custom hooks or imperative reads outside React's render cycle. Most apps never need this.
+Low-level access to the record-store context (WebSocket send/receive primitives, ready state, user profile, etc.). Useful for building custom hooks or imperative reads outside React's render cycle. Most apps never need this.
 
 ## See also
 

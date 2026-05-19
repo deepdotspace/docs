@@ -75,16 +75,20 @@ type ActionContext<TEnv> = {
 
 ### `tools` — RBAC-bypassing operations
 
-| Method | Returns | Notes |
-|---|---|---|
-| `tools.create(coll, data)` | `{ recordId, record }` | Create a record. |
-| `tools.update(coll, id, patch)` | `{ recordId, record }` | Patch an existing record. |
-| `tools.remove(coll, id)` | `{ deleted: true }` | Delete a record. |
-| `tools.get(coll, id)` | `{ record }` | Fetch one record. |
-| `tools.query(coll, opts?)` | `{ records, count }` | List records with filtering. |
-| `tools.integration(endpoint, body)` | `{ response, status? }` | Call a third-party integration. Billing follows `src/integrations.ts`. |
+Every method returns `ActionResult<T>` — narrow with `if (result.success)` before reading `result.data`.
 
-All operations return an `ActionResult<T>` envelope — narrow with `if (result.success)` before accessing `result.data`.
+| Method | `data` shape on success | Notes |
+|---|---|---|
+| `tools.create(coll, data)` | `{ recordId }` | Create a record. |
+| `tools.update(coll, id, patch)` | `{ recordId }` | Patch an existing record. |
+| `tools.remove(coll, id)` | `{ recordId }` | Delete a record. |
+| `tools.get(coll, id)` | `{ record }` | Fetch one record (envelope: `{ recordId, data, createdAt, updatedAt, ... }`). |
+| `tools.query(coll, opts?)` | `{ records, count }` | List records. `opts` accepts `where`, `orderBy`, `orderDir`, `limit`. |
+| `tools.integration(endpoint, data?)` | the integration's response body directly | Call a third-party integration. Billing follows `src/integrations.ts`. |
+
+<Note>
+**Type tip.** `tools.create/update/remove` all resolve to `ActionResult<MutateActionData>` where `MutateActionData` is just `{ recordId: string }` — there is no `record` field on the result. To read the resulting row after a mutation, follow up with `tools.get(coll, recordId)`.
+</Note>
 
 ```ts
 const r = await tools.query('items', { where: { status: 'pending' } })

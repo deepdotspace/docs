@@ -15,19 +15,22 @@ No global install is needed. To create a new app, use `npm create deepspace@late
 
 | Command | Purpose |
 |---|---|
-| `dev` | Run the app locally with Vite + worker in-process |
-| `deploy` | Deploy to Workers for Platforms; live at `<name>.app.space` |
-| `undeploy` | Tear down a deployed app and its provisioned resources |
-| `login` | Authenticate via GitHub or Google OAuth |
+| `create` | Shortcut for `npm create deepspace@latest` |
+| `login` | Authenticate via GitHub/Google OAuth, or email + password |
 | `logout` | Clear the local session |
 | `whoami` | Print the current login state |
-| `add` | Install a scaffold feature (`ai-chat`, `messaging`, `kanban`, ...) |
+| `dev` | Run the app locally with Vite + worker in-process |
+| `kill` | Stop leaked workerd / wrangler / vite processes |
 | `test` | Run the Playwright + Vitest test suites |
 | `screenshot` | Capture a screenshot of any URL via Playwright |
-| `kill` | Stop leaked workerd / wrangler / vite processes |
-| `integrations` / `invoke` | Discover and call third-party integration endpoints |
-| `domain` | Buy, attach, and manage custom domains |
 | `test-accounts` | Create and manage `@deepspace.test` accounts for testing |
+| `add` | Install a scaffold feature (`ai-chat`, `messaging`, `kanban`, ...) |
+| `integrations` | Discover and call third-party integration endpoints |
+| `managed-repos` | Create and manage DeepSpace-owned GitHub repos |
+| `invoke` | Top-level alias for `integrations invoke` |
+| `deploy` | Deploy to Workers for Platforms; live at `<name>.app.space` |
+| `undeploy` | Tear down a deployed app and its provisioned resources |
+| `domain` | Buy, attach, and manage custom domains |
 
 [Full command reference →](/cli-reference/commands)
 
@@ -48,7 +51,7 @@ The CLI is designed to be safely invoked from automation:
 
 - **Non-interactive by default.** Omitting required arguments prints usage and exits 1 — it does not prompt on stdin.
 - **`--json` everywhere it matters.** `whoami`, `domain *`, `integrations list/info`, `test-accounts list` all support machine-readable output.
-- **`--yes` skips confirmation prompts** on destructive commands (`undeploy`, `domain detach`, `domain buy`).
+- **`--yes` skips confirmation prompts** on destructive commands (`domain buy`, `domain detach`, `test-accounts clear`, `managed-repos delete`).
 - **Help is plain text.** `--help` / `-h` produces ANSI-free output suitable for scripting.
 
 ## Local dev workflow

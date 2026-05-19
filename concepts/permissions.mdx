@@ -36,18 +36,19 @@ permissions: {
 }
 ```
 
-Each of `read`, `create`, `update`, `delete` accepts a `PermissionRule`. The values that cover ~95% of apps:
+`read`, `update`, and `delete` each accept a `PermissionLevel` — the union of `boolean | 'own' | 'unclaimed-or-own' | 'collaborator' | 'team' | 'access' | 'published' | 'shared'`. `create` is the exception: it accepts a `boolean` only — you either let a role create rows or you don't.
 
-| Rule | Meaning |
+The levels that cover ~95% of apps:
+
+| Level | Meaning |
 |---|---|
-| `true` | Allow all |
-| `false` | Deny all |
+| `true` / `false` | Allow all / deny all |
 | `'own'` | Records the caller created (falls back to `record.createdBy`) |
 | `'published'` | Owner OR matches `visibilityField` |
 | `'shared'` | Owner OR in `collaboratorsField` OR published |
 | `'team'` | Owner OR in `collaboratorsField` OR team member |
 
-Less common (check `PermissionRule` in `node_modules/deepspace/dist/worker.d.ts` before using):
+Less common (check the `PermissionLevel` export in `deepspace/worker` before using):
 
 - `'unclaimed-or-own'` — no owner set, OR caller is owner
 - `'collaborator'` — owner OR in `collaboratorsField` (owners always pass)
@@ -64,6 +65,7 @@ When you use `'published'` or `'shared'`, you tell the SDK which column to check
     { name: 'title',  storage: 'text', interpretation: 'plain' },
     { name: 'status', storage: 'text', interpretation: { kind: 'select', options: ['draft', 'published'] } },
     { name: 'collaborators', storage: 'text', interpretation: { kind: 'json' } },
+    // ...declare an ownerField column too (typically userBound: true)
   ],
   visibilityField:    { field: 'status', value: 'published' },
   collaboratorsField: 'collaborators',

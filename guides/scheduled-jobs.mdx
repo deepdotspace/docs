@@ -57,17 +57,21 @@ Each task declares **either** `intervalMinutes` (every N minutes) **or** `schedu
 | `integrations` | object | `call(endpoint, params)` — proxies through the api-worker with HMAC auth, billed to the owner. |
 | `ownerUserId` | `string` | The owner's user ID. |
 
-The records API differs slightly from server actions — methods return their data directly rather than wrapping in `{ success, data }`:
+The records API differs from server actions — methods return their data directly rather than wrapping in `{ success, data }`:
 
 ```ts
-await ctx.records.query('users', { where: { active: true } })
-// → Envelope[]  (array of records, already unwrapped)
+// query: returns Envelope[] (already unwrapped from the tools response)
+await ctx.records.query('users', { where: { active: true }, limit: 100 })
 
+// create / update / delete: return the raw tool-call data
 await ctx.records.create('notifications', { userId, message })
-// → { recordId, record: Envelope }
+await ctx.records.update('users', userId, { lastSeenAt: Date.now() })
+await ctx.records.delete('notifications', notificationId)
 ```
 
-Throws on failure; wrap in `try/catch` if you need to handle a denied write inline.
+`ctx.records.query` accepts `{ where?, limit? }` only — there is no `orderBy`/`orderDir` here. For richer filters, fetch from a server action instead. There is no `ctx.records.get(...)`; fetch one row via `query` with a `where` filter on `recordId` or call `tools.get` from a server action.
+
+Throws on failure; wrap in `try/catch` if you need to handle an error inline.
 
 ## Worker wiring
 
@@ -136,9 +140,9 @@ function CronAdmin() {
 | `tasks` | `CronTaskState[]` | Live state of each task. |
 | `history` | `CronHistoryEntry[]` | Recent runs (with success, duration, error). |
 | `connected` | `boolean` | WebSocket connection status. |
-| `trigger(name)` | `(name) => Promise<void>` | Fire `onTask` immediately — same code path as the alarm. |
-| `pause(name)` | `(name) => Promise<void>` | Disable a task. |
-| `resume(name)` | `(name) => Promise<void>` | Re-enable a task. |
+| `trigger(name)` | `(name: string) => void` | Fire `onTask` immediately — same code path as the alarm. Fire-and-forget over the open socket. |
+| `pause(name)` | `(name: string) => void` | Disable a task. |
+| `resume(name)` | `(name: string) => void` | Re-enable a task. |
 
 <Warning>
 **Auth-gate any page that exposes `trigger` / `pause` / `resume`.** The Durable Object does not enforce a role on these methods — without a client-side check, any signed-in user can trigger owner-billed tasks. Gate by `user?.role === 'admin'`.

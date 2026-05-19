@@ -3,10 +3,16 @@ title: "Schemas reference"
 description: "`CollectionSchema`, RBAC types, and the pre-built drop-in collections."
 ---
 
-Schemas describe collections — their columns, indexes, and per-role permissions. They're declared in `src/schemas/`, registered in `src/schemas.ts`, and baked into the worker at deploy time.
+Schemas describe collections — their columns, permissions, and visibility rules. They're declared in `src/schemas/`, registered in `src/schemas.ts`, and baked into the worker at deploy time.
 
 ```ts
-import type { CollectionSchema, ColumnSpec, ColumnInterpretation, PermissionRule } from 'deepspace/worker'
+import type {
+  CollectionSchema,
+  ColumnDefinition,
+  ColumnInterpretation,
+  RolePermissions,
+  PermissionLevel,
+} from 'deepspace/worker'
 import {
   USERS_COLUMNS, BASE_USERS_SCHEMA,
   CHANNELS_SCHEMA, MESSAGES_SCHEMA, REACTIONS_SCHEMA,
@@ -18,67 +24,126 @@ import {
   GLOBAL_DO_TYPES, GLOBAL_DO_TYPE_NAMES,
   getGlobalDOType, getGlobalDOSchemas,
   RESERVED_COLLECTION_NAMES,
-  ROLES, ROLE_CONFIG, Role,
   AI_CHATS_SCHEMA, AI_MESSAGES_SCHEMA,
 } from 'deepspace/worker'
+
+// Role constants live on the client entry point (shared module):
+import { ROLES, ROLE_CONFIG, type Role } from 'deepspace'
 ```
 
 ## `CollectionSchema`
 
 ```ts
-type CollectionSchema = {
+interface CollectionSchema {
   name: string
-  columns: ColumnSpec[]
-  permissions: Record<string, RolePermissions>
-  visibilityField?:    { field: string; value: unknown }
+  /** Column definitions — every collection is stored in a typed SQL table. */
+  columns: ColumnDefinition[]
+  /** Composite uniqueness constraint (e.g., ['userId', 'taskId']). */
+  uniqueOn?: string[]
+  /** Column name used for ownership checks (default: `_created_by`). */
+  ownerField?: string
+  /** Column containing JSON array of collaborator user IDs. */
   collaboratorsField?: string
-  ownerField?:         string
-  defaultRole?:        string                          // users schema only
+  /** Column containing team ID for team-based access. */
+  teamField?: string
+  /**
+   * Column controlling per-record read visibility.
+   * String form: visible when `data[field] === 'public'`.
+   * Object form: visible when `data[field] === value`.
+   */
+  visibilityField?: string | { field: string; value: unknown }
+  /** Permissions per role. Use `'*'` for a catch-all fallback. */
+  permissions: Record<string, RolePermissions>
+  /** Default role for new users (only on the `users` collection). */
+  defaultRole?: string
 }
-
-type ColumnSpec = {
-  name: string
-  storage: 'text' | 'integer' | 'real' | 'blob'
-  interpretation: ColumnInterpretation
-}
-
-type ColumnInterpretation =
-  | 'plain'
-  | 'number'
-  | 'boolean'
-  | { kind: 'select'; options: string[] }
-  | { kind: 'json' }
-  | { kind: 'date' }
-
-type RolePermissions = {
-  read?:   PermissionRule
-  create?: PermissionRule
-  update?: PermissionRule
-  delete?: PermissionRule
-}
-
-type PermissionRule =
-  | boolean
-  | 'own'
-  | 'published'
-  | 'shared'
-  | 'team'
-  | 'unclaimed-or-own'
-  | 'collaborator'
-  | 'access'
 ```
 
-See [Concepts → Permissions](/concepts/permissions) for the semantics of each rule.
+## `ColumnDefinition`
+
+```ts
+interface ColumnDefinition {
+  /** Stable ID override (survives renames). Falls back to `col_{name}`. */
+  id?: string
+  name: string
+  storage: 'number' | 'text'
+  interpretation: ColumnInterpretation | string
+  /** SQL expression for a computed column (read-only). */
+  expression?: string
+  /** Auto-populate with the current user ID on create. */
+  userBound?: boolean
+  /** Cannot be changed after initial creation. */
+  immutable?: boolean
+  /** Must be provided on create (non-null). */
+  required?: boolean
+  /** Default value if not provided on create. */
+  default?: unknown
+  /** Auto-set ISO timestamp when the named field changes (optionally to a specific value). */
+  timestampTrigger?: { field: string; value?: unknown }
+}
+```
+
+`storage` is `'number' | 'text'` — these are the only two backing SQLite types the SDK uses. `interpretation` can be either a string shortcut (e.g. `'plain'`) or a discriminated-union object.
+
+## `ColumnInterpretation`
+
+```ts
+type ColumnInterpretation =
+  | { kind: 'plain' }
+  | { kind: 'currency'; symbol: string; decimals: number }
+  | { kind: 'date'; format?: string }
+  | { kind: 'datetime'; format?: string }
+  | { kind: 'boolean'; trueLabel?: string; falseLabel?: string }
+  | { kind: 'percent'; decimals?: number }
+  | { kind: 'select'; options: string[] }
+  | { kind: 'multiselect'; options: string[] }
+  | { kind: 'url' }
+  | { kind: 'email' }
+  | { kind: 'json' }
+  | { kind: 'reference'; targetTable: string; displayColumn: string }
+```
+
+Some kinds carry required fields — `currency` needs `symbol` and `decimals`; `select` and `multiselect` need `options`; `reference` needs `targetTable` and `displayColumn`. The bare `string` form on `ColumnDefinition.interpretation` is a shortcut for `{ kind: <string> }`.
+
+## `RolePermissions`
+
+```ts
+interface RolePermissions {
+  read:   PermissionLevel
+  create: boolean
+  update: PermissionLevel
+  delete: PermissionLevel
+  /** If set, only these columns can be updated by this role. */
+  writableFields?: string[]
+}
+
+type PermissionLevel =
+  | boolean
+  | 'own'
+  | 'unclaimed-or-own'
+  | 'collaborator'
+  | 'team'
+  | 'access'
+  | 'published'
+  | 'shared'
+```
+
+All four of `read`, `create`, `update`, `delete` are required on every role entry. `create` is boolean-only (you either can or can't create new rows for a role); the others accept the full `PermissionLevel` union.
+
+See [Concepts → Permissions](/concepts/permissions) for the semantics of each level.
 
 ## Roles
 
 ```ts
+// Imported from `deepspace` (client entry), NOT `deepspace/worker`:
+import { ROLES, ROLE_CONFIG, type Role } from 'deepspace'
+
 const ROLES: { VIEWER: 'viewer'; MEMBER: 'member'; ADMIN: 'admin' }
 type Role = 'viewer' | 'member' | 'admin'
 
 const ROLE_CONFIG: Record<Role, {
   title: string
-  badgeVariant: 'default' | 'secondary' | 'outline'
+  badgeVariant: 'secondary' | 'default' | 'warning'
   description: string
 }>
 ```
@@ -90,8 +155,8 @@ For unauthenticated users, use the `'*'` key in permissions — there is no `ano
 ## Drop-in schemas — Users
 
 ```ts
-const USERS_COLUMNS: ColumnSpec[]      // canonical users columns
-const BASE_USERS_SCHEMA: CollectionSchema  // assembled from USERS_COLUMNS
+const USERS_COLUMNS: ColumnDefinition[]      // canonical users columns
+const BASE_USERS_SCHEMA: CollectionSchema    // assembled from USERS_COLUMNS
 ```
 
 The scaffold's `usersSchema` extends `BASE_USERS_SCHEMA`. Don't replace; extend if you need extra columns.
@@ -142,19 +207,19 @@ const AI_CHATS_SCHEMA: CollectionSchema          // 'ai-chats'
 const AI_MESSAGES_SCHEMA: CollectionSchema       // 'ai-messages'
 ```
 
-RBAC: members `read/update/delete: 'own'`, `create: false` — writes only flow through the worker's chat routes. **Don't relax `create` to `'own'`** (see the AI chat guide for why).
+RBAC: members `read/update/delete: 'own'`, `create: false` — writes only flow through the worker's chat routes. **Don't relax `create` to `true`** (see the AI chat guide for why).
 
 ## Global DO type registry
 
 ```ts
 const GLOBAL_DO_TYPES: GlobalDOType[]
-const GLOBAL_DO_TYPE_NAMES: readonly string[]   // ['workspace', 'dir', 'conv']
+const GLOBAL_DO_TYPE_NAMES: readonly string[]   // ['workspace', 'conv', 'dir']
 
-function getGlobalDOType(name: string): GlobalDOType | undefined
+function getGlobalDOType(name: string): GlobalDOType | null
 function getGlobalDOSchemas(typeName: string): CollectionSchema[]
 ```
 
-Runtime lookups for what schemas a given global DO scope expects.
+Runtime lookups for what schemas a given global DO scope expects. `getGlobalDOType` returns `null` (not `undefined`) when the name isn't registered.
 
 ## Reserved names
 
@@ -174,14 +239,18 @@ export const itemsSchema: CollectionSchema = {
   name: 'items',
   columns: [
     { name: 'title',  storage: 'text', interpretation: 'plain' },
-    { name: 'status', storage: 'text', interpretation: { kind: 'select', options: ['draft', 'published'] } },
+    {
+      name: 'status',
+      storage: 'text',
+      interpretation: { kind: 'select', options: ['draft', 'published'] },
+    },
     { name: 'tags',   storage: 'text', interpretation: { kind: 'json' } },
   ],
   visibilityField: { field: 'status', value: 'published' },
   permissions: {
-    '*':    { read: 'published' },
-    member: { read: true, create: true, update: 'own', delete: 'own' },
-    admin:  { read: true, create: true, update: true, delete: true },
+    '*':    { read: 'published', create: false, update: false, delete: false },
+    member: { read: true,        create: true,  update: 'own',  delete: 'own'  },
+    admin:  { read: true,        create: true,  update: true,   delete: true   },
   },
 }
 ```

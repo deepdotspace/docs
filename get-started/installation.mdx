@@ -27,7 +27,7 @@ This:
 3. Installs `deepspace` and a small set of peer dependencies.
 4. Initializes a git repository.
 
-The scaffold takes about 30 seconds. When it finishes, you have a working app you can `npm run dev` (or `npx deepspace dev`) immediately, even before logging in.
+The scaffold takes about 30 seconds. When it finishes, you have a working app — but you'll need to log in before you can run it. `npx deepspace dev` calls into the platform to mint a development JWT and refuses to start without a session.
 
 ### Scaffold options
 
@@ -47,13 +47,18 @@ npm create deepspace@latest -- --help
 
 ## Log in to the CLI
 
-You can develop locally without logging in. You'll need to log in once before you can deploy, manage test accounts, or invoke billable integration endpoints.
+Login is required for every CLI command that touches the platform — including `dev`, `deploy`, test-account management, and billable integration endpoints. Plan to log in once before your first `npx deepspace dev`.
 
 ```bash
 npx deepspace login
 ```
 
-This opens your default browser for OAuth and waits for up to 10 minutes. After you authorize, the CLI writes a session file to `~/.deepspace/session`. The same session covers every DeepSpace app on the machine — you don't log in per project.
+This opens your default browser for OAuth and waits for up to 10 minutes. After you authorize, the CLI writes two files into `~/.deepspace/`:
+
+- `~/.deepspace/session` — the long-lived refresh token used to mint new JWTs.
+- `~/.deepspace/token` — the current short-lived JWT, refreshed automatically by other commands.
+
+The same session covers every DeepSpace app on the machine — you don't log in per project.
 
 Check your login state:
 
@@ -65,7 +70,7 @@ npx deepspace whoami --json   # machine-readable
 If the JWT has expired, `whoami` prints `Not logged in.` and exits with code 1 — re-run `login`.
 
 <Warning>
-The session file holds a long-lived refresh token. Treat `~/.deepspace/session` and your app's `.dev.vars` file as secret. Never commit either to version control.
+The session file holds a long-lived refresh token. Treat `~/.deepspace/session`, `~/.deepspace/token`, and your app's `.dev.vars` file as secret. Never commit any of them to version control.
 </Warning>
 
 ## Update the SDK

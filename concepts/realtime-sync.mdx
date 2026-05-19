@@ -42,16 +42,15 @@ Each scope is an independent DO with its own WebSocket. Subscriptions don't inte
 
 ## What the DO sends
 
-When a client connects, the DO sends an initial snapshot of all records the client has read access to. From that point forward, the DO broadcasts incremental updates:
+When a client connects, the DO sends an initial snapshot of all records the client has read access to. From that point forward, the DO broadcasts incremental updates as a single wire message type — `core.record_change` — carrying a `changeType: 'create' | 'update' | 'delete'` discriminator alongside the record envelope.
 
-| Event | When it fires |
+The SDK's client-side record store fans out each wire message into internal `record_created` / `record_updated` / `record_removed` notifications for the subscriptions layer, which `useQuery` reduces into a flat array. Those names are SDK internals; the wire vocabulary is always `core.record_change` + `changeType`:
+
+| Internal notification | Fired when the wire message carries… |
 |---|---|
-| `record_created` | A new record passes the caller's read check |
-| `record_updated` | An existing record's data changed |
-| `record_removed` | A record was deleted or no longer passes the read check |
-| `users_changed` | The users collection changed (role updates, presence heartbeats) |
-
-The SDK's record store reduces these events into a flat array that `useQuery` exposes.
+| `record_created` | `changeType: 'create'` and the record passes the caller's read check |
+| `record_updated` | `changeType: 'update'` for an already-visible record |
+| `record_removed` | `changeType: 'delete'`, or an update that takes the record outside the caller's read set |
 
 ## Consistency guarantees
 

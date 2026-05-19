@@ -9,7 +9,18 @@ This page documents every CLI command. For an overview and the dev loop, see [CL
 npx deepspace <command> [options]
 ```
 
-All commands support `--help` (or `-h`) and `--version` (or `-v`).
+All commands support `--help` (or `-h`). The top-level `deepspace` command also accepts `--version`.
+
+## `create`
+
+Shortcut for `npm create deepspace@latest`. Useful when you already have `deepspace` on your PATH (or as an npx target) and don't want to switch CLIs to scaffold a new app.
+
+```bash
+npx deepspace create                  # interactive scaffold
+npx deepspace create my-app           # named app
+```
+
+Internally this just runs `npm create deepspace@latest [name]` with stdio inherited.
 
 ## `dev`
 
@@ -17,16 +28,18 @@ Run the app locally with Vite + worker in-process. HMR on `localhost:5173`.
 
 ```bash
 npx deepspace dev
+npx deepspace dev ./my-app            # run from a specific app directory
 npx deepspace dev --port 5180         # parallel apps
-npx deepspace dev --prod              # UI local, workers point at production
+npx deepspace dev --prod              # workers point at production (real auth, real API)
 ```
 
-| Flag | Default | Description |
+| Arg / Flag | Default | Description |
 |---|---|---|
-| `--port <n>` | `5173` | Listening port. Vite uses `--strictPort` — fails loudly if held. |
-| `--prod` | off | Point the local UI at production workers (read-only smoke testing). |
+| `[dir]` | `.` | App directory (positional). |
+| `--port <n>` | `5173` (or `$DEEPSPACE_PORT`) | Listening port. Vite uses `--strictPort` — fails loudly if held. |
+| `--prod` | off | Use production workers (real auth, real API calls). |
 
-`dev` rewrites the 9 SDK-managed keys in `.dev.vars` on every run. User-added secrets (below the divider) are preserved.
+`dev` rewrites the SDK-managed keys in `.dev.vars` on every run. User-added secrets (below the divider) are preserved.
 
 ## `deploy`
 
@@ -34,7 +47,12 @@ Deploy to Workers for Platforms.
 
 ```bash
 npx deepspace deploy                  # live at <wrangler.name>.app.space
+npx deepspace deploy ./my-app         # deploy from a specific directory
 ```
+
+| Arg | Default | Description |
+|---|---|---|
+| `[dir]` | `.` | App directory (positional). |
 
 The subdomain comes from the `name` field in `wrangler.toml`. To change it, edit `wrangler.toml` before deploying — `deploy` doesn't accept a name override.
 
@@ -42,22 +60,32 @@ User secrets below the `.dev.vars` divider are uploaded as `secret_text` binding
 
 ## `undeploy`
 
-Tear down a deployed app, its subdomain, and its provisioned resources.
+Tear down a deployed app and its subdomain.
 
 ```bash
-npx deepspace undeploy
-npx deepspace undeploy --yes          # skip the confirmation prompt
+npx deepspace undeploy                # reads name from ./wrangler.toml
+npx deepspace undeploy my-app         # explicit app name
 ```
+
+| Arg | Default | Description |
+|---|---|---|
+| `[name]` | `wrangler.toml` `name` field | App name to undeploy (positional). |
 
 R2 buckets with files are **not** auto-deleted (preserves user uploads). Hyperdrive is never auto-provisioned and never auto-deleted.
 
 ## `login`
 
-Authenticate via GitHub or Google OAuth. Opens a browser tab and polls up to 10 minutes.
+Authenticate via GitHub or Google OAuth. Opens a browser tab and polls up to 10 minutes. For CI/agent contexts, an email + password mode is also supported.
 
 ```bash
-npx deepspace login
+npx deepspace login                                  # browser-based OAuth
+npx deepspace login --email me@x.test --password ******  # non-interactive
 ```
+
+| Flag | Description |
+|---|---|
+| `--email <addr>` | Email address (non-interactive mode). Requires `--password`. |
+| `--password <pw>` | Password (non-interactive mode). Requires `--email`. |
 
 The session is stored at `~/.deepspace/session` and is shared across all DeepSpace apps on the machine.
 
@@ -82,23 +110,37 @@ npx deepspace whoami
 npx deepspace whoami --json
 ```
 
-On not-signed-in: prints `Not logged in. Run `deepspace login`.` to stderr, exits 1.
+| Flag | Description |
+|---|---|
+| `--json` | Emit a single-line JSON object instead of human output. |
+
+Human output shows `Name`, `Email`, `UserID`, `Type` (`developer` / `test-account`), `Issuer`, and `Dashboard` URL. The JSON variant also includes `expiresAt`.
+
+On not-signed-in: prints an error to stderr (typically `Not signed in. Run \`deepspace login\`.`) and exits 1.
 
 ## `add`
 
 Install a scaffold feature into the current app.
 
 ```bash
-npx deepspace add --list              # discover available features
-npx deepspace add --info <name>       # inspect what a feature installs
-npx deepspace add <feature>           # install
+npx deepspace add --list                  # discover available features
+npx deepspace add --info <name>           # inspect what a feature installs
+npx deepspace add <feature>               # install into current dir
+npx deepspace add <feature> ./my-app      # install into specific dir
 ```
+
+| Arg / Flag | Description |
+|---|---|
+| `[feature]` | Feature to install (positional). |
+| `[dir]` | App directory (positional, default `.`). |
+| `--list`, `-l` | List available features and exit. |
+| `--info <name>` | Show details about a feature and exit. |
 
 Available features (subject to change — run `--list` for the current set):
 
 `admin-page`, `ai-chat`, `canvas`, `cron`, `docs`, `file-attachments`, `file-manager`, `integration-test`, `items`, `kanban`, `landing`, `leaderboard`, `messaging`, `presence-test`, `sidebar`, `tasks`, `testing`, `topbar`, `tree`
 
-Each feature installs source files, registers schemas, and runs `npm install` for any new dependencies.
+Each feature installs source files, registers schemas, and runs `npm install` for any new dependencies. The command runs `.deepspace/scripts/add-feature.cjs` from the target directory, so it must be a scaffolded DeepSpace app.
 
 ## `test`
 
@@ -115,7 +157,12 @@ npx deepspace test tests/foo.spec.ts  # one file
 npx deepspace test --port 5180        # match a parallel `dev`
 ```
 
-The runner regenerates `.dev.vars` against dev workers and forwards `$DEEPSPACE_PORT` to the Playwright child.
+| Arg / Flag | Default | Description |
+|---|---|---|
+| `[suite]` | smoke + api | Suite name (`smoke`, `api`, `e2e`, `unit`, `all`) or a `*.spec.ts` file path. |
+| `--port <n>` | `5173` (or `$DEEPSPACE_PORT`) | Port for Vite / Playwright's `webServer`. |
+
+`test` requires a logged-in user (to mint `APP_OWNER_JWT` for `.dev.vars`). It regenerates `.dev.vars` against dev workers and forwards `$DEEPSPACE_PORT` to the Playwright child.
 
 ## `screenshot`
 
@@ -127,6 +174,13 @@ npx deepspace screenshot http://localhost:5173/ out.png --full-page
 npx deepspace screenshot http://localhost:5173/ out.png --wait-for-timeout 500
 ```
 
+| Arg / Flag | Description |
+|---|---|
+| `<url>` | URL to capture (positional, required). |
+| `<output>` | Output image path (positional, required). |
+| `--full-page` | Capture the full scrollable page. |
+| `--wait-for-timeout <ms>` | Milliseconds to wait before capture. |
+
 ## `kill`
 
 Stop leaked workerd / wrangler / vite processes from prior `dev` runs.
@@ -137,36 +191,48 @@ npx deepspace kill --port 5180
 npx deepspace kill --all              # sweep every workerd/wrangler/vite
 ```
 
+| Flag | Default | Description |
+|---|---|---|
+| `--port <n>` | `5173` (or `$DEEPSPACE_PORT`) | Port whose listener (and its workerd children) to kill. |
+| `--all` | off | Also sweep stray `workerd` / `wrangler` / `vite` processes anywhere on the machine. |
+
 <Warning>
 **Don't kill a parallel session's processes.** If a sibling session is on 5173, run yours on `--port 5174` instead.
 </Warning>
 
 ## `integrations` and `invoke`
 
-Discover and call third-party integration endpoints. The two parent commands are interchangeable — `integrations list/info/invoke` is an alias for `invoke --list/--info/<target> --body`.
+Discover and call third-party integration endpoints. `deepspace invoke ...` is a top-level alias for `deepspace integrations invoke ...`, and `invoke --list` / `invoke --info <target>` are shortcuts for `integrations list` / `integrations info <target>`.
 
-### Discovery (no login required)
+### Discovery
 
 ```bash
 npx deepspace integrations list                                  # full catalog
 npx deepspace integrations list --json
 npx deepspace integrations info openai/chat-completion           # schema + example body
 npx deepspace integrations info openai/chat-completion --json
+
+npx deepspace invoke --list                                      # same as `integrations list`
+npx deepspace invoke openai/chat-completion --info               # same as `integrations info ...`
 ```
 
-### Calling endpoints (login required, billed to caller)
+### Calling endpoints (billed to the logged-in user)
 
 ```bash
-npx deepspace invoke openai/chat-completion --body '{"model":"claude-sonnet-4-6","messages":[...]}'
+npx deepspace integrations invoke openai/chat-completion --body '{"messages":[...]}'
+npx deepspace invoke openai/chat-completion --body '{"messages":[...]}'
 npx deepspace invoke openai/chat-completion --body-file req.json
 cat req.json | npx deepspace invoke openai/chat-completion --body-file -
 ```
 
-| Flag | Description |
-|---|---|
-| `--body '<json>'` | JSON request body inline |
-| `--body-file <path>` | Read body from file (or `-` for stdin) |
-| `--json` | Machine-readable output |
+| Flag | Alias | Description |
+|---|---|---|
+| `--body '<json>'` | `-d` | JSON request body inline |
+| `--body-file <path>` | `-f` | Read body from file (or `-` for stdin) |
+| `--json` |   | Print only the response JSON (machine-readable) |
+| `--timeout <ms>` |   | Request timeout in milliseconds (default `120000`) |
+| `--info` |   | (top-level `invoke` only) Print schema + example body for the target, then exit |
+| `--list` |   | (top-level `invoke` only) Print all available integrations, then exit |
 
 ## `domain`
 
@@ -190,9 +256,19 @@ npx deepspace domain detach <domain> --yes
 npx deepspace domain renew <domain> --auto on|off
 ```
 
-Most subcommands support `--json` for machine-readable output. `buy` and `detach` require `--yes` in non-TTY contexts.
+| Subcommand | Args / Flags |
+|---|---|
+| `search` | `<query>` (required), `--limit <n>` (default 10), `--json` |
+| `buy` | `<domain>` (required), `--app <name>`, `--yes`, `--no-open`, `--no-wait`, `--json` |
+| `list` | `--json` |
+| `status` | `<domain>` (required), `--json` |
+| `attach` | `<domain>` (required), `--app <name>`, `--json` |
+| `detach` | `<domain>` (required), `--yes` |
+| `renew` | `<domain>` (required), `--auto on\|off` (required) |
 
-Provisioning time varies by TLD: Cloudflare Registrar TLDs (`.com`, `.dev`, `.app`) take ~60–90 seconds; Porkbun TLDs (`.ai`, `.io`, `.me`) take 15–60 minutes.
+`--app` defaults to the `name` field in `./wrangler.toml`. `buy` and `detach` require `--yes` in non-TTY contexts (otherwise they refuse rather than hang).
+
+Provisioning time varies by TLD: Cloudflare Registrar TLDs (`.com`, `.dev`, `.app`) take ~60–90 seconds; Porkbun / NameSilo TLDs (`.ai`, `.io`, `.me`) take 15–60 minutes.
 
 ## `test-accounts`
 
@@ -207,28 +283,54 @@ npx deepspace test-accounts create --email alice-1@deepspace.test --password Pas
 
 # Delete
 npx deepspace test-accounts delete --email alice-1@deepspace.test
-npx deepspace test-accounts clear                # delete all
+npx deepspace test-accounts delete --id <id>
+npx deepspace test-accounts clear                # delete all (with confirm)
 npx deepspace test-accounts clear --label e2e    # delete labeled subset
 npx deepspace test-accounts clear --yes          # skip confirmation
 ```
 
-| Flag | Notes |
+| Subcommand | Flags |
 |---|---|
-| `--email` | Must end `@deepspace.test`. |
-| `--password` | Strong password. Stored in `~/.deepspace/test-accounts.json` (mode 0600). |
-| `--name` | Display name. |
-| `--label` | Optional tag for grouping (used by `clear --label`). |
+| `create` | `--email` (required, must end `@deepspace.test`), `--password` (required, min 8 chars), `--name`, `--label` |
+| `list` | — |
+| `delete` | `--email` _or_ `--id` (exactly one) |
+| `clear` | `--label <tag>`, `--yes` |
 
-Public sign-up is intentionally disabled; these accounts are the only way to obtain signed-in browser contexts for tests.
+Credentials are stored locally at `~/.deepspace/test-accounts.json` (mode 0600). Public sign-up is intentionally disabled; these accounts are the only way to obtain signed-in browser contexts for tests.
+
+## `managed-repos`
+
+Create and manage DeepSpace-owned private GitHub repositories. Intended for users who do not have or do not want to connect their own GitHub account; subject to per-developer quotas.
+
+```bash
+npx deepspace managed-repos list
+npx deepspace managed-repos list --json
+
+npx deepspace managed-repos create my-app
+npx deepspace managed-repos create my-app --appId cli-my-app --nameHint my-repo
+
+npx deepspace managed-repos token <repo-id>           # short-lived GitHub token
+npx deepspace managed-repos delete <repo-id>
+npx deepspace managed-repos delete <repo-id> --yes    # skip confirmation
+```
+
+| Subcommand | Args / Flags |
+|---|---|
+| `list` | `--json` |
+| `create` | `<appName>` (positional, required), `--appId`, `--nameHint`, `--json` |
+| `token` | `<repoId>` (positional, required), `--json` |
+| `delete` | `<repoId>` (positional, required), `--yes`, `--json` |
+
+`token` mints a short-lived GitHub access token scoped to the repo and prints a ready-to-use `git clone` command. `delete` removes the GitHub repository and counts against your daily delete quota.
 
 ## Global flags
 
 | Flag | Available on | Purpose |
 |---|---|---|
 | `--help`, `-h` | every command | Print help (ANSI-free) |
-| `--version`, `-v` | every command | Print CLI version |
+| `--version` | top-level `deepspace` | Print CLI version |
 | `--json` | discovery + status commands | Machine-readable output |
-| `--yes` | `undeploy`, `domain buy/detach`, `test-accounts clear` | Skip confirmation |
+| `--yes` | `domain buy`, `domain detach`, `test-accounts clear`, `managed-repos delete` | Skip confirmation prompt |
 
 ## Environment
 
@@ -236,9 +338,10 @@ The CLI reads a small set of environment variables:
 
 | Variable | Used by | Purpose |
 |---|---|---|
-| `DEEPSPACE_PORT` | `test`, `dev` | Override port |
-| `DEEPSPACE_SESSION_FILE` | login flow | Override session location (advanced) |
-| `DEBUG=deepspace:*` | every command | Verbose tracing |
+| `DEEPSPACE_PORT` | `dev`, `test`, `kill` | Default port when `--port` is not passed |
+| `DEEPSPACE_AUTH_URL` | `login`, `logout`, `test-accounts` | Override auth-worker URL (advanced/testing) |
+| `DEEPSPACE_API_URL` | `domain`, `invoke`, `integrations`, `managed-repos`, `deploy` | Override api-worker URL (advanced/testing) |
+| `DEEPSPACE_DEPLOY_URL` | `deploy`, `undeploy` | Override deploy-worker URL (advanced/testing) |
 
 ## See also
 

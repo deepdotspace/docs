@@ -13,21 +13,31 @@ import type { R2FileInfo, R2Scope } from 'deepspace'
 ## `useR2Files(options?)`
 
 ```ts
-function useR2Files(options?: { scope?: R2Scope }): {
-  upload:       (file: File | Blob, opts?: { originalName?: string }) => Promise<{ key: string }>
-  uploadBase64: (data: string, opts?: { originalName?: string }) => Promise<{ key: string }>
-  deleteFile:   (key: string) => Promise<void>
-  downloadFile: (key: string) => Promise<Blob>
-  readFile:     (key: string) => Promise<string>
-  list:         () => Promise<R2FileInfo[]>
-  getUrl:       (key: string) => string
+type R2UploadResult = {
+  success: boolean
+  key?: string
+  url?: string
+  name?: string
+  error?: string
+}
+
+function useR2Files(options?: R2Scope): {
+  upload:       (file: File | Blob, name?: string) => Promise<R2UploadResult>
+  uploadBase64: (base64Data: string, name: string, mimeType?: string) => Promise<R2UploadResult>
+  deleteFile:   (fileOrKey: R2FileInfo | string) => Promise<{ success: boolean; error?: string }>
+  downloadFile: (fileOrKey: R2FileInfo | string, fileName?: string) => Promise<{ success: boolean; error?: string }>
+  readFile:     (fileOrKey: R2FileInfo | string) => Promise<Response>
+  list:         (prefix?: string) => Promise<R2FileInfo[]>
+  getUrl:       (fileOrKey: R2FileInfo | string) => string
   isUploading:  boolean
 }
 ```
 
+`options` is the `R2Scope` itself — pass `{ scope: 'self' }` (or omit entirely; `'self'` is the only valid scope). Every method that takes a file accepts either an `R2FileInfo` object from `list()` or a raw key string.
+
 <Tabs>
   <Tab title="Upload">
-    `upload` accepts a `File` (from `<input type="file">` or a drag-drop event) or a `Blob`. Returns the storage key — a unique string identifying the uploaded file.
+    `upload` accepts a `File` (from `<input type="file">` or a drag-drop event) or a `Blob` and an optional display name. Returns `R2UploadResult` — check `success` and read the `key` field.
 
     ```tsx
     const { upload, isUploading } = useR2Files()
@@ -35,14 +45,15 @@ function useR2Files(options?: { scope?: R2Scope }): {
     async function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
       const file = e.target.files?.[0]
       if (!file) return
-      const { key } = await upload(file)
-      console.log('uploaded:', key)
+      const result = await upload(file, file.name)
+      if (!result.success) return console.error(result.error)
+      console.log('uploaded:', result.key)
     }
     ```
   </Tab>
 
   <Tab title="Upload (base64)">
-    Use when you have data as a Base64 string — for example, from `<canvas>` `toDataURL()`.
+    Use when you have data as a Base64 string — for example, from `<canvas>` `toDataURL()`. `name` is required; `mimeType` is optional.
 
     ```tsx
     const { uploadBase64 } = useR2Files()
@@ -51,12 +62,12 @@ function useR2Files(options?: { scope?: R2Scope }): {
     const dataUrl = canvas.toDataURL('image/png')
     const base64 = dataUrl.split(',')[1]
 
-    const { key } = await uploadBase64(base64, { originalName: 'drawing.png' })
+    const result = await uploadBase64(base64, 'drawing.png', 'image/png')
     ```
   </Tab>
 
   <Tab title="List">
-    `list()` is an async function — call it and store the result in component state rather than expecting a reactive array.
+    `list()` is an async function — call it and store the result in component state rather than expecting a reactive array. Pass a sub-prefix to filter.
 
     ```tsx
     import { useState, useEffect } from 'react'
@@ -73,25 +84,29 @@ function useR2Files(options?: { scope?: R2Scope }): {
   </Tab>
 
   <Tab title="Delete">
-    Removes the file from R2 and broadcasts the change. There is no recycle bin — deletes are immediate and irreversible.
+    Removes the file from R2 and broadcasts the change. Accepts either the full `R2FileInfo` from `list()` or a raw key string. There is no recycle bin — deletes are immediate and irreversible.
 
     ```tsx
     const { deleteFile } = useR2Files()
 
-    await deleteFile(key)
+    await deleteFile(file)        // R2FileInfo from list()
+    await deleteFile('reports/q1.pdf') // or a raw key
     ```
   </Tab>
 
   <Tab title="Read / download">
-    `getUrl(key)` returns a signed URL the browser can fetch directly. For programmatic access, use `downloadFile` for binary or `readFile` for text.
+    `getUrl()` returns a plain URL (no auth attached — only usable for unauthenticated reads). `downloadFile()` triggers a browser-side blob download and returns `{ success, error? }`. `readFile()` returns the raw `Response` so you can call `.text()`, `.blob()`, `.arrayBuffer()`, `.json()`, etc.
 
     ```tsx
     const { getUrl, downloadFile, readFile } = useR2Files()
 
-    <img src={getUrl(key)} alt="" />
+    <img src={getUrl(file)} alt="" />
 
-    const blob = await downloadFile(key)
-    const text = await readFile(key)
+    await downloadFile(file)                       // triggers Save As…
+    await downloadFile('reports/q1.pdf', 'q1.pdf') // explicit filename
+
+    const response = await readFile(file)
+    const text = await response.text()
     ```
   </Tab>
 </Tabs>
@@ -118,20 +133,14 @@ There is no `mimeType` / `contentType` field on `R2FileInfo`. Capture the MIME t
 ## Scoping — `R2Scope`
 
 ```ts
-type R2Scope =
-  | { type: 'global' }
-  | { type: 'user'; userId: string }
-  | { type: 'room'; roomId: string }
+type R2Scope = { scope?: 'self' }
 ```
 
-| Scope | Files visible to |
-|---|---|
-| `{ type: 'global' }` *(default)* | All users in the app |
-| `{ type: 'user', userId }` | Only the specified user |
-| `{ type: 'room', roomId }` | Only members of the room |
+The hook is always scoped to the current app (`scope: 'self'`) — the platform derives the bucket prefix from the request's hostname. There is no per-user, per-room, or cross-app scope option exposed by `useR2Files`.
 
 ```tsx
-const { upload, list } = useR2Files({ scope: { type: 'user', userId } })
+const { upload, list } = useR2Files()             // implicit { scope: 'self' }
+const { upload, list } = useR2Files({ scope: 'self' }) // equivalent
 ```
 
 ## Display helpers

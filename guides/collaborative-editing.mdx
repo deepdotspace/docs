@@ -42,31 +42,42 @@ The hook implicitly creates a Yjs document keyed by `(collection, recordId, fiel
 
 ## Structured collab data — `useYjsField`
 
-For fields that aren't plain text — lists, maps, ordered arrays — use `useYjsField`. It exposes the underlying `Y.Map` or `Y.Array` for direct manipulation:
+For fields that aren't plain text — lists, maps, ordered arrays — use `useYjsField`. It returns the raw `Y.Doc` plus the awareness instance and sync metadata so you can work with Yjs types directly:
 
 ```tsx
+import { useEffect, useState } from 'react'
 import { useYjsField } from 'deepspace'
+import * as Y from 'yjs'
 
 function KanbanBoard({ boardId }: { boardId: string }) {
-  const { value, doc, synced } = useYjsField<Y.Array<Card>>('boards', boardId, 'cards')
+  const { doc, synced, canWrite, updateCount } = useYjsField('boards', boardId, 'cards')
+
+  // useYjsField does NOT return a `value` field — read directly off the Y.Doc.
+  // `updateCount` ticks on every doc update so React re-renders.
+  const cardsArray = doc.getArray<Card>('cards')
+  const [cards, setCards] = useState<Card[]>(() => cardsArray.toArray())
+
+  useEffect(() => {
+    setCards(cardsArray.toArray())
+  }, [cardsArray, updateCount])
 
   function addCard(card: Card) {
-    doc?.getArray('cards').push([card])
+    if (!canWrite) return
+    cardsArray.push([card])
   }
 
   function moveCard(from: number, to: number) {
-    const arr = doc?.getArray('cards')
-    if (!arr) return
-    doc?.transact(() => {
-      const [card] = arr.toArray().splice(from, 1)
-      arr.delete(from, 1)
-      arr.insert(to, [card])
+    if (!canWrite) return
+    doc.transact(() => {
+      const card = cardsArray.get(from)
+      cardsArray.delete(from, 1)
+      cardsArray.insert(to, [card])
     })
   }
 
   return (
     <div>
-      {value?.map((card, i) => (
+      {cards.map((card, i) => (
         <CardView key={i} card={card} onMove={(to) => moveCard(i, to)} />
       ))}
     </div>
@@ -74,7 +85,7 @@ function KanbanBoard({ boardId }: { boardId: string }) {
 }
 ```
 
-Reach for `useYjsField` when you need to access Yjs's transaction and observation APIs directly. For simple text, stick with `useYjsText`.
+The hook returns `{ doc, awareness, synced, canWrite, updateCount }` — there's no `value`. Read off the Y.Doc with `doc.getArray(name)` / `doc.getMap(name)` and use `updateCount` (or a Yjs `observe`) to trigger React re-renders. For simple text, stick with `useYjsText`.
 
 ## Standalone collab docs — `useYjsRoom`
 
@@ -84,15 +95,17 @@ Sometimes the collab document isn't tied to a specific record — a shared scrat
 import { useYjsRoom } from 'deepspace'
 
 function Whiteboard({ sessionId }: { sessionId: string }) {
-  const { doc, synced } = useYjsRoom(sessionId, 'whiteboard')
+  const { doc, text, setText, synced, canWrite } = useYjsRoom(sessionId, 'whiteboard')
 
-  // doc is a Y.Doc; bind to any of its types
-  const shapes = doc?.getArray('shapes')
+  // `doc` is a Y.Doc; bind to any of its types. `text` / `setText` are
+  // convenience helpers for the field passed as the second argument
+  // (here `whiteboard`, a Y.Text).
+  const shapes = doc.getArray('shapes')
   // ...
 }
 ```
 
-The `docId` is any string. Two clients passing the same `docId` connect to the same Yjs document.
+`useYjsRoom` returns `{ doc, text, setText, synced, canWrite }`. The `docId` is any string. Two clients passing the same `docId` connect to the same Yjs document.
 
 ## Editor integrations
 
@@ -111,12 +124,13 @@ import Collaboration from '@tiptap/extension-collaboration'
 import { useYjsField } from 'deepspace'
 
 function RichTextEditor({ docId }: { docId: string }) {
+  // `doc` is always a Y.Doc — useYjsField never returns undefined for it.
   const { doc } = useYjsField('docs', docId, 'body')
   const editor = useEditor({
     extensions: [
       StarterKit.configure({ history: false }),
-      doc ? Collaboration.configure({ document: doc, field: 'prosemirror' }) : undefined,
-    ].filter(Boolean) as any,
+      Collaboration.configure({ document: doc, field: 'prosemirror' }),
+    ],
   })
 
   return <EditorContent editor={editor} />

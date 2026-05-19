@@ -76,17 +76,19 @@ function Paywall() {
 | Member | Type | Description |
 |---|---|---|
 | `tier` | `string` | Current plan slug. Free users return `'free'`. |
-| `status` | `string` | `'none' \| 'trialing' \| 'active' \| 'past_due' \| 'canceled' \| ...` |
+| `status` | `SubscriptionStatus` | `'none' \| 'trialing' \| 'active' \| 'past_due' \| 'canceled' \| ...` |
 | `entitled` | `boolean` | `true` iff status is `active` or `trialing`. |
-| `hasTier(slug)` | `(slug) => boolean` | Strict slug match **AND** entitled. |
-| `isAtLeast(slug)` | `(slug) => boolean` | Rank ≥ target **AND** entitled. |
+| `hasTier(slug)` | `(slug: string) => boolean` | Strict slug match **AND** entitled. |
+| `isAtLeast(slug)` | `(slug: string) => boolean` | Rank ≥ target **AND** entitled. |
 | `interval` | `'month' \| 'year' \| null` | Billing interval. |
-| `currentPeriodEnd` | `string` | ISO timestamp. |
+| `currentPeriodEnd` | `number \| null` | Unix seconds. |
 | `cancelAtPeriodEnd` | `boolean` | Pending cancellation flag. |
-| `trialEndsAt` | `string \| null` | Trial expiration. |
-| `plans` | `Plan[]` | Plan catalog. Pass to `<PricingTable plans={sub.plans} />`. |
-| `subscribe(slug, opts?)` | `(slug, { interval?, returnUrl?, cancelUrl? }) => void` | Starts Checkout; auto-redirects. |
-| `openPortal(returnUrl?)` | `(returnUrl?) => void` | Stripe Billing Portal for self-service. |
+| `trialEndsAt` | `number \| null` | Trial expiration (Unix seconds). |
+| `isLoading` | `boolean` | True until the first `/me` fetch resolves. |
+| `error` | `string \| null` | Last fetch error message, if any. |
+| `plans` | `PlanInfo[]` | Plan catalog. Pass to `<PricingTable plans={sub.plans} />`. |
+| `subscribe(planSlug, opts?)` | `(planSlug: string, opts?: { interval?, returnUrl?, cancelUrl? }) => Promise<SubscribeResult>` | Starts Checkout; auto-redirects when `result.url` is set. |
+| `openPortal(returnUrl?)` | `(returnUrl?: string) => Promise<{ url: string }>` | Stripe Billing Portal for self-service. |
 | `refresh()` | `() => Promise<void>` | Re-pull subscription state. |
 
 <Warning>
@@ -176,7 +178,7 @@ The [`useCheckout`](/sdk-reference/client/payments#usecheckout-productid--) hook
     const co = useCheckout()
 
     for (const p of co.purchases) {
-      console.log(p.productId, p.amountCents, p.refunded)
+      console.log(p.productId, p.amount, p.paidAt)
     }
 
     if (co.ownsProduct('pro_unlock')) {
@@ -190,11 +192,15 @@ The [`useCheckout`](/sdk-reference/client/payments#usecheckout-productid--) hook
 
 | Member | Type | Description |
 |---|---|---|
-| `chargeOnce(opts)` | `(opts) => void` | Starts Checkout; auto-redirects. |
+| `chargeOnce(opts)` | `(opts: ChargeOnceOpts) => Promise<ChargeOnceResult>` | Starts Checkout; auto-redirects to `result.url`. |
 | `purchases` | `Purchase[]` | Full purchase history. |
-| `owned` | `boolean` | `true` iff `productId` was passed to the hook AND a non-refunded purchase exists. |
-| `ownsProduct(id)` | `(productId) => boolean` | Pure check over `purchases`. |
+| `owned` | `boolean` | `true` iff `productId` was passed to the hook AND a matching purchase exists. |
+| `ownsProduct(productId)` | `(productId: string) => boolean` | Pure check over `purchases`. |
+| `isLoading` | `boolean` | True until the first purchases fetch resolves. |
+| `error` | `string \| null` | Last fetch / charge error, if any. |
 | `refresh()` | `() => Promise<void>` | Re-pull. |
+
+Each `Purchase` row has the shape `{ id, productId, name, amount, currency, paidAt }` — `amount` is in cents (post-tax `amount_total`), `productId` is `null` for ad-hoc charges, and `paidAt` is an ISO timestamp.
 
 ## Cancellation — `cancelSubscription`
 
@@ -222,7 +228,7 @@ app.post('/api/admin/refund', requireAdmin, async (c) => {
   const r = await refundInvoice(c, {
     invoiceId,                     // local UUID, NOT stripe inv_xxx
     amount: 500,                   // optional partial in cents
-    reason: 'requested_by_customer',
+    reason: 'requested_by_customer', // 'requested_by_customer' | 'duplicate' | 'fraudulent'
   })
   return c.json(r)
 })
@@ -264,12 +270,18 @@ The SDK ships a ready-made pricing table:
 import { PricingTable, useSubscription } from 'deepspace'
 
 function Pricing() {
-  const { plans } = useSubscription()
-  return <PricingTable plans={plans} />
+  const { plans, tier, subscribe } = useSubscription()
+  return (
+    <PricingTable
+      plans={plans}
+      currentTier={tier}
+      onSelect={(planSlug, interval) => subscribe(planSlug, { interval })}
+    />
+  )
 }
 ```
 
-Pass an `onCheckout` prop if you want to intercept the click and run analytics or pre-flight logic.
+`PricingTable` is stateless — `plans` and `currentTier` come from `useSubscription()`, and the required `onSelect(planSlug, interval)` callback decides what happens on click (typically forwarding to `subscribe`). Pass `interval="year"` to render yearly prices.
 
 ## Next steps
 

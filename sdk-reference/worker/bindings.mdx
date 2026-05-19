@@ -14,7 +14,10 @@ import {
   bindingManifestFromOutputConfig,
 } from 'deepspace/worker'
 
-import type { CustomBinding, ValidationError } from 'deepspace/worker'
+import type {
+  CustomBinding, CustomBindingManifest, ValidationError,
+  RunMigrationsResult,
+} from 'deepspace/worker'
 ```
 
 ## `runMigrations(db, migrations)`
@@ -25,7 +28,13 @@ Idempotently apply a list of SQL migrations to a D1 database. Designed to run at
 function runMigrations(
   db: D1Database,
   migrations: readonly string[],
-): Promise<{ fromVersion: number; toVersion: number; applied: number }>
+): Promise<RunMigrationsResult>
+
+interface RunMigrationsResult {
+  fromVersion: number
+  toVersion: number
+  applied: number
+}
 ```
 
 State is tracked in a meta-table `_dpc_migrations(idx INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)`.
@@ -56,11 +65,13 @@ await runMigrations(env.MY_DB, [
 
 Every deployed app gets a `USAGE_EVENTS` Analytics Engine binding automatically — don't declare it in `wrangler.toml`. The metering helpers write usage events keyed by `OWNER_USER_ID`.
 
+All three helpers take a `MeteringEnv` shape — `{ USAGE_EVENTS?, OWNER_USER_ID?, APP_NAME? }` — which the app's `Env` already satisfies because the deploy worker injects all three. The runtime `MeteringEnv` is intentionally weaker than `Env` so the helpers compile in shared utility code.
+
 ### `meterAi(env, model, fields)`
 
 ```ts
 function meterAi(
-  env: Env,
+  env: MeteringEnv,
   model: string,
   fields: { inputChars?: number; outputChars?: number; calls?: number },
 ): boolean
@@ -80,7 +91,7 @@ meterAi(env, '@cf/meta/llama-3.1-8b', {
 
 ```ts
 function meterVectorize(
-  env: Env,
+  env: MeteringEnv,
   indexName: string,
   op: 'query' | 'upsert' | 'delete' | 'getByIds',
   fields: { vectors?: number; dims?: number; storedCount?: number },
@@ -108,7 +119,7 @@ Generic fallback for any other binding (Browser Rendering, Hyperdrive, custom ki
 
 ```ts
 function meterUsage(
-  env: Env,
+  env: MeteringEnv,
   kind: string,
   fields: { id?: string; op?: string; units?: number; count?: number },
 ): boolean
@@ -128,9 +139,21 @@ All three helpers return `boolean` — `false` when `USAGE_EVENTS` is missing (l
 Per-`units` USD multipliers for dashboard rollup. Multiply `SUM(_sample_interval * doubles[1])` by the matching rate to get USD without re-querying Cloudflare's billing API.
 
 ```ts
-const COST_RATES: Record<string, number>
-// 'ai.input.tokens', 'ai.output.tokens', 'vectorize.queried.dims', 'vectorize.stored.dims', ...
+const COST_RATES = {
+  ai: {
+    /** USD per character (input or output). */
+    perChar: number,
+  },
+  vectorize: {
+    /** USD per queried dimension. */
+    queriedPerDim: number,
+    /** USD per stored dimension per month. */
+    storedPerDimPerMonth: number,
+  },
+} as const
 ```
+
+The shape is a nested object grouped by binding kind, not a flat record of dotted keys.
 
 ## Manifest validation
 
@@ -139,43 +162,92 @@ For tooling that introspects or generates binding manifests.
 ```ts
 const AUTO_PROVISION_SENTINEL: 'auto'
 
-const AUTO_PROVISIONABLE_TYPES: readonly [
-  'd1', 'kv_namespace', 'vectorize', 'r2_bucket', 'queue'
-]
+const AUTO_PROVISIONABLE_TYPES: Set<string>
+// 'd1', 'kv_namespace', 'vectorize', 'r2_bucket', 'queue'
 
-const ALLOWED_BINDING_TYPES: readonly [
-  'vectorize', 'ai', 'r2_bucket', 'kv_namespace',
-  'd1', 'queue', 'browser_rendering', 'analytics_engine', 'hyperdrive'
-]
+const ALLOWED_BINDING_TYPES: Set<string>
+// 'vectorize', 'ai', 'r2_bucket', 'kv_namespace',
+// 'd1', 'queue', 'browser_rendering', 'analytics_engine', 'hyperdrive'
 
-const RESERVED_BINDING_NAMES: readonly string[]
+const RESERVED_BINDING_NAMES: Set<string>
 // ASSETS, PLATFORM_WORKER, API_WORKER, APP_NAME, OWNER_USER_ID,
 // AUTH_JWT_PUBLIC_KEY, AUTH_JWT_ISSUER, AUTH_WORKER_URL,
 // APP_IDENTITY_TOKEN, APP_OWNER_JWT, INTERNAL_STORAGE_HMAC_SECRET, USAGE_EVENTS
 
-function validateBindingManifest(manifest: CustomBinding[]): ValidationError[]
+function validateBindingManifest(
+  manifest: unknown,
+):
+  | { valid: true; bindings: CustomBindingManifest }
+  | { valid: false; errors: ValidationError[] }
+
 function isAutoProvision(b: CustomBinding): boolean
-function bindingManifestFromOutputConfig(config: object): CustomBinding[]
+
+function bindingManifestFromOutputConfig(
+  outputConfig: Record<string, unknown>,
+): CustomBindingManifest
+
+interface ValidationError {
+  /** Undefined for top-level shape failures (e.g. manifest is not an array). */
+  binding?: CustomBinding
+  reason: string
+}
 ```
 
-`validateBindingManifest` returns an empty array if the manifest is valid. Each `ValidationError` carries `{ binding, reason }`.
+`validateBindingManifest` returns a discriminated union: on success, `{ valid: true, bindings }`; on failure, `{ valid: false, errors }` carrying one or more `ValidationError`s.
+
+The three name/type sets are exported as `Set<string>` instances, not tuples — use `.has(...)` rather than indexing.
 
 ## `CustomBinding` (wire type)
 
 ```ts
 type CustomBinding =
-  | { type: 'vectorize'; name: string; index_name: string; dimensions?: number; metric?: string }
-  | { type: 'r2_bucket'; name: string; bucket_name: string }
-  | { type: 'kv_namespace'; name: string; id: string; title?: string }
-  | { type: 'd1'; name: string; database_id: string; database_name?: string }
-  | { type: 'queue'; name: string; queue: string }
+  | {
+      type: 'vectorize'
+      name: string
+      /** Either a pre-existing index name or the literal `"auto"`. */
+      index_name: string
+      /** Required when `index_name === "auto"`. */
+      dimensions?: number
+      /** Required when `index_name === "auto"`. */
+      metric?: 'cosine' | 'euclidean' | 'dot-product'
+    }
   | { type: 'ai'; name: string }
+  | {
+      type: 'r2_bucket'
+      name: string
+      /** Either a pre-existing bucket name or the literal `"auto"`. */
+      bucket_name: string
+    }
+  | {
+      type: 'kv_namespace'
+      name: string
+      /** Either a pre-existing KV namespace ID or the literal `"auto"`. */
+      namespace_id: string
+      /** Required when `namespace_id === "auto"`. Human-readable title. */
+      title?: string
+    }
+  | {
+      type: 'd1'
+      name: string
+      /** Either a pre-existing D1 database UUID or the literal `"auto"`. */
+      id: string
+      /** Required when `id === "auto"`. Human-readable database name. */
+      database_name?: string
+    }
+  | {
+      type: 'queue'
+      name: string
+      /** Either a pre-existing queue name or the literal `"auto"`. */
+      queue_name: string
+    }
   | { type: 'browser_rendering'; name: string }
-  | { type: 'analytics_engine'; name: string; dataset: string }
+  | { type: 'analytics_engine'; name: string; dataset?: string }
   | { type: 'hyperdrive'; name: string; id: string }
+
+type CustomBindingManifest = CustomBinding[]
 ```
 
-The deploy worker validates inbound manifests against this shape before forwarding to Workers for Platforms.
+The deploy worker validates inbound manifests against this shape before forwarding to Workers for Platforms. The exact ID field varies by binding kind — `kv_namespace` uses `namespace_id`, `d1` uses `id`, `queue` uses `queue_name`, `r2_bucket` uses `bucket_name`, and `vectorize` uses `index_name`. `analytics_engine.dataset` is optional.
 
 ## See also
 

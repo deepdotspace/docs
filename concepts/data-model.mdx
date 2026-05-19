@@ -52,7 +52,7 @@ export const itemsSchema: CollectionSchema = {
   columns: [
     { name: 'title', storage: 'text', interpretation: 'plain' },
     { name: 'status', storage: 'text', interpretation: { kind: 'select', options: ['draft', 'published'] } },
-    { name: 'priority', storage: 'integer', interpretation: 'number' },
+    { name: 'priority', storage: 'number', interpretation: 'plain' },
   ],
   visibilityField: { field: 'status', value: 'published' },
   permissions: {
@@ -76,20 +76,31 @@ Schemas are **baked in at deploy time** — there is no runtime schema registry.
 
 Every column has a `storage` type and an `interpretation`:
 
-| `storage` | SQLite type | What it holds |
+| `storage` | What it holds |
+|---|---|
+| `'text'` | Strings, IDs, ISO timestamps, JSON blobs |
+| `'number'` | Integers, floats, booleans (stored as `0`/`1`), and date/datetime values (stored as Unix seconds) |
+
+`storage` is the underlying SQLite affinity. There are only two values — everything that isn't a string lands in `'number'`.
+
+`interpretation` tells the SDK how to encode/decode the value. It is either the bare string `'plain'` or an object with a `kind` discriminator:
+
+| Interpretation | Typical `storage` | Notes |
 |---|---|---|
-| `text` | TEXT | Strings, IDs, JSON-encoded blobs |
-| `integer` | INTEGER | Numbers, booleans, timestamps |
-| `real` | REAL | Floating-point numbers |
-| `blob` | BLOB | Binary data (rare in app code) |
+| `'plain'` | either | Pass-through. Use this for raw numbers and free-form text. |
+| `{ kind: 'currency', symbol, decimals }` | `'number'` | Strips currency symbols / commas on write. |
+| `{ kind: 'date', format? }` | `'text'` or `'number'` | ISO date string in text; Unix seconds in number. |
+| `{ kind: 'datetime', format? }` | `'text'` or `'number'` | Same coercion as `date`. |
+| `{ kind: 'boolean', trueLabel?, falseLabel? }` | `'number'` | Stored as `0` / `1`. |
+| `{ kind: 'percent', decimals? }` | `'number'` | Accepts `"42%"` strings; stores `0.42`. |
+| `{ kind: 'select', options: string[] }` | `'text'` | Constrained enum. |
+| `{ kind: 'multiselect', options: string[] }` | `'text'` | JSON-encoded array of selected options. |
+| `{ kind: 'url' }` | `'text'` | URL string. |
+| `{ kind: 'email' }` | `'text'` | Email string. |
+| `{ kind: 'json' }` | `'text'` | Auto `JSON.stringify` on write, auto `JSON.parse` on read. |
+| `{ kind: 'reference', targetTable, displayColumn }` | `'text'` | Foreign-key-style pointer to another collection. |
 
-`interpretation` tells the SDK how to encode/decode values:
-
-- `'plain'` — pass through unchanged
-- `'number'` / `'boolean'` — type coercion
-- `{ kind: 'select', options: [...] }` — constrained enum
-- `{ kind: 'json' }` — serialized object or array (auto `JSON.stringify` on write, auto `JSON.parse` on read)
-- `{ kind: 'date' }` — ISO timestamp stored as text
+The full union is defined as `ColumnInterpretation` in `deepspace/worker`. Only `'plain'` works as a bare string; every other kind must be passed as an object. There is no `'number'` interpretation — express numeric columns as `storage: 'number'` with `interpretation: 'plain'`.
 
 ```ts
 { name: 'tags', storage: 'text', interpretation: { kind: 'json' } }
@@ -168,8 +179,10 @@ When you call `useMutations.create(...)`, the SDK runs through six steps:
 2. **WebSocket dispatch.** A typed message is sent to the `AppRecordRoom` Durable Object.
 3. **RBAC check.** The DO verifies the caller's JWT against the collection's permissions.
 4. **SQLite write.** The DO persists the record in its local SQLite database.
-5. **Broadcast.** The DO sends the new record to every connected client whose RBAC allows read access.
+5. **Broadcast.** The DO sends a `core.record_change` envelope (with `changeType: 'create' | 'update' | 'delete'`) to every connected client whose RBAC allows read access.
 6. **Reconcile.** Other clients apply the update; the originating client confirms its optimistic state.
+
+On the wire there is a single record-change message: `core.record_change`, carrying a `changeType` discriminator. The client store fans this out into internal `record_created` / `record_updated` / `record_removed` notifications for the React subscriptions — those names are SDK-internal and not part of the wire vocabulary.
 
 If the server rejects the write — an RBAC denial or a schema validation failure — the optimistic update rolls back automatically.
 

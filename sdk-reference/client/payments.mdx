@@ -19,30 +19,54 @@ import {
 ## `useSubscription()`
 
 ```ts
+type SubscriptionStatus =
+  | 'none' | 'trialing' | 'active' | 'past_due' | 'canceled'
+  | 'incomplete' | 'incomplete_expired' | 'unpaid' | 'paused'
+
+type PlanPrice = { interval: 'month' | 'year'; priceCents: number; currency?: string }
+
+type PlanInfo = {
+  slug: string
+  rank: number
+  name: string
+  trialDays?: number | null
+  prices: PlanPrice[]
+}
+
+type SubscribeResult = {
+  url: string | null
+  immediate: boolean
+  requiresPayment?: boolean
+  hostedInvoiceUrl?: string | null
+}
+
 function useSubscription(): {
   // State
-  tier: string                          // current plan slug; 'free' if no plan
-  status: 'none' | 'trialing' | 'active' | 'past_due' | 'canceled' | string
-  entitled: boolean                     // true iff status is active or trialing
+  tier: string                              // current plan slug; 'free' if no plan
+  status: SubscriptionStatus
+  entitled: boolean                          // true iff status is active or trialing
   interval: 'month' | 'year' | null
-  currentPeriodEnd: string | null       // ISO timestamp
+  currentPeriodEnd: number | null            // unix seconds
   cancelAtPeriodEnd: boolean
-  trialEndsAt: string | null
-  plans: Plan[]                         // catalog from src/subscriptions.ts
+  trialEndsAt: number | null                 // unix seconds
+  plans: PlanInfo[]                          // catalog from /me; pass straight to <PricingTable>
   isLoading: boolean
+  error: string | null
 
   // Predicates
-  hasTier:   (slug: string) => boolean  // strict match + entitled
-  isAtLeast: (slug: string) => boolean  // rank ≥ target + entitled
+  hasTier:   (slug: string) => boolean       // strict slug match AND entitled
+  isAtLeast: (slug: string) => boolean       // rank ≥ target AND entitled
 
-  // Actions (browser-redirect)
-  subscribe:  (slug: string, opts?: { interval?: 'month' | 'year'; returnUrl?: string; cancelUrl?: string }) => void
-  openPortal: (returnUrl?: string) => void
+  // Actions — both navigate the browser to Stripe Checkout / portal automatically
+  subscribe:  (planSlug: string, opts?: { interval?: 'month' | 'year'; returnUrl?: string; cancelUrl?: string }) => Promise<SubscribeResult>
+  openPortal: (returnUrl?: string) => Promise<{ url: string }>
 
   // Refresh
   refresh: () => Promise<void>
 }
 ```
+
+`subscribe` and `openPortal` redirect the page when they receive a URL from the server. Even though they return a promise, the page will usually navigate away before it resolves — only `await` them when you specifically need to inspect the result (e.g., `immediate: true` in-place plan changes).
 
 <Warning>
 **Gate features on `hasTier` / `isAtLeast`, never on `tier` alone.** A `past_due` Pro subscriber keeps `tier === 'pro'` but `entitled === false`.
@@ -51,13 +75,28 @@ function useSubscription(): {
 ## `useCheckout({ productId?, ... })`
 
 ```ts
+type ChargeOnceResult = { url: string }
+
+type Purchase = {
+  id: string
+  productId: string | null
+  name: string
+  amount: number      // cents, post-tax (Stripe's amount_total)
+  currency: string
+  paidAt: string      // ISO timestamp
+}
+
 function useCheckout(options?: { productId?: string }): {
   chargeOnce: (opts:
     | { productId: string; returnUrl?: string; cancelUrl?: string }
-    | { amount: number; name: string; description?: string; returnUrl?: string; cancelUrl?: string }
-  ) => void
+    | { amount: number; name: string; description?: string; returnUrl?: string; cancelUrl?: string; productId?: never }
+  ) => Promise<ChargeOnceResult>
+  isLoading: boolean
+  error: string | null
+
   purchases: Purchase[]
-  owned: boolean                           // requires productId on hook
+  /** True iff `options.productId` was passed AND a matching purchase exists. */
+  owned: boolean
   ownsProduct: (productId: string) => boolean
   refresh: () => Promise<void>
 }
@@ -65,27 +104,36 @@ function useCheckout(options?: { productId?: string }): {
 
 Two modes:
 
-- **Product mode** — pass `{ productId }` to both the hook and `chargeOnce`. Entitlement is checked via `owned` / `ownsProduct`.
-- **Ad-hoc mode** — pass `{ amount, name }` to `chargeOnce`. The purchase has `productId: null` and **cannot** be used to gate features.
+- **Product mode** — pass `{ productId }` to both the hook and `chargeOnce`. The server resolves the amount and name from your declared product catalog. Entitlement is checked via `owned` / `ownsProduct`.
+- **Ad-hoc mode** — pass `{ amount, name }` (and optionally `description`) to `chargeOnce`. The purchase has `productId: null` and **cannot** be used to gate features.
 
-## `<PricingTable plans={...} />`
+`chargeOnce` redirects the browser to Stripe Checkout on success, so callers usually don't see the promise resolve — `await` is only meaningful when you want to inspect the URL or surface an error before redirecting.
 
-A ready-made pricing UI wired to the plan catalog.
+## `<PricingTable plans={...} onSelect={...} />`
+
+A ready-made pricing UI wired to the plan catalog. Stateless — pass the plan catalog in and call `subscribe()` from your `onSelect` handler.
 
 ```tsx
 import { PricingTable, useSubscription } from 'deepspace'
 
 function Pricing() {
-  const { plans } = useSubscription()
-  return <PricingTable plans={plans} />
+  const { plans, tier, subscribe } = useSubscription()
+  return (
+    <PricingTable
+      plans={plans}
+      currentTier={tier}
+      onSelect={(slug, interval) => subscribe(slug, { interval })}
+    />
+  )
 }
 ```
 
 | Prop | Type | Description |
 |---|---|---|
-| `plans` | `Plan[]` | Plans from `useSubscription().plans` |
-| `onCheckout` | `(slug: string, interval: 'month' \| 'year') => void` (optional) | Intercept clicks |
-| `className` | `string` | Tailwind utilities applied to the outer container |
+| `plans` | `PlanInfo[]` | Plans from `useSubscription().plans`. |
+| `interval` | `'month' \| 'year'` *(optional)* | Which interval to show prices for. Defaults to `'month'`. |
+| `currentTier` | `string` *(optional)* | The viewer's current plan slug — disables that plan's button and labels it "Current plan". |
+| `onSelect` | `(planSlug: string, interval: 'month' \| 'year') => void \| Promise<void>` | Called when the user clicks a plan's button. Wire this to `useSubscription().subscribe`. |
 
 ## Server helpers
 
@@ -94,14 +142,30 @@ function Pricing() {
 Throws if the caller's subscription doesn't meet the requirement. Use inside Hono route handlers.
 
 ```ts
-function requireSubscription(c: Context, opts:
-  | { tier: string }      // strict slug match
-  | { atLeast: string }   // rank ≥ target
-): Promise<SubscriptionState>
+type SubscriptionRead = {
+  tier: string
+  status: SubscriptionStatus
+  currentPeriodEnd: number | null
+  cancelAtPeriodEnd: boolean
+  trialEndsAt: number | null
+  plans: PlanInfo[]
+}
 
-class SubscriptionAuthError extends Error      // 401-shaped
-class SubscriptionRequiredError extends Error  // 402-shaped, exposes .required
+function requireSubscription(
+  c: Context,
+  opts: { tier?: string; atLeast?: string },
+): Promise<SubscriptionRead>
+
+class SubscriptionAuthError extends Error {       // 401-shaped — identity failure
+  readonly status: number
+}
+class SubscriptionRequiredError extends Error {   // 402-shaped — tier failure
+  readonly required: string
+  readonly current: string
+}
 ```
+
+Both `tier` and `atLeast` are optional. Pass `tier` for a strict slug match, `atLeast` for a rank-or-higher check, or both. The helper always enforces the entitlement gate first (status must be `active` or `trialing` — `free` always passes).
 
 ```ts
 app.get('/api/premium', async (c) => {
@@ -118,42 +182,66 @@ app.get('/api/premium', async (c) => {
 
 ### `getSubscription(c)`
 
-Read-only variant. Returns the subscription state without throwing.
+Read-only variant. Throws `SubscriptionAuthError` for 401/403 from the api-worker, or a generic `Error` for other failures.
 
 ```ts
-function getSubscription(c: Context): Promise<SubscriptionState | null>
+function getSubscription(c: Context): Promise<SubscriptionRead>
 ```
 
 ### `cancelSubscription(c, opts)`
 
-Cancel one user or every user on a retired plan. Requires app owner JWT.
+Cancel one user or every user on a retired plan. Requires the inbound request to carry the app-owner's JWT — the api-worker rejects anyone else.
 
 ```ts
-function cancelSubscription(c: Context, opts:
-  | { userId: string; atPeriodEnd?: boolean }
-  | { planSlug: string; atPeriodEnd?: boolean }
-): Promise<{ canceled: number; hasMore: boolean }>
+function cancelSubscription(
+  c: Context,
+  opts: {
+    userId?: string       // mutually exclusive with planSlug
+    planSlug?: string     // mutually exclusive with userId
+    atPeriodEnd?: boolean // default true
+    reason?: string       // optional audit string
+  },
+): Promise<{
+  success: boolean
+  canceled: number
+  failures: Array<{ stripeSubscriptionId: string; error: string }>
+  atPeriodEnd: boolean
+  hasMore: boolean
+}>
 
-class CancelSubscriptionError extends Error
+class CancelSubscriptionError extends Error {
+  readonly status: number
+}
 ```
 
-Batched at 50. Loop on `hasMore`.
+Batched at 50. Loop the call while `hasMore` is true — `cancel_at_period_end` is idempotent so re-flagging is a no-op.
 
 ### `refundInvoice(c, opts)`
 
 Refund a charge by its local invoice ID (not the Stripe `inv_xxx` ID).
 
 ```ts
-function refundInvoice(c: Context, opts: {
-  invoiceId: string
-  amount?: number               // cents; full refund if omitted
-  reason?: 'requested_by_customer' | 'duplicate' | 'fraudulent'
-}): Promise<{ refunded: number; refundId: string }>
+function refundInvoice(
+  c: Context,
+  opts: {
+    invoiceId: string
+    amount?: number                                    // cents; full refund if omitted
+    reason?: 'requested_by_customer' | 'duplicate' | 'fraudulent'
+    requestNonce?: string                              // idempotency key; auto-generated if omitted
+  },
+): Promise<{
+  success: boolean
+  stripeRefundId: string
+  amountRefunded: number
+  status: 'pending' | 'succeeded' | 'failed' | 'canceled' | 'requires_action' | null
+}>
 
-class RefundError extends Error
+class RefundError extends Error {
+  readonly status: number
+}
 ```
 
-Constraints: 90-day window, 50 per 24h per app, no overdraw.
+Constraints: 90-day window, 50 per 24h per app, no overdraw. As with `cancelSubscription`, the inbound request must carry the app-owner's JWT.
 
 ## Plan manifest types
 

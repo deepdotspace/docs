@@ -27,7 +27,7 @@ A DeepSpace deployment has two halves: the worker you write, and the platform wo
 
 ## Your worker
 
-The scaffolded worker is a Hono app that handles four classes of request:
+The scaffolded worker is a Hono app that handles six classes of request:
 
 | Route | What it serves |
 |---|---|
@@ -85,7 +85,7 @@ These helpers prefer service bindings (set up automatically on deploy) and fall 
 
 Your Durable Object trusts the identity passed to it. The worker is the only place to scrub spoofed claims, so the SDK enforces two layers of scrubbing:
 
-**Per-app WebSocket route (`wsRoute`)** — strips `userId`, `userName`, `userEmail`, `userImageUrl`, `role`, and `token` from the URL on every upgrade, then re-applies identity only from a verified JWT. Three states are possible:
+**Per-app WebSocket route (`wsRoute`)** — the scaffold ships a `wsRoute` helper defined inline in `worker.ts` (it is not an SDK export — look for the `function wsRoute(...)` declaration near the bottom of the file). It strips `userId`, `userName`, `userEmail`, `userImageUrl`, `role`, and `token` from the URL on every upgrade, then re-applies identity only from a verified JWT. Three states are possible:
 
 - **No token** → anonymous (DO assigns `anon-<uuid>`)
 - **Invalid token** → 401
@@ -94,7 +94,7 @@ Your Durable Object trusts the identity passed to it. The worker is the only pla
 **Platform worker `/api/*` passthrough** — same scrubbing for WebSocket upgrades, plus overwriting `X-User-Id` and stripping `X-App-Action` on HTTP forwards. Cross-app scopes (`workspace:*`, `dir:*`, `conv:*`) require a valid JWT — no anonymous access.
 
 <Warning>
-**Never put identity in WebSocket URLs or `/api/*` headers.** The starter `wsRoute` strips them; identity always comes from the JWT subject. There is no client-side override.
+**Never put identity in WebSocket URLs or `/api/*` headers.** The scaffold's inline `wsRoute` helper strips them; identity always comes from the JWT subject. There is no client-side override.
 </Warning>
 
 ## Cross-app shared scopes
@@ -113,7 +113,7 @@ If your app needs to read or write `workspace:*`, `dir:*`, or `conv:*` scopes th
   </Step>
 
   <Step title="Proxy shared scopes in worker.ts">
-    Replace the default `wsRoute` with a small router:
+    Wrap the scaffold's inline `wsRoute` helper in a small router so cross-app scopes go to the platform instead of your DO:
 
     ```ts
     import { platformWorkerFetch } from 'deepspace/worker'

@@ -36,10 +36,28 @@ Reach for it when:
 ## Imperative API
 
 ```ts
-applyDeepSpaceTheme(config: ThemeConfig, root?: HTMLElement): void
+type DeepSpaceThemeConfig = {
+  primaryColor: string
+  panelColor?: string
+  secondaryColor: string
+  accentColor: string
+  accentContrastColor?: string         // default '#ffffff'
+  textColor: string
+  shadowColor?: string                 // default '#000000'
+  borderColor?: string                 // defaults to secondaryColor
+  backgroundColor?: string             // defaults to primaryColor
+  highlightColor?: string              // default '#ffffff'
+  glassmorphism?: boolean              // default true
+}
+
+applyDeepSpaceTheme(config: DeepSpaceThemeConfig, root?: HTMLElement): void
 clearDeepSpaceTheme(root?: HTMLElement): void
-readThemeFromDOM(root?: HTMLElement): ThemeConfig
-applyUIThemeTokens(theme: 'light' | 'dark', root?: HTMLElement, accent?: string): void
+readThemeFromDOM(root?: HTMLElement): DeepSpaceThemeConfig
+applyUIThemeTokens(
+  theme: 'light' | 'dark',
+  root?: HTMLElement,
+  accent?: { color: string; hover: string; secondary: string },
+): void
 ```
 
 | Function | Purpose |
@@ -47,9 +65,9 @@ applyUIThemeTokens(theme: 'light' | 'dark', root?: HTMLElement, accent?: string)
 | `applyDeepSpaceTheme` | Sets the `--theme-*` CSS variables consumed by cross-app surfaces. |
 | `clearDeepSpaceTheme` | Removes theme variables. |
 | `readThemeFromDOM` | Inspects `--color-*` tokens and derives a theme config. |
-| `applyUIThemeTokens` | Sets `UI_TOKENS_LIGHT` / `UI_TOKENS_DARK` for dark/light mode switches. |
+| `applyUIThemeTokens` | Sets the static `--ui-*` tokens (surfaces, text, borders) for the chosen mode. The optional `accent` overrides the accent/hover/secondary triplet — if omitted, the current `--theme-accent` / `--theme-secondary` are read from computed styles. |
 
-`DEEPSPACE_THEME_PROPERTIES` is the list of CSS custom properties the theme defines — useful for introspection.
+`DEEPSPACE_THEME_PROPERTIES` is the readonly tuple of CSS custom properties the theme defines — useful for introspection or building custom clear logic.
 
 ## User colors
 

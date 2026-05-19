@@ -8,11 +8,13 @@ The scaffolded `worker.ts` already uses these for every cross-worker call. They 
 ```ts
 import {
   apiWorkerFetch, platformWorkerFetch, authWorkerFetch,
+  resolveApiTransport,
   createScopedR2Handler,
 } from 'deepspace/worker'
 
 import type {
   ApiWorkerEnv, PlatformWorkerEnv, AuthWorkerEnv,
+  ScopedR2Config, ScopedR2Handler, ScopedR2Auth, ScopeContext, PrefixResult,
 } from 'deepspace/worker'
 ```
 
@@ -68,6 +70,8 @@ app.get('/ws/:roomId', async (c) => {
 })
 ```
 
+`wsRoute` in the example above is **not** an SDK export — it's a small helper defined locally in the scaffolded `worker.ts` (around line 345 of `templates/starter/worker.ts`). It owns the JWT verification + URL rewriting boilerplate for WebSocket routes. Apps are free to edit or replace it.
+
 ## `authWorkerFetch(env, path, init?)`
 
 Fetch the auth-worker (Better Auth, JWT issuance, OAuth flows).
@@ -80,11 +84,26 @@ function authWorkerFetch(
 ): Promise<Response>
 
 interface AuthWorkerEnv {
-  AUTH_WORKER_URL: string    // required — no service binding by design
+  /**
+   * HTTPS URL for the auth-worker. Optional on the type so apps can declare
+   * a partial env shape during local bring-up, but the function throws if it's
+   * unset at call time.
+   */
+  AUTH_WORKER_URL?: string
 }
 ```
 
-URL-only by design — the auth-worker has no service binding, which keeps `Set-Cookie` headers verbatim over plain HTTPS. (Service bindings strip some headers in transit.)
+URL-only by design — the auth-worker has no service binding, which keeps `Set-Cookie` headers verbatim over plain HTTPS. (Service bindings strip some headers in transit.) Throws if `AUTH_WORKER_URL` is missing.
+
+## `resolveApiTransport(env)`
+
+Exported for the AI helper, which needs the URL form to rewrite an internal `https://api-worker.internal` placeholder before calling provider SDKs. Most apps don't need this.
+
+```ts
+function resolveApiTransport(env: ApiWorkerEnv):
+  | { kind: 'binding'; fetcher: Fetcher }
+  | { kind: 'url'; baseUrl: string }
+```
 
 ## Production note
 
@@ -104,9 +123,41 @@ service = "deepspace-platform"
 
 ## R2 helpers
 
-### `createScopedR2Handler(...)`
+### `createScopedR2Handler(config)`
 
-Route handler for scoped R2 reads/writes. The scaffold uses this implicitly via the `useR2Files` client hook — most apps don't call it directly.
+Factory that builds a route handler for prefix-scoped R2 reads/writes. The scaffold uses this implicitly via the `useR2Files` client hook — most apps don't call it directly.
+
+```ts
+function createScopedR2Handler(config: ScopedR2Config): ScopedR2Handler
+
+interface ScopedR2Config {
+  /**
+   * Resolve the R2 key prefix for the given scope.
+   * Called with the `?scope=` query param value (default: 'self').
+   */
+  resolvePrefix(scope: string, ctx: ScopeContext): PrefixResult
+  /** Require a non-null userId for upload and delete. Default: true. */
+  requireAuthForMutations?: boolean
+}
+
+interface ScopeContext {
+  userId: string | null
+  url: URL
+}
+
+type PrefixResult =
+  | { prefix: string; error?: undefined }
+  | { prefix?: undefined; error: string }
+
+type ScopedR2Handler = (
+  request: Request,
+  url: URL,
+  bucket: R2Bucket,
+  auth: { userId: string | null },
+) => Promise<Response>
+```
+
+Security guarantees: download/delete keys are validated against the resolved prefix, path traversal (`..`) is rejected at the entry point, and mutations require a non-null userId by default.
 
 ## See also
 

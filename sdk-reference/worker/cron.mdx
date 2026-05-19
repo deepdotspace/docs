@@ -5,7 +5,7 @@ description: "`CronRoom`, `CronTask`, and `buildCronContext`."
 
 ```ts
 import { CronRoom, buildCronContext } from 'deepspace/worker'
-import type { CronTask, CronExecution, CronRoomConfig } from 'deepspace/worker'
+import type { CronTask, CronExecution, CronRoomConfig, CronContext } from 'deepspace/worker'
 ```
 
 ## `CronRoom<E>`
@@ -15,7 +15,7 @@ See [Rooms reference → CronRoom](/sdk-reference/worker/rooms#cronroom-e) for t
 ## `CronTask`
 
 ```ts
-type CronTask = {
+interface CronTask {
   name: string
   intervalMinutes?: number     // mutually exclusive with schedule
   schedule?: string            // 5-field cron expression
@@ -31,17 +31,18 @@ Cron mode is DST-aware — the wall-clock comparison happens after the timezone 
 ## `CronExecution`
 
 ```ts
-type CronExecution = {
+interface CronExecution {
   taskName: string
   startedAt: string
-  completedAt: string
+  /** Null while the task is still running. */
+  completedAt: string | null
   success: boolean
   durationMs: number
   error?: string
 }
 ```
 
-Stored in the DO's history and streamed to `useCronMonitor` subscribers.
+Stored in the DO's history and streamed to `useCronMonitor` subscribers. The `lastRunAt` field on a task state row is similarly nullable until the task fires at least once.
 
 ## `buildCronContext(env, ownerUserId, roomId?)`
 
@@ -49,21 +50,27 @@ Returns a context for use inside `runTask`. Operations run as the app owner, byp
 
 ```ts
 function buildCronContext(
-  env: Env,
+  env: {
+    RECORD_ROOMS: DurableObjectNamespace
+    INTERNAL_STORAGE_HMAC_SECRET?: string
+    API_BASE_URL?: string
+  },
   ownerUserId: string,
   roomId?: string,
 ): CronContext
 
-type CronContext = {
+interface CronContext {
   records: {
-    query:  <T>(coll: string, opts?: { where?: object; limit?: number }) => Promise<Envelope<T>[]>
-    get:    <T>(coll: string, id: string) => Promise<Envelope<T> | null>
-    create: <T>(coll: string, data: T) => Promise<{ recordId: string; record: Envelope<T> }>
-    update: <T>(coll: string, id: string, data: Partial<T>) => Promise<{ recordId: string; record: Envelope<T> }>
-    delete: (coll: string, id: string) => Promise<{ deleted: true }>
+    query(
+      collection: string,
+      opts?: { where?: Record<string, unknown>; limit?: number },
+    ): Promise<any[]>
+    create(collection: string, data: Record<string, unknown>): Promise<any>
+    update(collection: string, recordId: string, data: Record<string, unknown>): Promise<any>
+    delete(collection: string, recordId: string): Promise<any>
   }
   integrations: {
-    call: <T>(endpoint: string, params: object) => Promise<T>
+    call(endpoint: string, params: Record<string, unknown>): Promise<any>
   }
   ownerUserId: string
 }
@@ -71,8 +78,16 @@ type CronContext = {
 
 `roomId` defaults to `'default'`. Pass `app:${env.APP_NAME}` to target the per-app RecordRoom (the scaffold convention).
 
+The `records.*` methods are intentionally typed loosely (`Promise<any>` / `Promise<any[]>`) — they call the underlying RecordRoom tools API and surface its `data` field directly. At runtime:
+
+- `query` resolves to an array of record envelopes (`{ recordId, data, createdAt, updatedAt, ... }`).
+- `create` / `update` resolve to `{ recordId, record }` (the envelope of the row that was written).
+- `delete` resolves to a delete confirmation payload.
+
+There is **no `records.get` method** on `CronContext` — use `records.query` with a `where` clause when you need a single row.
+
 <Warning>
-**Shapes differ from server actions.** `ctx.records.query` returns the unwrapped array directly (`Envelope[]`), not `ActionResult<{ records, count }>`. The methods throw on failure rather than returning a `{ success: false }` envelope — wrap in `try/catch` if you need to handle denied writes inline.
+**Shapes differ from server actions.** `ctx.records.query` returns the unwrapped array directly (no `ActionResult` envelope). The methods throw on failure rather than returning a `{ success: false }` envelope — wrap in `try/catch` if you need to handle denied writes inline.
 </Warning>
 
 ## Properties
@@ -114,7 +129,6 @@ export async function runTask(name: string, env: Env): Promise<void> {
 export class AppCronRoom extends CronRoom<Env> {
   constructor(state: DurableObjectState, env: Env) {
     super(state, env, { tasks: cronTasks })
-    this.env = env
   }
   protected async onTask(name: string): Promise<void> {
     await runCronTask(name, this.env)

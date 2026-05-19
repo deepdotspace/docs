@@ -20,7 +20,7 @@ export const notesSchema: CollectionSchema = {
   columns: [
     { name: 'title', storage: 'text', interpretation: 'plain' },
     { name: 'body', storage: 'text', interpretation: 'plain' },
-    { name: 'pinned', storage: 'integer', interpretation: 'boolean' },
+    { name: 'pinned', storage: 'number', interpretation: { kind: 'boolean' } },
   ],
   permissions: {
     member: { read: true, create: true, update: 'own', delete: 'own' },
@@ -116,7 +116,7 @@ The [`useMutations`](/sdk-reference/client/records#usemutations-t-collection) ho
 
 <Tabs>
   <Tab title="Create">
-    `create` takes the full row shape and returns the server-generated `recordId`. Capture it if you need to navigate to a new resource.
+    `create` takes the full row shape and returns the new `recordId` (generated client-side before the optimistic write is sent). Capture it if you need to navigate to a new resource — you can use it immediately without waiting for server acknowledgment.
 
     ```tsx
     import { useMutations } from 'deepspace'
@@ -176,7 +176,7 @@ The [`useMutations`](/sdk-reference/client/records#usemutations-t-collection) ho
 
 | Method | Signature | Notes |
 |---|---|---|
-| `create` | `(data: T) => Promise<string>` | Returns the new `recordId`. Requires the full record shape. |
+| `create` | `(data: T) => Promise<string>` | Returns the new `recordId` (generated client-side). Requires the full record shape. |
 | `put` | `(id: string, patch: Partial<T>) => Promise<void>` | Server merges: `{ ...existing, ...patch }`. Send only fields that change. |
 | `remove` | `(id: string) => Promise<void>` | Hard delete. |
 | `createConfirmed` | `(data: T) => Promise<string>` | Resolves after server acknowledgment. |

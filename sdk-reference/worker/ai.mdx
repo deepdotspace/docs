@@ -19,26 +19,29 @@ import {
   // Schemas
   AI_CHATS_SCHEMA, AI_MESSAGES_SCHEMA,
   // Built-in tools
-  BUILT_IN_TOOLS, ToolSchema,
+  BUILT_IN_TOOLS,
 } from 'deepspace/worker'
 
 import type {
-  DeepSpaceAIEnv, DeepSpaceAIOptions,
+  DeepSpaceAIEnv, DeepSpaceAIOptions, DeepSpaceModelFactory,
   ChatContextConfig, ChatTurn, Summarizer,
   ChatRow, ChatMessageRow,
+  ToolSchema,
 } from 'deepspace/worker'
 ```
 
 ## `createDeepSpaceAI(env, provider, options?)`
 
-Returns a Vercel AI SDK v5 provider routed through the DeepSpace API worker.
+Returns a Vercel AI SDK v5 model factory routed through the DeepSpace API worker.
 
 ```ts
 function createDeepSpaceAI(
   env: DeepSpaceAIEnv,
   provider: 'anthropic' | 'openai' | 'cerebras',
   options?: { authToken?: string },
-): AIProvider
+): DeepSpaceModelFactory
+
+type DeepSpaceModelFactory = (modelId: string) => LanguageModel
 ```
 
 | Option | Effect |
@@ -46,7 +49,7 @@ function createDeepSpaceAI(
 | `authToken` (passed) | Caller pays — JWT subject is billed |
 | `authToken` (omitted) | Owner pays — falls back to `env.APP_OWNER_JWT` |
 
-Use the returned provider with `streamText` / `generateText` from the `ai` package:
+Use the returned factory with `streamText` / `generateText` from the `ai` package:
 
 ```ts
 import { streamText } from 'ai'
@@ -60,7 +63,7 @@ const result = await streamText({
 
 ## Context compaction
 
-### `prepareMessagesWithCompaction(messages, config, { summarizer, cachedSummary? })`
+### `prepareMessagesWithCompaction(messages, config, options)`
 
 Pre-stream pipeline that keeps the conversation under the context budget.
 
@@ -68,16 +71,24 @@ Pre-stream pipeline that keeps the conversation under the context budget.
 function prepareMessagesWithCompaction(
   messages: ChatTurn[],
   config: ChatContextConfig,
-  helpers: { summarizer: Summarizer; cachedSummary?: string },
-): Promise<{ messages: ChatTurn[]; newSummary?: string }>
+  options: {
+    summarizer: Summarizer
+    cachedSummary?: { text: string; throughId: string }
+  },
+): Promise<{
+  messages: ChatTurn[]
+  newSummary?: { text: string; throughId: string }
+}>
 ```
+
+`cachedSummary` is the previous turn's summary (if any), anchored to a known message id. When the helper produces a fresh summary, it returns `newSummary` for persistence — store it on the chat row so the next turn can pass it back as `cachedSummary`.
 
 Order of operations:
 
-1. `truncateOldToolResults` — replace old tool-result payloads with a small marker
-2. Apply `cachedSummary` if provided
-3. Summarize the older half if still over budget
-4. Fall back to `applySlidingWindow` on summarizer error
+1. `truncateOldToolResults` — replace old tool-result payloads with a small marker.
+2. Apply `cachedSummary` if its `throughId` is found in the history.
+3. Summarize the older half if still over budget; return as `newSummary`.
+4. Fall back to `applySlidingWindow` on summarizer error or missing message ids.
 
 ### `truncateOldToolResults(messages, keepRecent)`
 
@@ -124,12 +135,15 @@ function unwrapToolOutput(output: unknown): unknown
 
 ## Summarizers
 
-### `makeDefaultSummarizer(env, { authToken? })`
+### `makeDefaultSummarizer(env, options?)`
 
 Returns a Claude Haiku 4.5 summarizer.
 
 ```ts
-function makeDefaultSummarizer(env: Env, opts?: { authToken?: string }): Summarizer
+function makeDefaultSummarizer(
+  env: DeepSpaceAIEnv,
+  options?: { authToken?: string },
+): Summarizer
 ```
 
 Omit `authToken` to bill the owner (compaction as infrastructure cost). Pass the caller's JWT to bill the user (compaction as part of chat cost).
@@ -149,42 +163,96 @@ Roll your own implementation if you want a different model or strategy.
 These read and write the `ai-chats` and `ai-messages` collections with `X-App-Action: 'true'` (bypassing user RBAC). **The worker is the trust boundary** — callers MUST verify chat ownership before invoking write helpers.
 
 ```ts
-function getChat(stub: DurableObjectStub, chatId: string, userId: string): Promise<ChatRow | null>
-function createChat(stub: DurableObjectStub, userId: string, opts: { title?: string; model?: string }): Promise<ChatRow>
-function updateChat(stub: DurableObjectStub, chatId: string, userId: string, patch: Partial<ChatRow>): Promise<void>
-function deleteChatCascade(stub: DurableObjectStub, chatId: string, userId: string): Promise<void>
-function loadMessages(stub: DurableObjectStub, chatId: string, userId: string): Promise<ChatMessageRow[]>
-function appendMessage(stub: DurableObjectStub, row: ChatMessageRow): Promise<void>
+function getChat(
+  stub: DurableObjectStub,
+  chatId: string,
+  userId: string,
+): Promise<ChatRow | null>
+
+function createChat(
+  stub: DurableObjectStub,
+  userId: string,
+  opts?: { title?: string; model?: string },
+): Promise<ChatRow>
+
+function updateChat(
+  stub: DurableObjectStub,
+  chatId: string,
+  userId: string,
+  patch: Partial<Pick<ChatRow, 'title' | 'model' | 'compactedSummary' | 'compactedThroughId'>>,
+): Promise<void>
+
+function deleteChatCascade(
+  stub: DurableObjectStub,
+  chatId: string,
+  userId: string,
+): Promise<void>
+
+function loadMessages(
+  stub: DurableObjectStub,
+  chatId: string,
+  userId: string,
+): Promise<ChatMessageRow[]>
+
+function appendMessage(
+  stub: DurableObjectStub,
+  msg: {
+    id: string
+    chatId: string
+    userId: string
+    role: 'user' | 'assistant' | 'system'
+    content: string
+    parts?: unknown[]
+  },
+): Promise<void>
 ```
+
+`appendMessage` takes an `id` field that becomes the new row's `recordId` on the underlying tools API.
 
 | Type | Shape |
 |---|---|
-| `ChatRow` | `{ recordId, userId, title, model?, compactedSummary?, compactedThroughId?, createdAt, updatedAt }` |
-| `ChatMessageRow` | `{ recordId, chatId, userId, role, content, parts?, createdAt }` |
+| `ChatRow` | `{ recordId, id, userId, title, model?, compactedSummary?, compactedThroughId?, createdAt, updatedAt }` |
+| `ChatMessageRow` | `{ recordId, id, chatId, userId, role, content, parts?, createdAt }` |
 
 <Note>
-Use `recordId`, not `id`. `id` is kept as a deprecated alias for backward compatibility and may be removed.
+Both row shapes expose `recordId` as the canonical identifier and keep `id` as a deprecated alias for backward compatibility. Read `recordId` in new code.
 </Note>
 
 ## Built-in tools
 
 ```ts
-const BUILT_IN_TOOLS: Record<string, ToolSchema>
-type ToolSchema = { name: string; description: string; inputSchema: ZodSchema; execute: (input: object) => Promise<unknown> }
+const BUILT_IN_TOOLS: ToolSchema[]
+
+interface ToolSchema {
+  name: string
+  description: string
+  params: Record<string, {
+    type: 'string' | 'number' | 'boolean' | 'object' | 'array'
+    description: string
+    required?: boolean
+    default?: unknown
+  }>
+}
 ```
 
-The catalog (all read-only by default — the scaffold ships these plus the write tools):
+`BUILT_IN_TOOLS` is an **array** of tool schemas, not a record keyed by name. Each entry declares its parameters as a flat `{ type, description, required?, default? }` map — this is an MCP-like description used by the worker's tools API and by app authors who want to surface SDK tools to an LLM.
+
+The catalog (records, schemas, users, storage, backup, Yjs):
 
 | Tool | Purpose |
 |---|---|
-| `schema.list` | Enumerate collection names |
-| `schema.describe` | Describe one collection's columns and permissions |
 | `records.query` | Filter and list records |
 | `records.get` | Fetch one record |
-| `records.create` | Create a record (write) |
-| `records.update` | Patch a record (write) |
-| `records.delete` | Delete a record (write) |
+| `records.create` | Create a record |
+| `records.update` | Patch a record |
+| `records.delete` | Delete a record |
+| `schema.list` | Enumerate collection names |
+| `schema.describe` | Describe one collection's columns and permissions |
 | `user.current` | Look up the caller's user record |
+| `user.list` | List all users in the room |
+| `storage.list` / `read` / `write` / `delete` | Key-value storage |
+| `backup.create` / `list` / `restore` / `delete` | Yjs doc backups |
+| `yjs.list` / `getText` / `setText` | Collaborative doc text access |
 
 See `src/ai/tools.ts` in the scaffold for `buildSystemPrompt(appName, schemas)` and `buildReadOnlyTools(executor)` — both are app-local references you can edit to customize the assistant's tool surface and system prompt.
 

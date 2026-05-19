@@ -16,8 +16,12 @@ function FileUploader() {
   async function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
-    const result = await upload(file)
-    console.log('uploaded:', result.key)
+    const result = await upload(file, file.name)
+    if (result.success) {
+      console.log('uploaded:', result.key)
+    } else {
+      console.error(result.error)
+    }
   }
 
   return (
@@ -26,7 +30,7 @@ function FileUploader() {
 }
 ```
 
-`upload` accepts a `File` (from `<input type="file">` or a drag-drop event) or a `Blob`. It returns the storage key — a unique string identifying the uploaded file.
+`upload(file, name?)` accepts a `File` (from `<input type="file">` or a drag-drop event) or a `Blob`, plus an optional positional display name. It returns an `R2UploadResult`: `{ success: boolean, key?, url?, name?, error? }`. Always check `success` before reading `key`.
 
 ## List files
 
@@ -38,7 +42,7 @@ import { useR2Files, formatFileSize } from 'deepspace'
 import type { R2FileInfo } from 'deepspace'
 
 function Gallery() {
-  const { upload, deleteFile, list, getUrl } = useR2Files()
+  const { deleteFile, list, getUrl } = useR2Files()
   const [files, setFiles] = useState<R2FileInfo[]>([])
 
   async function refresh() {
@@ -51,9 +55,9 @@ function Gallery() {
     <div>
       {files.map((f) => (
         <div key={f.key}>
-          <img src={getUrl(f.key)} alt="" />
+          <img src={getUrl(f)} alt="" />
           <p>{f.originalName ?? f.key} — {formatFileSize(f.size)}</p>
-          <button onClick={async () => { await deleteFile(f.key); refresh() }}>
+          <button onClick={async () => { await deleteFile(f); refresh() }}>
             Delete
           </button>
         </div>
@@ -80,37 +84,36 @@ function Gallery() {
 
 ## Serve a file
 
-`getUrl(key)` returns a signed URL the browser can fetch directly. For images, drop it into `<img src>`:
+`getUrl(fileOrKey)` accepts either an `R2FileInfo` or a raw key string and returns a plain URL pointing at the file gateway. It carries no auth token, so it only works for unauthenticated reads on deployed sites where the scope is derived from the hostname. For images on a deployed app, drop it into `<img src>`:
 
 ```tsx
-<img src={getUrl(f.key)} alt="" referrerPolicy="no-referrer" />
+<img src={getUrl(f)} alt="" referrerPolicy="no-referrer" />
 ```
 
-For other file types, link to the URL or fetch it with `downloadFile(key)`:
+For authenticated access, use `downloadFile` (which triggers a browser download) or `readFile` (which returns the raw `Response`):
 
 ```ts
-const blob = await downloadFile(key)
+// Trigger a browser download — returns { success, error? }
+const result = await downloadFile(file)
+if (!result.success) console.error(result.error)
+
+// Read the bytes yourself — returns a Response you can .text(), .blob(), etc.
+const resp = await readFile(file)
+const blob = await resp.blob()
 ```
 
-URLs are signed by the platform's file gateway and time-limited. Treat them as ephemeral — don't store them long-term.
+`downloadFile` and `readFile` both accept an `R2FileInfo` or a raw key string. `downloadFile` accepts an optional second `fileName` to override the download filename; when passing an `R2FileInfo` the `originalName` is used automatically.
 
 ## Scoping files
 
-By default, `useR2Files` uses a global scope (everyone in the app sees everyone's files). For per-user or per-record scoping, pass an `R2Scope`:
+`useR2Files` accepts a single `R2Scope` option object whose only field today is `scope?: 'self'`:
 
 ```tsx
-const { upload, list } = useR2Files({
-  scope: { type: 'user', userId },
-})
-
-// Only this user's files are listed; uploads are namespaced under their userId.
+const { upload, list } = useR2Files()              // default — { scope: 'self' }
+const { upload: scopedUpload } = useR2Files({ scope: 'self' })
 ```
 
-| Scope type | Files visible to |
-|---|---|
-| `{ type: 'global' }` (default) | All users in the app |
-| `{ type: 'user', userId }` | Only the specified user |
-| `{ type: 'room', roomId }` | Only members of the room |
+The server derives the bucket prefix from the current hostname (the `'self'` scope), so files uploaded by one app are isolated from another app's files automatically. Per-user or per-room sub-scoping isn't exposed through this hook — if you need it, namespace your uploads via the optional `name` argument or store a sidecar record (see [Storing metadata](#storing-metadata)).
 
 ## Programmatic uploads — `uploadBase64`
 
@@ -123,7 +126,9 @@ async function saveCanvasAsImage() {
   const canvas = canvasRef.current!
   const dataUrl = canvas.toDataURL('image/png')
   const base64 = dataUrl.split(',')[1]
-  await uploadBase64(base64, { originalName: 'drawing.png' })
+  // Signature: uploadBase64(base64Data, name, mimeType?). `name` is required.
+  const result = await uploadBase64(base64, 'drawing.png', 'image/png')
+  if (!result.success) console.error(result.error)
 }
 ```
 
@@ -153,9 +158,13 @@ const { upload } = useR2Files()
 const { create } = useMutations<Attachment>('attachments')
 
 async function uploadWithMeta(file: File) {
-  const { key } = await upload(file)
+  const result = await upload(file, file.name)
+  if (!result.success || !result.key) {
+    console.error(result.error)
+    return
+  }
   await create({
-    fileKey: key,
+    fileKey: result.key,
     mimeType: file.type,
     caption: '',
   })

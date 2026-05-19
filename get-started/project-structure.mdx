@@ -82,14 +82,16 @@ Run with `npx deepspace test`. See [Testing](/guides/testing).
 `worker.ts` declares the set of DO classes the app uses in a single constant:
 
 ```ts
-export const __DO_MANIFEST__ = {
-  RECORD_ROOMS:   { class: 'AppRecordRoom',   sqlite: true },
-  YJS_ROOMS:      { class: 'AppYjsRoom',      sqlite: true },
-  CANVAS_ROOMS:   { class: 'AppCanvasRoom',   sqlite: true },
-  PRESENCE_ROOMS: { class: 'AppPresenceRoom', sqlite: true },
-  CRON_ROOMS:     { class: 'AppCronRoom',     sqlite: true },
-} as const satisfies DOManifest
+export const __DO_MANIFEST__ = [
+  { binding: 'RECORD_ROOMS', className: 'AppRecordRoom', sqlite: true },
+  { binding: 'YJS_ROOMS', className: 'AppYjsRoom', sqlite: true },
+  { binding: 'CANVAS_ROOMS', className: 'AppCanvasRoom', sqlite: true },
+  { binding: 'PRESENCE_ROOMS', className: 'AppPresenceRoom', sqlite: true },
+  { binding: 'CRON_ROOMS', className: 'AppCronRoom', sqlite: true },
+] as const satisfies DOManifest
 ```
+
+The manifest is a `DOManifestEntry[]`. Each entry has a `binding` (the env binding name your Hono routes look up), a `className` (the DO subclass exported from the same file), and `sqlite` (true for storage-backed DOs).
 
 The `Env` interface derives its DO bindings from this constant:
 

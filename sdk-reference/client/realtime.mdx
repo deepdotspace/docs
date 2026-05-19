@@ -44,32 +44,48 @@ function useYjsText(
 }
 ```
 
-### `useYjsField<T>(collection, recordId, fieldName)`
+### `useYjsField(collection, recordId, fieldName)`
 
-Direct access to a Yjs `Y.Map` or `Y.Array` on a record field. Use for structured collab data.
+Lower-level Yjs binding. Returns the raw `Y.Doc` and `Awareness` so you can build any Yjs type (`Y.Map`, `Y.Array`, `Y.XmlFragment`, etc.) on top of it. Not generic — the hook doesn't model the field shape.
 
 ```ts
-function useYjsField<T extends Y.AbstractType<any>>(
+function useYjsField(
   collection: string,
   recordId: string,
   fieldName: string,
 ): {
-  value: T extends Y.Array<infer U> ? U[] : T extends Y.Map<infer V> ? Record<string, V> : unknown
-  doc: Y.Doc | null
+  doc: Y.Doc
+  awareness: Awareness
   synced: boolean
+  canWrite: boolean
+  /** Increments on every local or remote Y.Doc update — useful as a render trigger. */
+  updateCount: number
 }
+```
+
+Build whichever Yjs type you need off `doc`:
+
+```tsx
+const { doc, synced } = useYjsField('documents', docId, 'tasks')
+const list = useMemo(() => doc.getArray<Task>('tasks'), [doc])
 ```
 
 ### `useYjsRoom(docId, fieldName)`
 
-Standalone Yjs document not tied to a record. Useful for ephemeral collaboration sessions.
+Standalone Yjs document not tied to a record. Useful for ephemeral collaboration sessions. Opens a direct WebSocket to a dedicated `YjsRoom` DO at `/ws/yjs/:docId`.
 
 ```ts
 function useYjsRoom(docId: string, fieldName: string): {
-  doc: Y.Doc | null
+  doc: Y.Doc
+  awareness: Awareness
+  text: string
+  setText: (value: string) => void
   synced: boolean
+  canWrite: boolean
 }
 ```
+
+`text` / `setText` are bound to the `Y.Text` at `fieldName`. Use `doc` directly if you need a different type.
 
 ## `useCanvas(roomId)`
 
@@ -78,32 +94,46 @@ Connects to a `CanvasRoom` DO.
 ```ts
 function useCanvas(roomId: string): {
   shapes: CanvasShapeClient[]
-  viewports: Map<string, ViewportClient>
+  /** All connected users' viewports (including self). */
+  viewports: ViewportClient[]
   connected: boolean
-  addShape:    (shape: Omit<CanvasShapeClient, 'shapeId'>) => Promise<string>
-  moveShape:   (shapeId: string, position: { x: number; y: number }) => Promise<void>
-  resizeShape: (shapeId: string, size: { width: number; height: number }) => Promise<void>
-  updateShape: (shapeId: string, patch: Partial<CanvasShapeClient>) => Promise<void>
-  deleteShape: (shapeId: string) => Promise<void>
-  setViewport: (viewport: { x: number; y: number; zoom: number }) => void
+  addShape:    (shape: Partial<CanvasShapeClient>) => void
+  moveShape:   (shapeId: string, x: number, y: number) => void
+  resizeShape: (shapeId: string, width: number, height: number, x?: number, y?: number) => void
+  updateShape: (shapeId: string, props: Record<string, unknown>) => void
+  deleteShape: (shapeId: string) => void
+  setViewport: (viewport: Omit<ViewportClient, 'userId'>) => void
   undo:        () => void
   redo:        () => void
 }
 ```
 
+All mutation methods are fire-and-forget — they encode and send a typed message and return `void`. `viewports` is an array, not a `Map`.
+
 Each shape:
 
 ```ts
 type CanvasShapeClient = {
-  shapeId: string
-  type: string         // free-form: 'rect', 'circle', 'text', etc.
+  id: string
+  type: string                     // free-form: 'rect', 'circle', 'text', etc.
   x: number
   y: number
   width: number
   height: number
-  data?: object        // app-specific payload
+  rotation?: number
+  props: Record<string, unknown>   // app-specific payload
   createdBy: string
   createdAt: string
+  updatedAt: string
+}
+
+type ViewportClient = {
+  userId: string
+  x: number
+  y: number
+  width: number
+  height: number
+  zoom: number
 }
 ```
 
@@ -115,7 +145,7 @@ Online/offline status derived from `lastSeenAt` heartbeats on the users collecti
 
 ```ts
 function usePresence(options?: { timeoutMs?: number }): {
-  users: User[]
+  users: RoomUser[]
   isOnline:    (userId: string) => boolean
   getLastSeen: (userId: string) => string | null
 }
@@ -148,29 +178,32 @@ type PresencePeerClient = {
 
 ## `useGameRoom(roomId)`
 
-Turn-tick or sim-tick game loop DO.
+Turn-tick or sim-tick game loop DO. Not generic — `state` is `Record<string, unknown>` (cast at the use-site).
 
 ```ts
-function useGameRoom<S, A>(roomId: string): {
-  state: S | null
+function useGameRoom(roomId: string): {
+  state: Record<string, unknown>
   tick: number
-  players: Player[]
+  players: GamePlayer[]
   running: boolean
   connected: boolean
-  sendInput:  (action: string, data?: A) => void
+  sendInput:  (action: string, data?: Record<string, unknown>) => void
   setReady:   () => void
   startGame:  () => void
   endGame:    () => void
 }
 
-type Player = {
+type GamePlayer = {
   userId: string
   userName: string
   ready: boolean
   connectedAt: string
-  data?: object
+  /** Server-managed per-player slot — always present, never undefined. */
+  data: Record<string, unknown>
 }
 ```
+
+All mutation methods (`sendInput`, `setReady`, `startGame`, `endGame`) are fire-and-forget — they return `void`. The server-side `GameInput` event carries `userId` (not `playerId`), `action`, `data`, and the current `tick`.
 
 State migration on schema bumps lives in the worker — override `onHydrateState(stored)` on your `GameRoom` subclass.
 
@@ -183,16 +216,19 @@ function useCronMonitor(roomId: string): {
   tasks: CronTaskState[]
   history: CronHistoryEntry[]
   connected: boolean
-  trigger: (name: string) => Promise<void>
-  pause:   (name: string) => Promise<void>
-  resume:  (name: string) => Promise<void>
+  trigger: (taskName: string) => void
+  pause:   (taskName: string) => void
+  resume:  (taskName: string) => void
 }
 
 type CronTaskState = {
   name: string
-  intervalMinutes?: number
-  schedule?: string
-  timezone?: string
+  /** Required. Null when the task is configured via `schedule` instead. */
+  intervalMinutes: number | null
+  /** Required. Null when the task is configured via `intervalMinutes` instead. */
+  schedule: string | null
+  /** Required. Null when the task has no explicit timezone. */
+  timezone: string | null
   paused: boolean
   lastRunAt: string | null
   nextRunAt: string | null
@@ -201,12 +237,14 @@ type CronTaskState = {
 type CronHistoryEntry = {
   taskName: string
   startedAt: string
-  completedAt: string
+  completedAt: string | null
   success: boolean
   durationMs: number
   error?: string
 }
 ```
+
+`trigger`, `pause`, and `resume` are fire-and-forget — they return `void`.
 
 <Warning>
 The Cron DO does **not** enforce a role on `trigger` / `pause` / `resume`. Gate the admin UI by `useUser().user?.role === 'admin'`.

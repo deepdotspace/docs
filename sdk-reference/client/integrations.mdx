@@ -16,12 +16,14 @@ The integration client exposes four HTTP verbs. All return a typed envelope.
 
 ```ts
 const integration: {
-  get<T>:    (endpoint: string, options?: RequestOptions) => Promise<IntegrationResponse<T>>
-  post<T>:   (endpoint: string, data?: object, options?: RequestOptions) => Promise<IntegrationResponse<T>>
-  put<T>:    (endpoint: string, data?: object, options?: RequestOptions) => Promise<IntegrationResponse<T>>
-  delete<T>: (endpoint: string, options?: RequestOptions) => Promise<IntegrationResponse<T>>
+  get<T>:    (endpoint: string, params?: Record<string, string | number | boolean | null | undefined>, options?: RequestOptions) => Promise<IntegrationResponse<T>>
+  post<T>:   (endpoint: string, data?: unknown, options?: RequestOptions) => Promise<IntegrationResponse<T>>
+  put<T>:    (endpoint: string, data?: unknown, options?: RequestOptions) => Promise<IntegrationResponse<T>>
+  delete<T>: (endpoint: string, data?: unknown, options?: RequestOptions) => Promise<IntegrationResponse<T>>
 }
 ```
+
+`get` takes a query-parameter object as its middle argument; the others take an optional JSON body. `delete` also accepts a body — the api-worker dispatches `DELETE` with a JSON payload when one is provided.
 
 Endpoint names are two segments: `<integration>/<endpoint>` (e.g. `openai/chat-completion`).
 
@@ -44,10 +46,13 @@ Endpoint names are two segments: `<integration>/<endpoint>` (e.g. `openai/chat-c
   </Tab>
 
   <Tab title="GET">
-    For idempotent reads. Pass query parameters via the endpoint path or use `post` if the API requires them in the body.
+    For idempotent reads. Pass query parameters as the second argument — they're serialised onto the URL automatically (null/undefined values are skipped).
 
     ```ts
-    const result = await integration.get('finnhub/market-news')
+    const result = await integration.get('finnhub/market-news', {
+      category: 'crypto',
+      minId: 100,
+    })
     ```
   </Tab>
 
@@ -125,11 +130,12 @@ import { PlatformProvider, usePlatform, useInbox, usePlatformWS } from 'deepspac
 function usePlatform(): {
   platformFetch: (path: string, init?: RequestInit) => Promise<Response>
   inbox: InboxEntry[]
-  subscribeInbox: () => void
+  /** Activate the inbox WebSocket. Returns an unsubscribe function. */
+  subscribeInbox: () => () => void
 }
 ```
 
-`platformFetch` prepends `/platform` and adds the auth header automatically. Throws if no `<PlatformProvider>` is mounted.
+`platformFetch` prepends `/platform` and adds the auth header automatically. Throws if no `<PlatformProvider>` is mounted. `subscribeInbox` is the primitive `useInbox()` calls under the hood — apps rarely call it directly.
 
 ### `useInbox()`
 
@@ -138,13 +144,13 @@ function useInbox(): InboxEntry[]
 
 type InboxEntry = {
   conversationId: string
-  scope: string
+  scope: { type: string; participants?: string[]; appId?: string; contentRef?: string; ticketNumber?: string }
   displayName: string
   muted: boolean
   joinedAt: string
-  lastMessageAt: string
-  lastMessagePreview: string
-  lastMessageAuthor: string
+  lastMessageAt: string | null
+  lastMessagePreview: string | null
+  lastMessageAuthor: string | null
   unreadCount: number
 }
 ```
@@ -153,10 +159,26 @@ The inbox WebSocket activates only when at least one component subscribes via `u
 
 ### `usePlatformWS<S>(options)`
 
-Generic platform WebSocket subscription for custom platform-side streams.
+Generic platform WebSocket subscription for custom platform-side streams. `S` is the state shape; the constraint requires a `status: ConnectionStatus` field so the hook can drive reconnect UI.
 
 ```ts
-function usePlatformWS<S>(options: PlatformWSOptions): PlatformWSResult<S>
+function usePlatformWS<S extends { status: ConnectionStatus }>(
+  options: PlatformWSOptions<S>,
+): PlatformWSResult<S>
+
+type PlatformWSOptions<S> = {
+  /** DO path segment — e.g. 'orders' for /platform/ws/orders/{scopeId} */
+  path: string
+  /** Scope ID — e.g. 'app:demo-corp'. Pass undefined to skip the connection. */
+  scopeId: string | undefined
+  initialState: S
+  onMessage: (msg: Record<string, unknown>, prev: S) => S
+}
+
+type PlatformWSResult<S> = {
+  state: S
+  send: (msg: Record<string, unknown>) => void
+}
 ```
 
 ## OAuth endpoints
