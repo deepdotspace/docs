@@ -3,21 +3,15 @@ title: "Deployment"
 description: "How DeepSpace deploys your app to Cloudflare Workers for Platforms."
 ---
 
-`npx deepspace deploy` takes you from local source to a live `<name>.app.space` URL in about 30 seconds. This page covers what happens during a deploy, how state and secrets carry over, and what to expect when adding custom bindings or domains.
+`npx deepspace deploy` builds your app and uploads it to Cloudflare Workers for Platforms, returning a live `<name>.app.space` URL. This page covers what happens during a deploy, how state and secrets carry over, and what to expect when adding custom bindings or domains.
 
-## Deploy lifecycle
+## What `deploy` does
 
-A deploy runs through seven steps:
+The CLI builds your app with Vite (the Cloudflare plugin produces both the client bundle and the worker in a single pass), validates your binding manifest, and uploads everything to the deploy worker as one request. From there, the platform auto-provisions any binding marked `"auto"`, applies your user secrets from `.dev.vars` as `secret_text` bindings, and registers the worker in the dispatch namespace at `<name>.app.space`.
 
-1. **Build the frontend** with Vite.
-2. **Build the worker** with esbuild - the SDK and your code are bundled together.
-3. **Validate the binding manifest** against allowed types and reserved names.
-4. **Auto-provision resources** (D1, KV, R2, Vectorize, Queues) whose IDs are set to `"auto"`.
-5. **Upload to Workers for Platforms** - the worker is registered in the platform's dispatch namespace.
-6. **Sync user secrets** from `.dev.vars` to `secret_text` bindings.
-7. **Register the subdomain** - your app is live at `<name>.app.space`.
+The whole pipeline is idempotent. Re-running `deploy` with no source changes reuses provisioned resources and uploads unchanged code as a no-op.
 
-Each step is idempotent. Re-running `deploy` with no source changes is safe - already-provisioned resources are reused, and unchanged code is uploaded as a no-op.
+For the full step-by-step (including how subscriptions and one-time products sync), see [Build & deploy pipeline](/concepts/architecture#build--deploy-pipeline) in the architecture page.
 
 ## Subdomains
 
@@ -31,30 +25,38 @@ name = "my-app"
 Rules:
 
 - Must match `^[a-z0-9](?:-?[a-z0-9])+$` - lowercase, 2–63 chars, no leading / trailing / double dashes
-- Names that don't conform are sanitized at deploy time; a warning surfaces in the CLI
+- Non-conforming names cause the CLI to fail with a clear error and the suggested canonical form; fix `name` in `wrangler.toml` and re-run
 - Renaming `name` after deploy and re-deploying gives you a new subdomain - the old one becomes orphaned (still accessible until explicitly undeployed)
 
 To attach a real domain to your app, see [Custom domains](/guides/custom-domains).
 
 ## State preservation
 
-A deploy **does not** wipe Durable Object state. Your records, conversations, files, and cron history persist across deploys. Three caveats:
+A deploy **does not** wipe Durable Object state. Your records, conversations, files, and cron history persist across deploys.
 
-| What persists | What's reset |
-|---|---|
-| Durable Object SQLite tables (records) | Worker module-level globals |
-| R2 bucket contents | In-memory caches |
-| Auto-provisioned bindings (D1, KV, etc.) | DO instances reload on the next request |
-| User secrets in `.dev.vars` | - |
+**Survives a deploy:**
 
-If you change a schema in a way that's not backwards-compatible (e.g., removing a column), you're responsible for the migration. The SDK does not run schema migrations on DO data.
+- Durable Object SQLite tables (records, Yjs documents, canvas state, cron history)
+- R2 bucket contents
+- Auto-provisioned bindings (D1, KV, Vectorize, etc. — the resource IDs are persisted and reused)
+- User secrets in `.dev.vars` (re-uploaded each deploy, same values land as `secret_text` bindings)
+
+**Does not survive a deploy:**
+
+- Worker module-level globals
+- In-memory caches inside DOs (every DO restarts; persistent storage stays, in-memory state is rebuilt on the next request)
+
+### Schema migrations
+
+The SDK runs **additive** schema migrations automatically. When a DO cold-starts after a deploy, the per-collection migrator creates any new tables and runs `ALTER TABLE ADD COLUMN` for any new fields in your schemas — re-running with an unchanged schema is a no-op.
+
+**Destructive** changes — dropping a column, changing a column type, renaming a field, or backfilling data into a new shape — are not handled. You're responsible for any data migration before deploying a breaking schema change.
 
 ## Secrets and `.dev.vars`
 
-The `.dev.vars` file holds two zones, separated by a divider the CLI writes itself:
+The `.dev.vars` file holds two zones, separated by a divider the CLI writes itself. The SDK-managed keys come first (no header), then the divider, then anything you've added:
 
 ```bash
-# --- SDK-managed (rewritten on every `dev` / `test` / `deploy`) ---
 AUTH_JWT_PUBLIC_KEY=...
 AUTH_JWT_ISSUER=...
 AUTH_WORKER_URL=...
@@ -62,6 +64,7 @@ API_WORKER_URL=...
 PLATFORM_WORKER_URL=...
 OWNER_USER_ID=...
 APP_OWNER_JWT=...
+APP_IDENTITY_TOKEN=...
 INTERNAL_STORAGE_HMAC_SECRET=...
 ALLOW_DEBUG_ROUTES=...
 
@@ -90,11 +93,13 @@ Anything **below** the divider:
 | Total across all secrets | 128 KB |
 | Raw deploy payload | 1 MB |
 
-A secret name cannot collide with any reserved binding name, custom binding, or DO class name. The deploy worker rejects the deploy with HTTP 400 before forwarding to Workers for Platforms.
+Size limits track the Cloudflare Workers for Platforms enforcement on `secret_text` bindings.
+
+A secret name cannot collide with any reserved binding name, custom binding, or Durable Object binding name. The CLI fails locally with a clear error before any upload.
 
 ## Custom bindings
 
-Add Vectorize, R2, KV, D1, Queues, Browser Rendering, Hyperdrive, or Analytics Engine bindings by declaring them in `wrangler.toml`. Set the ID to `"auto"` to auto-provision:
+Add Vectorize, Workers AI, R2, KV, D1, Queues, Browser Rendering, Hyperdrive, or Analytics Engine bindings by declaring them in `wrangler.toml`. Set the ID to `"auto"` to auto-provision:
 
 ```toml
 [[vectorize]]
@@ -125,30 +130,13 @@ This removes the subdomain registration, tears down auto-provisioned resources (
 
 Durable Object data **is** removed when the worker is undeployed. Back up anything you want to keep.
 
-## Pre-deploy checklist
+## Before your first deploy
 
-Before your first deploy, walk through this list:
+A few things worth confirming before you ship — these are the items most likely to bite you once your app is live and you can't iterate as freely:
 
-<Steps>
-  <Step title="Pick a theme">
-    Edit `<html data-theme="...">` in `index.html`. Don't ship `slate` (the scaffold default).
-  </Step>
-  <Step title="Replace placeholder content">
-    `src/pages/home.tsx` ships with placeholder copy ("Your DeepSpace app is running"). Replace with real content.
-  </Step>
-  <Step title="Set the page title and favicon">
-    Update `<title>` in `index.html`; replace the default favicon files.
-  </Step>
-  <Step title="Confirm secrets are in place">
-    Anything below the `# --- not managed` divider in `.dev.vars` ships with the deploy.
-  </Step>
-  <Step title="Run tests">
-    `npx deepspace test` - at minimum, smoke + api specs should pass.
-  </Step>
-  <Step title="Deploy">
-    `npx deepspace deploy`. The CLI prints the live URL when it's done.
-  </Step>
-</Steps>
+- **Lock in the app name.** Renaming `name` in `wrangler.toml` later gives you a new subdomain and orphans the old one. Pick the one you want users to type.
+- **Audit `.dev.vars`.** Everything below the `# --- not managed` divider ships as a `secret_text` binding. Make sure prod credentials (not test keys) are in place — and that no scratch values are left over.
+- **Run the test suite.** `npx deepspace test` runs the same Playwright specs against a local build that mirror what runs against the deploy.
 
 ## Next steps
 
