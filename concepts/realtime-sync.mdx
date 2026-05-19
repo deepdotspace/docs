@@ -3,37 +3,55 @@ title: "Real-time sync"
 description: "How DeepSpace synchronizes data across clients using WebSockets and Durable Objects."
 ---
 
-DeepSpace's real-time layer is the reason most teams reach for the SDK. This page explains what's happening under the hood - the WebSocket protocol, the optimistic mutation pipeline, and the consistency guarantees you can rely on.
+DeepSpace syncs data between clients over a persistent WebSocket connected to a Durable Object. This page covers the wire protocol, how writes propagate, and the consistency guarantees the SDK provides.
 
 ## The model
 
-Every client holds a local replica of the records it has subscribed to. A persistent WebSocket connects the client to the relevant Durable Object. When any client mutates a record, the DO validates the write against RBAC, persists it to SQLite, and broadcasts the update to every other connected client within milliseconds.
+Every client holds a local replica of the records it has subscribed to. When any client mutates a record, the DO validates the write against [permissions](/concepts/permissions), persists it to SQLite, and broadcasts the update to every other connected client within milliseconds.
 
-The DO is the single source of truth. Each `RecordRoom` instance owns its own SQLite database and serializes all writes - there are no merge conflicts to resolve.
+Each [`RecordRoom`](/sdk-reference/worker/rooms#recordroom<e>) is the single source of truth for its data. The DO owns its SQLite database and serializes all writes, so there are no merge conflicts to resolve.
 
-## The optimistic mutation pipeline
+## The mutation pipeline
 
-Mutations resolve locally before the server confirms them. This keeps the UI responsive on slow networks.
+[`useMutations`](/sdk-reference/client/records#usemutations<t>-collection) returns three mutation functions - `create`, `put`, `remove` - plus a `*Confirmed` variant of each. The plain functions are fire-and-forget over the WebSocket; the `*Confirmed` variants await a server ACK and reject on failure.
 
-A call to `useMutations.create({ ... })`:
+```tsx
+import { useMutations } from 'deepspace'
 
-1. Applies the change to the local store immediately (UI updates)
-2. Sends the mutation over the WebSocket to the DO
-3. The DO verifies RBAC, writes to SQLite, and broadcasts to all peers
-4. The local store reconciles with the server confirmation (no-op if the optimistic state already matches)
+const { create, put, remove, createConfirmed } = useMutations<Task>('tasks')
 
-If the server rejects the write - typically due to RBAC - the optimistic update is rolled back.
+// Fire-and-forget. Returns the new recordId immediately.
+// The local store updates when the server echoes the change back.
+const id = await create({ title: 'New task', completed: false })
 
-Use `create` / `put` / `remove` when you want the snappy path. Use the `*Confirmed` variants when you need to wait for the server, typically when you need a server-generated ID before navigating.
+// Awaits the server ACK. Rejects if RBAC denies the write.
+const id2 = await createConfirmed({ title: 'Important', completed: false })
+```
+
+A call to `create`:
+
+1. Generates a `recordId` client-side and sends a `core.put` message over the WebSocket
+2. The DO verifies RBAC, writes to SQLite, and broadcasts `core.record_change` to every connected client whose RBAC allows it (including the sender)
+3. The client store applies the change against any active [`useQuery`](/sdk-reference/client/records#usequery<t>-collection-options) subscriptions and re-renders
+
+There's no local-optimistic apply step - the UI updates when the broadcast comes back. In practice the round-trip to a colocated Durable Object is single-digit milliseconds, so it feels instant. Use the `*Confirmed` variants when you need to know the server accepted the write - typically to surface a permission error inline, or to wait on a server-validated outcome before navigating.
 
 ## Subscription scope
 
-A client subscribes to one or more **scopes** (Durable Object instances). The default scope in the scaffold is `app:<APP_NAME>` - every record in your app's main RecordRoom syncs to every connected client whose RBAC allows it.
+A client subscribes to one or more **scopes** (Durable Object instances). The default scope in the scaffold is `app:<APP_NAME>` - every record in your app's main [`RecordRoom`](/sdk-reference/worker/rooms#recordroom<e>) syncs to every connected client whose RBAC allows it.
 
-You can mount additional scopes by nesting `<RecordScope>`:
+You can mount additional scopes by nesting [`<RecordScope>`](/sdk-reference/client/records#recordscope):
 
 ```tsx
-<RecordScope roomId={`conv:${convId}`} schemas={CONVERSATION_SCHEMAS}>
+import { RecordScope } from 'deepspace'
+import { CONVERSATION_SCHEMAS } from './schemas'
+import { APP_NAME } from './constants'
+
+<RecordScope
+  roomId={`conv:${convId}`}
+  schemas={CONVERSATION_SCHEMAS}
+  appId={APP_NAME}
+>
   <ChatThread />
 </RecordScope>
 ```
@@ -42,49 +60,52 @@ Each scope is an independent DO with its own WebSocket. Subscriptions don't inte
 
 ## What the DO sends
 
-When a client connects, the DO sends an initial snapshot of all records the client has read access to. From that point forward, the DO broadcasts incremental updates as a single wire message type - `core.record_change` - carrying a `changeType: 'create' | 'update' | 'delete'` discriminator alongside the record envelope.
+When a client calls `useQuery`, the SDK sends a `core.subscribe` message. The DO replies with a `core.query_result` snapshot containing every record that matches the query and passes the caller's read check. From that point forward, the DO pushes incremental updates as `core.record_change` messages, each carrying a `changeType: 'create' | 'update' | 'delete'` discriminator alongside the record envelope.
 
-The SDK's client-side record store fans out each wire message into internal `record_created` / `record_updated` / `record_removed` notifications for the subscriptions layer, which `useQuery` reduces into a flat array. Those names are SDK internals; the wire vocabulary is always `core.record_change` + `changeType`:
+The client store applies each change against every active subscription. An update can move a record into or out of a query's `where` clause, so the same `changeType: 'update'` can mean different things to different subscriptions:
 
-| Internal notification | Fired when the wire message carries… |
+| Wire message | Effect on a subscription |
 |---|---|
-| `record_created` | `changeType: 'create'` and the record passes the caller's read check |
-| `record_updated` | `changeType: 'update'` for an already-visible record |
-| `record_removed` | `changeType: 'delete'`, or an update that takes the record outside the caller's read set |
+| `changeType: 'create'`, record matches `where` | Record is added to the result set |
+| `changeType: 'update'`, record matches and was already in the set | Record is updated in place |
+| `changeType: 'update'`, record now matches but wasn't in the set | Record is added (treated as a create) |
+| `changeType: 'update'`, record no longer matches and was in the set | Record is removed (treated as a delete) |
+| `changeType: 'delete'` | Record is removed if present |
 
 ## Consistency guarantees
 
 - **Writes are serialized inside the DO.** Two concurrent `put`s land in a deterministic order - the second wins on field-level merge.
 - **The DO sees all writes before any client.** There is no eventual consistency window from the DO's perspective.
-- **The optimistic local update can diverge briefly from the DO state** if the write fails RBAC. The SDK rolls back automatically.
-- **WebSocket disconnects trigger an automatic reconnect** with a fresh snapshot. The client store reconciles silently - you usually don't need to handle this in app code.
+- **WebSocket disconnects trigger an automatic reconnect.** Active subscriptions re-subscribe and receive a fresh snapshot; the client store reconciles silently.
+- **In-flight `*Confirmed` calls reject if the socket drops** with `'WebSocket disconnected'`; calls made while already offline reject with `'WebSocket not connected'`. Fire-and-forget mutations sent while disconnected are silently dropped - use `createConfirmed` / `putConfirmed` / `removeConfirmed` when you need delivery guarantees.
 
-## RBAC at the wire
+## Permissions on the wire
 
 Permissions are enforced **before** the DO broadcasts. A user without read access to a record never sees it on the wire, so client-side filters are not a security boundary - they're a usability concern.
 
-When a record's `visibilityField` changes from `draft` to `published`, the DO automatically broadcasts the record to clients that gain read access at that moment. The inverse also happens: making a record private fires a `record_removed` event for users who lose access.
+If a schema declares a `visibilityField`, the DO re-evaluates read access on every update. When a record's value at that field transitions to the configured "visible" value (default: `'public'`), the DO broadcasts a `core.record_change` to clients that gain read access at that moment. The inverse also happens: making a record private produces a `changeType: 'update'` that the client store interprets as a delete for users who lose access. See [permissions](/concepts/permissions#visibilityfield-and-collaboratorsfield) for the full visibility model.
 
-## Yjs, Canvas, and Presence rooms
+## Other room types
 
-The same WebSocket pattern applies to the other DO types, but the wire vocabulary differs:
+The same WebSocket pattern applies to the other DO types exported from [`deepspace/worker`](/sdk-reference/worker/rooms), but the wire vocabulary differs:
 
-- **`YjsRoom`** speaks the Yjs sync protocol. The DO holds the canonical Y.Doc and broadcasts updates.
-- **`CanvasRoom`** sends typed shape and viewport messages, optimized for high-frequency cursor and shape updates.
-- **`PresenceRoom`** is fire-and-forget - peer state is held in memory only, never persisted. Updates broadcast at full speed.
-- **`GameRoom`** runs an authoritative tick loop on the DO, broadcasting state snapshots to all players.
+- [`YjsRoom`](/sdk-reference/worker/rooms#yjsroom<e>) speaks the Yjs sync protocol. The DO holds the canonical Y.Doc and broadcasts updates.
+- [`CanvasRoom`](/sdk-reference/worker/rooms#canvasroom<e>) stores shapes in a Y.Doc `Y.Map` and sends typed shape and viewport messages on top, optimized for high-frequency cursor and shape updates.
+- [`PresenceRoom`](/sdk-reference/worker/rooms#presenceroom<e>) is fire-and-forget - peer state is held in memory only, never persisted. Updates broadcast at full speed.
+- [`GameRoom`](/sdk-reference/worker/rooms#gameroom<e>) runs an authoritative tick loop on the DO, broadcasting state snapshots to all players.
 
-Reach for `useQuery` / `useMutations` when you need durable, RBAC-filtered records. Reach for the room-specific hooks (`useYjsText`, `useCanvas`, `usePresenceRoom`, `useGameRoom`) when you need ephemeral or specialized state.
+Use [`useQuery`](/sdk-reference/client/records#usequery<t>-collection-options) / [`useMutations`](/sdk-reference/client/records#usemutations-t-collection) for durable, RBAC-filtered records. Use the room-specific hooks - [`useYjsText`](/sdk-reference/client/realtime#useyjstext-collection-recordid-fieldname), [`useCanvas`](/sdk-reference/client/realtime#usecanvas-roomid), [`usePresenceRoom`](/sdk-reference/client/realtime#usepresenceroom-scopeid), [`useGameRoom`](/sdk-reference/client/realtime#usegameroom-roomid) - for CRDT text, canvas shapes, presence, or a server-authoritative tick loop.
 
 ## Disconnection and reconnection
 
 The SDK handles WebSocket lifecycle transparently:
 
 - On disconnect, the local store stays intact - UI keeps working with the last known snapshot.
-- On reconnect, the DO sends a fresh snapshot and the store reconciles.
-- During the offline window, mutations are queued locally and replayed on reconnect.
+- The SDK reconnects with exponential backoff (capped at 30s) and on tab refocus.
+- On reconnect, every active subscription re-subscribes and receives a fresh `core.query_result` snapshot.
+- In-flight `*Confirmed` calls reject with `'WebSocket disconnected'`; calls made after the socket has closed reject with `'WebSocket not connected'`. Fire-and-forget calls made while offline are dropped - the SDK does not queue them.
 
-You can observe the connection state on each hook (`useQuery`'s `status` returns `'loading' | 'ready' | 'error'`; `usePresenceRoom` exposes a `connected` boolean).
+You can observe the connection state on each hook ([`useQuery`](/sdk-reference/client/records#usequery<t>-collection-options)'s `status` returns `'loading' | 'ready' | 'error'`; [`usePresenceRoom`](/sdk-reference/client/realtime#usepresenceroom-scopeid) exposes a `connected` boolean).
 
 ## Next steps
 
