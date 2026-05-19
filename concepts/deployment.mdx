@@ -3,15 +3,15 @@ title: "Deployment"
 description: "How DeepSpace deploys your app to Cloudflare Workers for Platforms."
 ---
 
-`npx deepspace deploy` builds your app and uploads it to Cloudflare Workers for Platforms, returning a live `<name>.app.space` URL. This page covers what happens during a deploy, how state and secrets carry over, and what to expect when adding custom bindings or domains.
+`npx deepspace deploy` builds your app and uploads it to Cloudflare Workers for Platforms, returning a live `<name>.app.space` URL.
 
 ## What `deploy` does
 
-The CLI builds your app with Vite (the Cloudflare plugin produces both the client bundle and the worker in a single pass), validates your binding manifest, and uploads everything to the deploy worker as one request. From there, the platform auto-provisions any binding marked `"auto"`, applies your user secrets from `.dev.vars` as `secret_text` bindings, and registers the worker in the dispatch namespace at `<name>.app.space`.
+The CLI builds your app with Vite (the Cloudflare plugin produces both the client bundle and the worker), validates your binding manifest, and uploads everything to the deploy worker as one request. From there, the platform auto-provisions any binding marked `"auto"`, applies your user secrets from `.dev.vars` as `secret_text` bindings, and registers the worker in the dispatch namespace at `<name>.app.space`.
 
-The whole pipeline is idempotent. Re-running `deploy` with no source changes reuses provisioned resources and uploads unchanged code as a no-op.
+Deploys are idempotent. Re-running `deploy` with no source changes reuses provisioned resources and uploads unchanged code as a no-op.
 
-For the full step-by-step (including how subscriptions and one-time products sync), see [Build & deploy pipeline](/concepts/architecture#build--deploy-pipeline) in the architecture page.
+See [Build & deploy pipeline](/concepts/architecture#build--deploy-pipeline) for the full step-by-step.
 
 ## Subdomains
 
@@ -38,25 +38,25 @@ A deploy **does not** wipe Durable Object state. Your records, conversations, fi
 
 - Durable Object SQLite tables (records, Yjs documents, canvas state, cron history)
 - R2 bucket contents
-- Auto-provisioned bindings (D1, KV, Vectorize, etc. — the resource IDs are persisted and reused)
-- User secrets in `.dev.vars` (re-uploaded each deploy, same values land as `secret_text` bindings)
+- Auto-provisioned bindings (D1, KV, Vectorize, etc.). Resource IDs are persisted and reused.
+- User secrets in `.dev.vars`. Re-uploaded each deploy; same values land as `secret_text` bindings.
 
 **Does not survive a deploy:**
 
 - Worker module-level globals
-- In-memory caches inside DOs (every DO restarts; persistent storage stays, in-memory state is rebuilt on the next request)
+- In-memory caches inside DOs. Every DO restarts; persistent storage stays, in-memory state is rebuilt on the next request.
 
 ### Schema migrations
 
-The SDK runs **additive** schema migrations automatically. When a DO cold-starts after a deploy, the per-collection migrator creates any new tables and runs `ALTER TABLE ADD COLUMN` for any new fields in your schemas — re-running with an unchanged schema is a no-op.
+The SDK runs **additive** schema migrations automatically. When a DO cold-starts after a deploy, the per-collection migrator creates any new tables and runs `ALTER TABLE ADD COLUMN` for new fields. Re-running with an unchanged schema is a no-op.
 
-**Destructive** changes — dropping a column, changing a column type, renaming a field, or backfilling data into a new shape — are not handled. You're responsible for any data migration before deploying a breaking schema change.
+**Destructive** changes are not handled: dropping a column, changing a column type, renaming a field, or backfilling data into a new shape. You're responsible for any data migration before deploying a breaking schema change.
 
 ## Secrets and `.dev.vars`
 
-The `.dev.vars` file holds two zones, separated by a divider the CLI writes itself. The SDK-managed keys come first (no header), then the divider, then anything you've added:
+The CLI writes SDK-managed keys at the top of `.dev.vars`, followed by a divider, followed by anything you've added:
 
-```bash
+```bash .dev.vars
 AUTH_JWT_PUBLIC_KEY=...
 AUTH_JWT_ISSUER=...
 AUTH_WORKER_URL=...
@@ -93,9 +93,9 @@ Anything **below** the divider:
 | Total across all secrets | 128 KB |
 | Raw deploy payload | 1 MB |
 
-Size limits track the Cloudflare Workers for Platforms enforcement on `secret_text` bindings.
+Size limits are Cloudflare's, enforced on `secret_text` bindings.
 
-A secret name cannot collide with any reserved binding name, custom binding, or Durable Object binding name. The CLI fails locally with a clear error before any upload.
+Secret names cannot collide with any reserved binding name, custom binding, or Durable Object binding name. The CLI fails locally with a clear error before any upload.
 
 ## Custom bindings
 
@@ -132,11 +132,11 @@ Durable Object data **is** removed when the worker is undeployed. Back up anythi
 
 ## Before your first deploy
 
-A few things worth confirming before you ship — these are the items most likely to bite you once your app is live and you can't iterate as freely:
+Three things to verify before shipping:
 
-- **Lock in the app name.** Renaming `name` in `wrangler.toml` later gives you a new subdomain and orphans the old one. Pick the one you want users to type.
-- **Audit `.dev.vars`.** Everything below the `# --- not managed` divider ships as a `secret_text` binding. Make sure prod credentials (not test keys) are in place — and that no scratch values are left over.
-- **Run the test suite.** `npx deepspace test` runs the same Playwright specs against a local build that mirror what runs against the deploy.
+- **Finalize the app name.** Renaming `name` in `wrangler.toml` later creates a new subdomain and orphans the old one.
+- **Audit `.dev.vars`.** Every key below the divider ships as a `secret_text` binding. Confirm prod credentials, not test keys.
+- **Run `npx deepspace test`.** Playwright runs your specs against a local build before you deploy them against the live one.
 
 ## Next steps
 
