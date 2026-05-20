@@ -3,20 +3,20 @@ title: "Project structure"
 description: "A tour of the files in a scaffolded DeepSpace app."
 ---
 
-A scaffolded app is a normal Vite + React project with a Cloudflare Worker entry point. This page explains what each file does and which ones you'll edit most often.
-
-If you only read one section, make it [The Durable Object manifest](#the-durable-object-manifest) - it's the bridge between your worker and the SDK.
+A scaffolded app is a Vite + React project with a Cloudflare Worker entry point. This page lists every file the scaffold ships and what each one is for.
 
 ## Top-level files
 
 | File | Purpose |
 |---|---|
-| `worker.ts` | Hono worker and Durable Object class declarations. Edit when adding custom routes or DO classes. |
-| `wrangler.toml` | Cloudflare config. The `name` field is your deploy subdomain. Declare custom bindings here. |
+| `worker.ts` | Hono worker and Durable Object class declarations. Edit to add custom routes or DO classes. |
+| `wrangler.toml` | Cloudflare config. The `name` field is set by the CLI from the project name and determines the deploy subdomain; changing it after deploy doesn't move the existing worker. Declare custom bindings here. |
 | `index.html` | HTML shell. Set `<html data-theme="...">` to pick a theme, update `<title>` and favicon. |
-| `vite.config.ts` | Vite + `@cloudflare/vite-plugin` config. You rarely need to edit this. |
-| `package.json` | Dependencies. The scaffold includes `deepspace`, `react`, `vite`, and a few Tailwind/UI peers. |
-| `.dev.vars` | Local secrets (gitignored). Auto-managed for SDK keys; user-added keys are uploaded as `secret_text` on deploy. |
+| `vite.config.ts` | Vite + `@cloudflare/vite-plugin` + generouted config. |
+| `package.json` | Dependencies. The scaffold ships `deepspace`, `react`, `react-router` + `@generouted/react-router`, `hono`, `yjs`, the Vercel `ai` SDK with `@ai-sdk/anthropic`/`@ai-sdk/openai`, `@radix-ui/*` primitives, `lucide-react`, `framer-motion`, and `zod`. |
+| `tsconfig.json` | TypeScript config. Strict mode, ES2022 target, covers `src/` and `worker.ts`. |
+| `postcss.config.js` | PostCSS pipeline for Tailwind v4. |
+| `.dev.vars` | Local secrets (gitignored). Not in the template - `deepspace dev` writes SDK-managed keys here on first run. Any keys you add by hand are uploaded as `secret_text` bindings on the next `deepspace deploy`. |
 
 ## `src/` - application code
 
@@ -24,10 +24,13 @@ If you only read one section, make it [The Durable Object manifest](#the-durable
 
 | File | Purpose |
 |---|---|
-| `src/pages/_app.tsx` | Root layout. Wraps the tree in `ToastProvider → DeepSpaceAuthProvider → AuthBoot → RecordProvider → RecordScope`. **Extend, don't replace.** |
-| `src/pages/home.tsx` | Public landing route (`/`). |
+| `src/main.tsx` | Vite entry. Mounts `<Routes />` from `@generouted/react-router` into `#root`. |
+| `src/pages/_app.tsx` | Root layout. Wraps the tree in `ToastProvider → DeepSpaceAuthProvider → AuthBoot → RecordProvider → RecordScope`. Extend, don't replace. |
+| `src/pages/index.tsx` | `/` route. Redirects to `/home`. |
+| `src/pages/home.tsx` | `/home` route. Public landing page. |
+| `src/pages/[...all].tsx` | Catch-all 404. |
 | `src/pages/(protected)/_layout.tsx` | Applies `<AuthGate>` to every route inside the `(protected)/` folder. |
-| `src/pages/(protected)/*.tsx` | Gated routes. Add a file here for a new authenticated page. |
+| `src/pages/(protected)/*.tsx` | Gated routes. Ships with `settings.tsx`; add files here for new authenticated pages. |
 | `src/components/Navigation.tsx` | Top navigation with auth-aware controls. Reads entries from `src/nav.ts`. |
 | `src/components/ui/` | Shadcn-style primitives - `Button`, `Dialog`, `Toast`, `Card`, `EmptyState`, and more. |
 
@@ -53,9 +56,9 @@ Schemas are imported by `worker.ts` and baked into the bundle at deploy time. Th
 | `src/styles.css` | Tailwind v4 entrypoint with the slate baseline `@theme` block. |
 | `src/nav.ts` | Top-nav entries. Add new pages here to make them appear in `Navigation.tsx`. |
 
-### Optional surfaces
+### Feature surfaces
 
-These exist only if your app needs them - install via `npx deepspace add <feature>` or create by hand.
+These ship pre-wired in the scaffold with empty defaults. Edit to populate, or delete the file if the feature isn't needed. Use `npx deepspace add <feature>` to install additional surfaces.
 
 | File | Purpose |
 |---|---|
@@ -70,16 +73,17 @@ These exist only if your app needs them - install via `npx deepspace add <featur
 
 | File | Purpose |
 |---|---|
-| `tests/smoke.spec.ts` | Page-load tests, navigation, auth UI presence. |
-| `tests/api.spec.ts` | API route status codes, response shapes, auth gating. |
-| `tests/collab.spec.ts` | Two-user real-time sync tests. |
-| `tests/playwright.config.ts` | Playwright config with `baseURL` and `webServer`. |
+| `tests/smoke.spec.ts` | App boot, navigation visibility, sign-in button presence, 404 route, console-error check. |
+| `tests/api.spec.ts` | `/api/auth/ok` reachability and a WebSocket smoke check. |
+| `tests/collab.spec.ts` | Two-user multi-context sign-in via the `users` fixture from `deepspace/testing`. |
+| `tests/helpers/` | Console-error capture helper and the Playwright `globalSetup` that warms up the auth worker. |
+| `tests/playwright.config.ts` | Playwright config - `baseURL`, `webServer`, `DEEPSPACE_PORT` plumbing. |
 
 Run with `npx deepspace test`. See [Testing](/guides/testing).
 
 ## The Durable Object manifest
 
-`worker.ts` declares the set of DO classes the app uses in a single constant:
+`worker.ts` exports a `__DO_MANIFEST__` constant listing the DO classes the app uses:
 
 ```ts
 export const __DO_MANIFEST__ = [
@@ -91,9 +95,9 @@ export const __DO_MANIFEST__ = [
 ] as const satisfies DOManifest
 ```
 
-The manifest is a `DOManifestEntry[]`. Each entry has a `binding` (the env binding name your Hono routes look up), a `className` (the DO subclass exported from the same file), and `sqlite` (true for storage-backed DOs).
+Each entry has a `binding` (the env binding name your Hono routes look up), a `className` (the DO subclass exported from the same file), and `sqlite` (true for SQLite-backed DOs).
 
-The `Env` interface derives its DO bindings from this constant:
+This constant exists for TypeScript inference. The `Env` interface picks up the binding names from it automatically:
 
 ```ts
 interface Env extends DOBindings<typeof __DO_MANIFEST__> {
@@ -101,14 +105,7 @@ interface Env extends DOBindings<typeof __DO_MANIFEST__> {
 }
 ```
 
-The deploy pipeline reads `__DO_MANIFEST__` to provision the right DO bindings on Cloudflare. Don't remove classes you no longer use without clearing their stored data first - the records persist across deploys.
-
-## Conventions
-
-- **Extend `_app.tsx`, don't rewrite it.** Add schemas, pages, and nav entries; leave the provider stack alone.
-- **Import UI primitives from `../components/ui`, not from `deepspace`.** The scaffold's local kit has its own React contexts; mixing the two produces `useToast must be used within ToastProvider` at runtime.
-- **Pages live under `src/pages/`.** generouted scans only this directory. Putting a page in `src/features/<name>/` results in 404s even if a nav link exists.
-- **Never commit `.dev.vars`.** The scaffold's `.gitignore` covers it. To rotate a secret, edit the file and redeploy.
+The actual deploy-time bindings and migrations are declared in `wrangler.toml` under `[durable_objects]` and `[[migrations]]`; keep the two in sync. Don't remove classes you no longer use without clearing their stored data first - the records persist across deploys.
 
 ## Next steps
 
