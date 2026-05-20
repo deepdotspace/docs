@@ -45,6 +45,14 @@ npm create deepspace@latest -- --help
 
 "Near-empty" means the target directory contains only boilerplate (`.git`, `.gitignore`, `LICENSE`, any `*.md`, etc.). Anything else triggers a guardrail to prevent overwriting an existing project.
 
+<Tip>
+The scaffold drops a `CLAUDE.md` at the project root that points coding agents at the [DeepSpace skill](https://github.com/deepdotspace/deepspace-skill). If you build with Claude Code, Cursor, or another agent, install it once so your assistant uses real SDK signatures instead of guesses:
+
+```bash
+npx skills@latest add deepdotspace/deepspace-skill
+```
+</Tip>
+
 ## Log in to the CLI
 
 Every CLI command that talks to the platform - `dev`, `deploy`, `invoke`, `test-accounts`, and the rest - requires a session. Plan to log in once before your first `npx deepspace dev`.
@@ -68,6 +76,8 @@ npx deepspace whoami --json   # machine-readable
 ```
 
 `whoami` refreshes the short-lived JWT on demand, so an expired token is handled silently. If `~/.deepspace/session` is missing, it prints "Not logged in." and exits 1. If the session can no longer be refreshed, it prints "Session expired." and exits 1. In either case, re-run `npx deepspace login`.
+
+Manage your account, deployed apps, billing, and earnings at [dashboard.deep.space](https://dashboard.deep.space). The CLI and the dashboard share one session — signing in once covers both.
 
 <Warning>
 The session file holds a long-lived refresh token. Treat `~/.deepspace/session`, `~/.deepspace/token`, and your app's `.dev.vars` file as secret. Never commit any of them to version control.

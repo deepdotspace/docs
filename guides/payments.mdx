@@ -5,7 +5,7 @@ description: "Subscriptions, one-time products, and ad-hoc charges via Stripe Ch
 
 DeepSpace ships a Stripe-backed payment system. You declare your plans and products in two manifest files; the SDK gives you hooks for paywalls, checkouts, and self-service billing. The platform charges customers and routes funds to the developer's connected Stripe account.
 
-You don't write Stripe code, register webhooks, or hold API keys. You don't even need a Stripe account to start declaring plans - funds accumulate until the developer connects their Stripe account in the DeepSpace dashboard at `/earnings`.
+You don't write Stripe code, register webhooks, or hold API keys. You don't even need a Stripe account to start declaring plans - funds accumulate until the developer connects their Stripe account in the [DeepSpace dashboard](https://dashboard.deep.space/earnings).
 
 ## Declare what you sell
 
@@ -258,7 +258,7 @@ Dashboard-initiated refunds reconcile automatically.
     The Stripe webhook fires shortly after the user returns from Checkout. Call `sub.refresh()` / `co.refresh()` once on return. If state is still stale, refresh again on user action - don't write a tight retry loop.
   </Accordion>
   <Accordion title="Connect onboarding lives in the dashboard, not your app">
-    Developer Stripe Connect onboarding happens at `deep.space/earnings`, outside the app. Don't build any Stripe Connect UI yourself. Funds accumulate on the platform balance until onboarding completes.
+    Developer Stripe Connect onboarding happens at [dashboard.deep.space/earnings](https://dashboard.deep.space/earnings), outside the app. Don't build any Stripe Connect UI yourself. Funds accumulate on the platform balance until onboarding completes.
   </Accordion>
 </AccordionGroup>
 

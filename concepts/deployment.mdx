@@ -11,7 +11,7 @@ The CLI builds your app with Vite (the Cloudflare plugin produces both the clien
 
 Deploys are idempotent. Re-running `deploy` with no source changes reuses provisioned resources and uploads unchanged code as a no-op.
 
-See [Build & deploy pipeline](/concepts/architecture#build--deploy-pipeline) for the full step-by-step.
+See [Build & deploy pipeline](/concepts/architecture#build--deploy-pipeline) for the full step-by-step. Inspect deployed apps, logs, and traffic in the web dashboard at [dashboard.deep.space](https://dashboard.deep.space).
 
 ## Subdomains
 
@@ -24,7 +24,7 @@ name = "my-app"
 
 Rules:
 
-- Must match `^[a-z0-9](?:-?[a-z0-9])+$` - lowercase, 2–63 chars, no leading / trailing / double dashes
+- Lowercase alphanumeric with optional dashes, up to 63 characters; cannot begin with a dash
 - Non-conforming names cause the CLI to fail with a clear error and the suggested canonical form; fix `name` in `wrangler.toml` and re-run
 - Renaming `name` after deploy and re-deploying gives you a new subdomain - the old one becomes orphaned (still accessible until explicitly undeployed)
 
