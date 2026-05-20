@@ -3,11 +3,11 @@ title: "Authentication"
 description: "Public, gated, and mixed auth configurations for DeepSpace apps."
 ---
 
-DeepSpace authentication is handled by the platform's [auth worker](/concepts/architecture#platform-workers) - you don't run an OAuth flow, mint JWTs, or manage sessions. The SDK ships React providers and components that wrap [Better Auth](https://www.better-auth.com/) and a [`verifyJwt`](/sdk-reference/worker/auth#verifyjwt-config-token) helper for your worker. This guide covers picking an auth model, gating routes, and the most common patterns.
+Authentication runs on the platform's [auth worker](/concepts/architecture#platform-workers), so you don't run an OAuth flow, mint JWTs, or manage sessions. The SDK ships React providers and components that wrap [Better Auth](https://www.better-auth.com/), plus a [`verifyJwt`](/sdk-reference/worker/auth#verifyjwt-config-token) helper for your worker.
 
 ## Auth models
 
-Three configurations cover virtually every app. The scaffold ships the **mixed** model; the `(protected)/_layout.tsx` route group applies [`<AuthGate>`](/sdk-reference/client/auth#authgate-fallback-redirectonsignout) to everything inside it.
+DeepSpace apps usually fall into one of three shapes. The scaffold ships the mixed model - the `(protected)/_layout.tsx` route group applies [`<AuthGate>`](/sdk-reference/client/auth#%3Cauthgate-fallback=--redirectonsignout=--/%3E) to everything inside it.
 
 <Tabs>
   <Tab title="Mixed (default)">
@@ -15,12 +15,11 @@ Three configurations cover virtually every app. The scaffold ships the **mixed**
 
     ```
     src/pages/
-      home.tsx                  ← public (/)
-      pricing.tsx               ← public (/pricing)
+      home.tsx                  public (/home)
       (protected)/
-        _layout.tsx             ← <AuthGate><Outlet /></AuthGate>
-        dashboard.tsx           ← gated (/dashboard)
-        settings.tsx            ← gated (/settings)
+        _layout.tsx             <AuthGate><Outlet /></AuthGate>
+        settings.tsx            gated (/settings)
+        // add gated pages here
     ```
 
     The folder name `(protected)/` is wrapped in literal parentheses - generouted treats it as a route group that doesn't appear in the URL. Adding a new gated page is a one-file change: drop it inside `(protected)/`.
@@ -29,11 +28,15 @@ Three configurations cover virtually every app. The scaffold ships the **mixed**
   </Tab>
 
   <Tab title="Fully gated">
-    Wrap the entire tree with [`<AuthGate>`](/sdk-reference/client/auth#authgate-fallback-redirectonsignout) in `_app.tsx`, and drop `allowAnonymous` from [`<RecordProvider>`](/sdk-reference/client/records#recordprovider):
+    Wrap the entire tree with [`<AuthGate>`](/sdk-reference/client/auth#%3Cauthgate-fallback=--redirectonsignout=--/%3E) in `_app.tsx`, and drop `allowAnonymous` from [`<RecordProvider>`](/sdk-reference/client/records#%3Crecordprovider%3E):
 
     ```tsx
     // src/pages/_app.tsx
+    import { Outlet } from 'react-router-dom'
     import { DeepSpaceAuthProvider, AuthGate, RecordProvider, RecordScope } from 'deepspace'
+    import Navigation from '../components/Navigation'
+    import { APP_NAME, SCOPE_ID } from '../constants'
+    import { schemas } from '../schemas'
 
     export default function App() {
       return (
@@ -51,13 +54,13 @@ Three configurations cover virtually every app. The scaffold ships the **mixed**
     }
     ```
 
-    Inside an `<AuthGate>` subtree the user is always signed in, so anonymous WebSocket connections are unnecessary.
+    Inside an `<AuthGate>` subtree the user is always signed in, so you don't need the anonymous WebSocket path.
 
     **Best for:** internal tools, paid SaaS, anything where every route requires sign-in.
   </Tab>
 
   <Tab title="Fully public">
-    Don't import `<AuthGate>` anywhere. Rely on `RecordProvider allowAnonymous` (already on by default in the scaffold). All pages render for signed-out visitors; data the user has read access to under the `*` role rule in [permissions](/concepts/permissions) is available.
+    Delete the scaffold's `src/pages/(protected)/` folder (or remove the `<AuthGate>` from its `_layout.tsx`) so no route is gated. Keep `<RecordProvider allowAnonymous>` - it's already on in the scaffold's `_app.tsx`. Signed-out visitors get the records that the `'*'` role rule in [permissions](/concepts/permissions) grants read access to.
 
     **Best for:** marketing sites, public catalogs, read-only directories.
   </Tab>
@@ -65,7 +68,7 @@ Three configurations cover virtually every app. The scaffold ships the **mixed**
 
 ## Auth-state checks in components
 
-The canonical "is the user signed in?" check is [`useAuth().isSignedIn`](/sdk-reference/client/auth#useauth-authstate). It updates immediately on sign-in / sign-out:
+Use [`useAuth().isSignedIn`](/sdk-reference/client/auth#useauth--authstate) for the "is the user signed in?" check. It updates immediately on sign-in and sign-out:
 
 ```tsx
 import { useAuth } from 'deepspace'
@@ -80,27 +83,29 @@ function MyComponent() {
 ```
 
 <Warning>
-**Don't gate on `useUser().user` truthiness alone.** `useUser` returns the storage-layer profile (with karma, credits, role) and loads async - you'll get a flash of "not signed in" while the profile fetch resolves. Use `useAuth().isSignedIn` for state checks; reach for `useUser()` only when you need profile fields.
+Don't gate on [`useUser().user`](/sdk-reference/client/auth#useuser---user-isloading-refetch-) truthiness alone. `useUser` returns the storage-layer profile (karma, credits, room role) and loads async, so you'll get a flash of "not signed in" while the profile fetch resolves. Use `useAuth().isSignedIn` for state checks and reach for `useUser()` only when you need profile fields.
 </Warning>
 
 ## `<AuthGate>` props
 
 | Prop | Type | Description |
 |---|---|---|
-| `fallback` | `ReactNode` | UI shown to signed-out users. Defaults to `<AuthOverlay />` rendered without `onClose`, which makes it non-dismissible. |
+| `fallback` | `ReactNode` | UI shown to first-visit signed-out users. Defaults to `<AuthOverlay />` rendered without `onClose`, which makes it non-dismissible. Not used when the user signs out mid-session - see `redirectOnSignOut`. |
 | `redirectOnSignOut` | `string` | Where the user lands when they sign out from inside the gate. Defaults to `'/'`. Triggers a full-page reload so cached state can't leak. |
 
 Pass a custom fallback to render something other than the default overlay:
 
 ```tsx
+import { AuthGate } from 'deepspace'
+
 <AuthGate fallback={<TeaserPage />}>
   <Dashboard />
 </AuthGate>
 ```
 
-## Sign-in UI - `<AuthOverlay />`
+## Sign-in UI
 
-The SDK ships a styled modal sign-in component:
+`<AuthOverlay />` is a styled modal sign-in component:
 
 ```tsx
 import { AuthOverlay, useAuth } from 'deepspace'
@@ -120,16 +125,16 @@ Render `<AuthOverlay />` without an `onClose` prop and gate on `!isSignedIn`. It
 
 ### Providers
 
-By default `<AuthOverlay />` shows GitHub, Google, and email/password. The `providers` prop only controls the OAuth provider buttons - its type is `Array<'github' | 'google'>`. Email/password sign-in is always rendered regardless of `providers`:
+By default `<AuthOverlay />` shows GitHub, Google, and email/password. The `providers` prop controls only the OAuth buttons - its type is `Array<'github' | 'google'>`. Email/password sign-in is always rendered:
 
 ```tsx
 <AuthOverlay providers={['google']} />              // Google + email/password
 <AuthOverlay providers={['google', 'github']} />    // Google + GitHub + email/password
 ```
 
-## Conditional rendering - `<SignedIn>` and `<SignedOut>`
+## Conditional rendering
 
-For small conditional pieces of UI:
+For small one-off bits of UI, [`<SignedIn>`](/sdk-reference/client/auth#%3Csignedin%3E-and-%3Csignedout%3E) and `<SignedOut>` are shorthand for the `isSignedIn` branch:
 
 ```tsx
 import { SignedIn, SignedOut } from 'deepspace'
@@ -144,7 +149,7 @@ import { SignedIn, SignedOut } from 'deepspace'
 
 ## Signing out
 
-Use `signOut()` from the SDK's Better Auth client:
+Call [`signOut`](/sdk-reference/client/auth#signin-signout) - a thin re-export of Better Auth's client method:
 
 ```tsx
 import { signOut } from 'deepspace'
@@ -152,15 +157,15 @@ import { signOut } from 'deepspace'
 <button onClick={() => signOut()}>Sign out</button>
 ```
 
-The scaffolded `Navigation.tsx` already calls `signOut()` from the avatar dropdown. Don't add a second sign-out - extend the existing one if you need to customize.
+The scaffolded `Navigation.tsx` already calls `signOut()` from the avatar dropdown. Extend the existing one rather than adding a second sign-out control.
 
 <Tip>
-If your app requires sign-in, a sign-out control is non-negotiable. If you replace `Navigation.tsx`, make sure `signOut()` remains reachable when signed in.
+If your app requires sign-in, keep a sign-out control reachable in the signed-in UI. If you replace `Navigation.tsx`, wire `signOut()` into the new shell.
 </Tip>
 
 ## Server-side verification
 
-To verify a JWT inside your worker (for custom API routes that aren't auto-protected):
+For custom API routes that aren't auto-protected, verify the JWT yourself. Add the handler to the existing Hono `app` in the scaffold's `worker.ts` - `verifyJwt` is already imported there, so the `import` line below is redundant if you're extending `worker.ts` in place:
 
 ```ts
 // worker.ts
@@ -180,7 +185,7 @@ app.get('/api/me', async (c) => {
 })
 ```
 
-`verifyJwt` does not throw on invalid input - it returns a `{ result, error? }` envelope. On success `result` is `{ userId, claims }` (use `result.userId` for the subject, `result.claims` for the full JWT payload). Always check `result` before reading either.
+`verifyJwt` never throws. It returns `{ result, error?, debug? }`: `result` is `{ userId, claims }` on success or `null` on failure, `error` is the underlying jose error, and `debug` is the decoded `iss`/`aud`/`azp`/`exp` for log lines. Always check `result` before reading the subject.
 
 The scaffold's `wsRoute` handler already calls `verifyJwt` for every WebSocket upgrade, so you only need this pattern for custom HTTP routes.
 
@@ -189,6 +194,9 @@ The scaffold's `wsRoute` handler already calls `verifyJwt` for every WebSocket u
 ### Landing page with an "open app" CTA
 
 ```tsx
+import { Link } from 'react-router-dom'
+import { useAuth } from 'deepspace'
+
 function Landing() {
   const { isSignedIn } = useAuth()
   return (
@@ -196,7 +204,7 @@ function Landing() {
       <Hero />
       <Pricing />
       {isSignedIn
-        ? <Link to="/dashboard">Open the app →</Link>
+        ? <Link to="/dashboard">Open the app</Link>
         : <SignInButton />}
     </>
   )
@@ -205,26 +213,38 @@ function Landing() {
 
 ### Conditional nav links
 
-```tsx
+The scaffold's `Navigation.tsx` filters `src/nav.ts` by the user's room role. Omit `roles` to show an item to everyone; admins see everything regardless.
+
+```ts
 // src/nav.ts
-export const nav = [
-  { label: 'Home', href: '/', visibility: 'public' },
-  { label: 'Dashboard', href: '/dashboard', visibility: 'signed-in' },
-  { label: 'Admin', href: '/admin', visibility: 'admin' },
+import type { Role } from './constants'
+
+export interface NavItem {
+  path: string
+  label: string
+  roles?: Role[]
+}
+
+export const nav: NavItem[] = [
+  { path: '/home', label: 'Home' },                    // visible to everyone
+  { path: '/settings', label: 'Settings' },            // visible to everyone
+  { path: '/admin', label: 'Admin', roles: ['admin'] },// admin-only
 ]
 ```
 
-The scaffold's `Navigation.tsx` reads `visibility` and filters accordingly.
+`Role` is defined in `src/constants.ts` - extend it there to add new roles, then use them in [permissions](/concepts/permissions).
 
 ### Hiding nav on the landing route
 
-If your landing page has its own header, hide the global nav on that route:
+If your landing page has its own header, gate the global `<Navigation />` on `useLocation()` inside the scaffold's existing `_app.tsx`. Keep the surrounding providers - only the `<Navigation />` line changes:
 
 ```tsx
-// src/pages/_app.tsx
+// src/pages/_app.tsx - inside the existing App() return
 import { useLocation } from 'react-router-dom'
 
 const isLanding = useLocation().pathname === '/'
+
+// ...replace <Navigation /> with:
 {!isLanding && <Navigation />}
 ```
 
@@ -235,10 +255,10 @@ const isLanding = useLocation().pathname === '/'
     The scaffold's `_app.tsx` wraps the tree in the **local** `ToastProvider` (from `src/components/ui`), not the SDK's. Import `useToast` from `../components/ui`, not from `deepspace`. Mixing the two contexts produces this error.
   </Accordion>
   <Accordion title="Safari shows the user as signed-out even after sign-in">
-    Safari enforces the `__Secure-` cookie attribute requires HTTPS, and refuses to set it on `localhost`. Chrome doesn't. Test against `https://` URLs (or deploy) when verifying Safari behavior.
+    Safari refuses to set `__Secure-` cookies on `localhost` because the attribute requires HTTPS; Chrome is more lenient. Test against `https://` URLs (or deploy) when verifying Safari behavior.
   </Accordion>
   <Accordion title="Sign-in popup opens but never returns to the app">
-    The OAuth flow opens the auth worker at the platform domain, completes auth, then redirects back to your app. If the redirect doesn't fire, it's almost always a cookie or HTTPS issue (see above) - open the auth worker's tab and check the browser console.
+    The OAuth flow opens the auth worker at the platform domain, completes sign-in, then redirects back to your app. If the redirect doesn't fire, it's almost always a cookie or HTTPS issue (see above) - open the auth worker's tab and check the browser console.
   </Accordion>
 </AccordionGroup>
 

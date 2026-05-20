@@ -77,7 +77,7 @@ npx deepspace whoami --json   # machine-readable
 
 `whoami` refreshes the short-lived JWT on demand, so an expired token is handled silently. If `~/.deepspace/session` is missing, it prints "Not logged in." and exits 1. If the session can no longer be refreshed, it prints "Session expired." and exits 1. In either case, re-run `npx deepspace login`.
 
-Manage your account, deployed apps, billing, and earnings at [dashboard.deep.space](https://dashboard.deep.space). The CLI and the dashboard share one session — signing in once covers both.
+Manage your account, deployed apps, billing, and earnings at [dashboard.deep.space](https://dashboard.deep.space). The CLI and the dashboard share one session - signing in once covers both.
 
 <Warning>
 The session file holds a long-lived refresh token. Treat `~/.deepspace/session`, `~/.deepspace/token`, and your app's `.dev.vars` file as secret. Never commit any of them to version control.
