@@ -1,14 +1,19 @@
 ---
 title: "Messaging"
-description: "Channels, direct messages, reactions, and read receipts with drop-in schemas and hooks."
+description: "Build a chat surface with channels, direct messages, reactions, and read receipts."
 ---
 
-DeepSpace ships a complete messaging layer as a set of pre-built schemas and React hooks. You add the schemas to your app's `RecordRoom`, and the SDK gives you channel-style chat - public channels, private channels, DMs, reactions, members, and read receipts - without writing a single message-routing line.
+DeepSpace ships a complete messaging layer as drop-in schemas plus a small set of React hooks. Wire the schemas into your app's `RecordRoom`, mount the providers (already done in the scaffold), and compose a chat surface from `useChannels`, `useMessages`, and `useReactions`.
+
+This guide walks the end-to-end flow. For the exhaustive hook signatures, options, and return shapes, see the [messaging reference](/sdk-reference/client/messaging).
 
 ## Add the schemas
 
+Pick the schemas your UI actually uses. `CHANNELS_SCHEMA` + `MESSAGES_SCHEMA` is the minimum; the rest are additive.
+
 ```ts
 // src/schemas.ts
+import type { CollectionSchema } from 'deepspace/worker'
 import {
   CHANNELS_SCHEMA,
   MESSAGES_SCHEMA,
@@ -20,7 +25,7 @@ import {
 import { usersSchema } from './schemas/users-schema'
 import { settingsSchema } from './schemas/admin-schema'
 
-export const schemas = [
+export const schemas: CollectionSchema[] = [
   usersSchema,
   settingsSchema,
   CHANNELS_SCHEMA,
@@ -31,276 +36,26 @@ export const schemas = [
 ]
 ```
 
-You don't need all five - `CHANNELS_SCHEMA` + `MESSAGES_SCHEMA` is the minimum. Add `REACTIONS_SCHEMA` for reactions, `CHANNEL_MEMBERS_SCHEMA` if you need explicit membership records, and `READ_RECEIPTS_SCHEMA` for unread tracking.
+The drop-in schemas include sensible [RBAC](/concepts/permissions) defaults: signed-in users can read channels and post messages, and only the author can edit or delete a message. Private-channel gating is an app-level concern — enforce it with `useChannelMembers` (see [Channel membership](#channel-membership)).
 
-The schemas include sensible [RBAC](/concepts/permissions) defaults: anyone can read public channels; only members can post; only authors can edit or delete their own messages.
+## Build the chat surface
 
-## Channels
-
-The [`useChannels`](/sdk-reference/client/messaging#usechannels) hook exposes the four channel operations. Channel `type` is one of:
-
-| Type | Visibility |
-|---|---|
-| `'public'` | Visible to all signed-in users in the app |
-| `'private'` | Visible only to channel members |
-| `'dm'` | Direct message between two users |
-
-<Tabs>
-  <Tab title="Create">
-    ```tsx
-    import { useChannels } from 'deepspace'
-
-    function NewChannelButton() {
-      const { create } = useChannels()
-
-      async function newChannel() {
-        const channelId = await create({
-          name: 'general',
-          type: 'public',
-          description: 'Company-wide announcements',
-        })
-        if (channelId) navigate(`/channels/${channelId}`)
-      }
-
-      return <button onClick={newChannel}>New channel</button>
-    }
-    ```
-
-    <Warning>
-    **`type` is required.** Passing only `{ name }` returns a channel with `type: undefined`, which silently breaks downstream queries.
-    </Warning>
-  </Tab>
-
-  <Tab title="List">
-    ```tsx
-    import { useChannels } from 'deepspace'
-
-    function ChannelList() {
-      const { channels, status } = useChannels()
-
-      if (status === 'loading') return <SkeletonList />
-
-      return (
-        <ul>
-          {channels.map((ch) => (
-            <li key={ch.recordId}>#{ch.data.name}</li>
-          ))}
-        </ul>
-      )
-    }
-    ```
-  </Tab>
-
-  <Tab title="Update">
-    ```tsx
-    const { update } = useChannels()
-
-    update(channelId, { description: 'Updated description' })
-    ```
-
-    `update` returns `void` and accepts only `name` and/or `description` (`Partial<Pick<Channel, 'name' | 'description'>>`). [Merge semantics](/sdk-reference/client/records#usemutations-t-collection) apply - only the fields you pass are changed. Use `archive` to flip the archived flag.
-  </Tab>
-
-  <Tab title="Archive / delete">
-    ```tsx
-    const { archive, remove } = useChannels()
-
-    // Hide without deleting (reversible) - returns void
-    archive(channelId)
-
-    // Permanently delete
-    await remove(channelId)
-    ```
-
-    Prefer `archive` for user-facing flows; `remove` is for cleanup operations.
-  </Tab>
-</Tabs>
-
-## Messages
-
-The [`useMessages(channelId)`](/sdk-reference/client/messaging#usemessages-channelid-options) hook returns the message list plus the four message operations.
-
-<Tabs>
-  <Tab title="Send">
-    Identity (author) is derived from the verified JWT - you don't pass an `authorId`.
-
-    ```tsx
-    import { useMessages } from 'deepspace'
-    import { useState } from 'react'
-
-    function MessageComposer({ channelId }: { channelId: string }) {
-      const { send } = useMessages(channelId)
-      const [draft, setDraft] = useState('')
-
-      function handleSend() {
-        if (!draft.trim()) return
-        send(draft)
-        setDraft('')
-      }
-
-      return (
-        <>
-          <input value={draft} onChange={(e) => setDraft(e.target.value)} />
-          <button onClick={handleSend}>Send</button>
-        </>
-      )
-    }
-    ```
-  </Tab>
-
-  <Tab title="List">
-    ```tsx
-    import { useMessages, useAuth } from 'deepspace'
-
-    function MessageList({ channelId }: { channelId: string }) {
-      const { messages, status } = useMessages(channelId)
-      const { userId } = useAuth()
-
-      if (status === 'loading') return <SkeletonList />
-
-      return (
-        <ul>
-          {messages.map((m) => (
-            <li key={m.recordId}>
-              <strong>{m.data.authorId}:</strong> {m.data.content}
-            </li>
-          ))}
-        </ul>
-      )
-    }
-    ```
-
-    The hook subscribes to all messages in the channel and re-renders on every update.
-  </Tab>
-
-  <Tab title="Edit">
-    ```tsx
-    const { edit } = useMessages(channelId)
-
-    edit(messageId, 'Updated text')
-    ```
-
-    `edit` takes the new content as a positional string and returns `void`. The default [`MESSAGES_SCHEMA`](/sdk-reference/worker/schemas) allows authors to edit their own messages.
-  </Tab>
-
-  <Tab title="Delete">
-    Two flavors. Prefer `softDelete` - it sets a tombstone flag instead of removing the row, which preserves chat history continuity. Both return `void`.
-
-    ```tsx
-    const { softDelete, remove } = useMessages(channelId)
-
-    // Preferred - tombstone flag
-    softDelete(messageId)
-
-    // Hard delete - use sparingly
-    remove(messageId)
-    ```
-  </Tab>
-</Tabs>
-
-## Reactions
-
-```tsx
-import { useReactions } from 'deepspace'
-
-function MessageActions({ messageId, channelId }: { messageId: string; channelId: string }) {
-  const { getReactionsForMessage, toggle } = useReactions(channelId)
-  const reactions = getReactionsForMessage(messageId)
-
-  return (
-    <div>
-      {reactions.map((r) => (
-        <button key={r.emoji} onClick={() => toggle(messageId, r.emoji)}>
-          {r.emoji} {r.count}
-        </button>
-      ))}
-      <button onClick={() => toggle(messageId, '👍')}>+👍</button>
-    </div>
-  )
-}
-```
-
-`getReactionsForMessage` returns `GroupedReaction[]` - each entry has `{ emoji, count, currentUserReacted, userIds }` (already aggregated by emoji). `toggle` returns `void` and adds the caller's reaction or removes it if it already exists.
-
-## Direct messages
-
-Pass `type: 'dm'` to `create`. By convention, DMs include the two participant IDs in metadata:
-
-```tsx
-const { create } = useChannels()
-
-async function startDM(otherUserId: string) {
-  const channelId = await create({
-    name: `dm:${userId}:${otherUserId}`,
-    type: 'dm',
-  })
-  navigate(`/messages/${channelId}`)
-}
-```
-
-For richer DM and conversation flows that span apps (cross-app inbox, group DMs), see [Directory conversations](/sdk-reference/client/messaging#directory-conversations).
-
-## Channel membership
-
-For private channels, use `useChannelMembers` to manage who has access:
-
-```tsx
-import { useChannelMembers } from 'deepspace'
-
-const { members, join, leave, isMember } = useChannelMembers(channelId)
-
-// `isMember` is a boolean reflecting whether the *current* user is a member.
-if (!isMember) {
-  return <button onClick={() => join()}>Join channel</button>
-}
-```
-
-## Read receipts
-
-Track which messages each user has seen:
-
-```tsx
-import { useReadReceipts, useMessages } from 'deepspace'
-
-const { messages } = useMessages(channelId)
-const { markAsRead, getUnreadCount } = useReadReceipts()
-
-useEffect(() => {
-  if (messages.length > 0) {
-    // markAsRead takes a single channelId - it stamps "now" as lastReadAt for the current user.
-    markAsRead(channelId)
-  }
-}, [messages, channelId])
-
-// getUnreadCount needs the channel's messages so it can count how many arrived after lastReadAt.
-const unread = getUnreadCount(channelId, messages)
-```
-
-## Display helpers
-
-The SDK exports formatting helpers for common UI tasks:
-
-```ts
-import {
-  formatMessageTime,           // "3:42 PM"
-  formatFullTimestamp,         // "Today at 3:42 PM"
-  shouldGroupMessages,         // Group consecutive messages from same author
-  getThreadCounts,             // Count replies per parent message
-  groupReactionsForMessage,    // Aggregate reactions by emoji
-} from 'deepspace'
-```
-
-## Complete chat surface
-
-A minimal but production-shaped chat component:
+A minimal chat surface. `useChannels` lists the sidebar, `useMessages` drives the transcript, and `useReactions` gives every message a toggleable emoji. Identity (author) is derived from the verified JWT - you never pass an `authorId`.
 
 ```tsx
 import { useState } from 'react'
-import { useChannels, useMessages, useReactions, formatMessageTime } from 'deepspace'
+import {
+  useChannels,
+  useMessages,
+  useReactions,
+  formatMessageTime,
+} from 'deepspace'
 
 export default function ChatApp() {
-  const { channels } = useChannels()
+  const { channels, status } = useChannels()
   const [activeId, setActiveId] = useState<string | null>(null)
+
+  if (status === 'loading') return <SkeletonList />
 
   return (
     <div className="grid grid-cols-[240px_1fr] h-screen">
@@ -311,9 +66,7 @@ export default function ChatApp() {
           </button>
         ))}
       </aside>
-      <main>
-        {activeId && <ChannelView channelId={activeId} />}
-      </main>
+      <main>{activeId && <ChannelView channelId={activeId} />}</main>
     </div>
   )
 }
@@ -329,13 +82,25 @@ function ChannelView({ channelId }: { channelId: string }) {
         {messages.map((m) => (
           <li key={m.recordId}>
             <span>{m.data.authorId}</span>
-            <span>{formatMessageTime(m.data.createdAt)}</span>
+            <span>{formatMessageTime(m.createdAt)}</span>
             <p>{m.data.content}</p>
-            <button onClick={() => toggle(m.recordId, '❤️')}>❤️</button>
+            {getReactionsForMessage(m.recordId).map((r) => (
+              <button key={r.emoji} onClick={() => toggle(m.recordId, r.emoji)}>
+                {r.emoji} {r.count}
+              </button>
+            ))}
+            <button onClick={() => toggle(m.recordId, '❤️')}>+❤️</button>
           </li>
         ))}
       </ul>
-      <form onSubmit={(e) => { e.preventDefault(); send(draft); setDraft('') }}>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (!draft.trim()) return
+          send(draft)
+          setDraft('')
+        }}
+      >
         <input value={draft} onChange={(e) => setDraft(e.target.value)} />
         <button>Send</button>
       </form>
@@ -344,8 +109,103 @@ function ChannelView({ channelId }: { channelId: string }) {
 }
 ```
 
+Sends, edits, reactions, and deletes all dispatch optimistically and reconcile through the room - see [`useChannels`](/sdk-reference/client/messaging#usechannels), [`useMessages` options](/sdk-reference/client/messaging#usemessages-channelid-options), and [`useReactions`](/sdk-reference/client/messaging#usereactions-channelid) for the full API surface.
+
+## Create a channel
+
+Channel `type` is one of `'public'`, `'private'`, or `'dm'`.
+
+```tsx
+const { create } = useChannels()
+
+const channelId = await create({
+  name: 'general',
+  type: 'public',
+  description: 'Company-wide announcements',
+})
+```
+
+<Warning>
+**`type` is required.** Passing only `{ name }` produces a channel with `type: undefined`, which silently breaks downstream queries.
+</Warning>
+
+## Direct messages
+
+DMs are just channels with `type: 'dm'`. By convention, encode the participant pair in the channel `name` so you can dedupe locally before calling `create`.
+
+```tsx
+const { create } = useChannels()
+
+async function startDM(otherUserId: string, currentUserId: string) {
+  const channelId = await create({
+    name: `dm:${[currentUserId, otherUserId].sort().join(':')}`,
+    type: 'dm',
+  })
+  navigate(`/messages/${channelId}`)
+}
+```
+
+The same `useMessages(channelId)` and `useReactions(channelId)` hooks drive the DM thread - no separate API. For cross-app DMs that live on a dedicated Durable Object scope, use [`useConversation`](/sdk-reference/client/messaging#useconversation-options) instead.
+
+## Channel membership
+
+For private channels, gate posting on membership. `isMember` is a derived boolean for the current signed-in user.
+
+```tsx
+import { useChannelMembers } from 'deepspace'
+
+function JoinGate({ channelId }: { channelId: string }) {
+  const { isMember, join } = useChannelMembers(channelId)
+  if (!isMember) return <button onClick={() => join()}>Join channel</button>
+  return <MessageComposer channelId={channelId} />
+}
+```
+
+See [`useChannelMembers`](/sdk-reference/client/messaging#usechannelmembers-channelid) for the full membership surface.
+
+## Read receipts
+
+Stamp the channel as read whenever the user has it open, then derive unread counts from the message list.
+
+```tsx
+import { useEffect } from 'react'
+import { useMessages, useReadReceipts } from 'deepspace'
+
+function ChannelView({ channelId }: { channelId: string }) {
+  const { messages } = useMessages(channelId)
+  const { markAsRead, getUnreadCount } = useReadReceipts()
+
+  useEffect(() => {
+    markAsRead(channelId)
+  }, [channelId, messages.length, markAsRead])
+
+  const unread = getUnreadCount(channelId, messages)
+  // ...
+}
+```
+
+`markAsRead` writes the current timestamp; `getUnreadCount` counts messages that landed after it. The receipt is per-user, scoped by the verified JWT. Full signatures live in [`useReadReceipts`](/sdk-reference/client/messaging#usereadreceipts).
+
+## Gotchas
+
+<Info>
+**Optimistic sends.** `send`, `edit`, `toggle`, `archive`, `join`, and `leave` dispatch optimistically and return `void` (or, for `send` and `create`, a promise that resolves to the new optimistic id - not a server ACK). The record store reconciles when the server acknowledges. To know a write landed, either watch for the record to appear in the live list returned by [`useQuery`](/sdk-reference/client/records#usequery<t>-collection-options), or call the `*Confirmed` variants of [`useMutations`](/sdk-reference/client/records#usemutations<t>-collection) directly.
+</Info>
+
+<Info>
+**Prefer `softDelete` for messages.** `softDelete(messageId)` sets a `deleted: true` tombstone so threads, parent links, and read receipts stay coherent. `remove(messageId)` is a hard delete and should be reserved for moderation or test cleanup.
+</Info>
+
+<Info>
+**`toggle` is symmetric.** [`useReactions.toggle`](/sdk-reference/client/messaging#usereactions-channelid) adds the caller's reaction if it's absent and removes it if it's already there. Don't call it twice to "confirm" - that undoes the reaction.
+</Info>
+
+<Info>
+**Channel `update` is a merge.** Only the fields you pass are patched - see [merge semantics](/sdk-reference/client/records#usemutations<t>-collection). To flip `archived`, use `archive(channelId)` rather than `update`.
+</Info>
+
 ## Next steps
 
-- [Presence and cursors](/guides/presence-and-cursors) - add typing indicators and online status.
-- [Permissions](/concepts/permissions) - make a channel private to specific roles.
-- [Messaging reference](/sdk-reference/client/messaging) - full API for channels, messages, reactions, and read receipts.
+- [Presence and cursors](/guides/presence-and-cursors) - typing indicators and online status.
+- [Permissions](/concepts/permissions) - making channels private to specific roles.
+- [Messaging reference](/sdk-reference/client/messaging) - full API for channels, messages, reactions, members, and read receipts.
