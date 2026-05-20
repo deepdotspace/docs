@@ -3,9 +3,9 @@ title: "Data storage"
 description: "Define a collection, query it from React, and mutate it with optimistic updates."
 ---
 
-This guide walks through adding a new [collection](/concepts/data-model) to your app - declaring its [schema](/sdk-reference/worker/schemas), querying it from the client, and persisting writes. By the end, you'll have a working CRUD surface backed by a [Durable Object](/concepts/architecture#durable-objects) that syncs in real time across every connected client.
+This guide walks through adding a new [collection](/concepts/data-model) to your app: declaring its [schema](/sdk-reference/worker/schemas), querying it from the client, and persisting writes. By the end, you'll have a working CRUD page backed by a [Durable Object](/concepts/architecture#durable-objects) that syncs in real time across every connected client.
 
-For the underlying mental model - envelopes, scopes, the optimistic pipeline - see [Data model](/concepts/data-model) and [Real-time sync](/concepts/realtime-sync).
+For background on envelopes, scopes, and the optimistic pipeline, see [Data model](/concepts/data-model) and [Real-time sync](/concepts/realtime-sync).
 
 ## Define the schema
 
@@ -32,32 +32,23 @@ export const notesSchema: CollectionSchema = {
 Register it in `src/schemas.ts`:
 
 ```ts
+import type { CollectionSchema } from 'deepspace/worker'
 import { usersSchema } from './schemas/users-schema'
 import { settingsSchema } from './schemas/admin-schema'
 import { notesSchema } from './schemas/notes-schema'
 
-export const schemas = [usersSchema, settingsSchema, notesSchema]
+export const schemas: CollectionSchema[] = [usersSchema, settingsSchema, notesSchema]
 ```
 
 Restart `npx deepspace dev` if it's running - schemas are picked up at worker startup.
 
 <Note>
-Schemas are **baked into your worker at deploy time**. There's no runtime schema registry. To add or change a schema in production, you must redeploy.
+Schemas are baked into your worker at deploy time. There is no runtime schema registry; to add or change a schema in production, redeploy.
 </Note>
 
-## Read records - `useQuery`
+## Read records
 
-The [`useQuery`](/sdk-reference/client/records#usequery-t-collection-options) hook subscribes to a collection and streams updates over a WebSocket. Each record comes wrapped in an **envelope**:
-
-```ts
-type Envelope<T> = {
-  recordId: string
-  data: T              // your fields live here
-  createdBy: string
-  createdAt: string
-  updatedAt: string
-}
-```
+[`useQuery`](/sdk-reference/client/records#usequery<t>-collection-options) subscribes to a collection and streams updates over a WebSocket. Each record arrives as an envelope, with your fields under `.data`:
 
 ```tsx
 import { useQuery } from 'deepspace'
@@ -70,7 +61,7 @@ function NotesList() {
     orderDir: 'desc',
   })
 
-  if (status === 'loading') return <SkeletonList />
+  if (status === 'loading') return <p>Loading…</p>
   if (status === 'error') return <p>Error: {error}</p>
 
   return (
@@ -90,98 +81,28 @@ function NotesList() {
 User fields live under `.data`. Reading `note.title` returns `undefined` - always use `note.data.title`. TypeScript catches this if you pass a row type to `useQuery<Note>`.
 </Warning>
 
-### Query options
+For filtering, sorting, and limit options, see [`useQuery` options](/sdk-reference/client/records#usequery<t>-collection-options). The Durable Object applies `where` server-side before broadcasting, so unauthorized records never leave the worker.
 
-| Option | Type | Description |
-|---|---|---|
-| `where` | `Partial<T>` | Filter records by exact field match |
-| `orderBy` | `string` | Field to sort by (or `'createdAt'`, `'updatedAt'`) |
-| `orderDir` | `'asc' \| 'desc'` | Sort direction (default `'asc'`) |
-| `limit` | `number` | Maximum records to return |
+## Write records
+
+[`useMutations`](/sdk-reference/client/records#usemutations<t>-collection) returns `create` / `put` / `remove` plus `*Confirmed` variants. Each mutation applies [optimistically](/concepts/realtime-sync#the-mutation-pipeline) - the local store updates before the server confirms.
 
 ```tsx
-const { records } = useQuery<Note>('notes', {
-  where: { pinned: true },
-  orderBy: 'updatedAt',
-  orderDir: 'desc',
-  limit: 10,
-})
+import { useMutations } from 'deepspace'
+
+const { create, put, remove } = useMutations<Note>('notes')
+
+const id = await create({ title: 'Untitled', body: '', pinned: false })
+await put(id, { pinned: true })          // merge: only updates pinned
+await remove(id)
 ```
 
-The DO applies the filter server-side before broadcasting, so unauthorized records never leave the worker.
+- **`create` returns the `recordId` immediately.** The ID is generated client-side (timestamp + random suffix) before the write is sent, so you can navigate to `/notes/${id}` without waiting for the server.
+- **`put` is merge semantics.** The server applies `{ ...existing, ...patch }`. Send only the fields you're changing - don't spread the whole row.
+- **`remove` is a hard delete.** There's no soft-delete primitive at the records layer.
+- **Use `createConfirmed` when persistence matters before the next step.** Plain `create` resolves on local update; if the server later rejects (RBAC, validation), the optimistic write rolls back. `createConfirmed` waits for the Durable Object ack and rejects the promise on server denial.
 
-## Write records - `useMutations`
-
-The [`useMutations`](/sdk-reference/client/records#usemutations-t-collection) hook returns three mutation functions plus their confirmed variants. Each mutation applies [optimistically](/concepts/realtime-sync#the-optimistic-mutation-pipeline) - the local store updates before the server confirms.
-
-<Tabs>
-  <Tab title="Create">
-    `create` takes the full row shape and returns the new `recordId` (generated client-side before the optimistic write is sent). Capture it if you need to navigate to a new resource - you can use it immediately without waiting for server acknowledgment.
-
-    ```tsx
-    import { useMutations } from 'deepspace'
-
-    const { create } = useMutations<Note>('notes')
-
-    async function handleCreate() {
-      const id = await create({
-        title: 'Untitled',
-        body: '',
-        pinned: false,
-      })
-      navigate(`/notes/${id}`)
-    }
-    ```
-  </Tab>
-
-  <Tab title="Update">
-    `put` uses **merge semantics** - the server applies `{ ...existing, ...patch }`. Send only the fields you're changing.
-
-    ```tsx
-    const { put } = useMutations<Note>('notes')
-
-    // Update only pinned, leave other fields alone
-    await put(noteId, { pinned: true })
-
-    // Update multiple fields
-    await put(noteId, { title: 'New', body: 'Updated body' })
-    ```
-
-    Don't spread the whole row - it wastes bandwidth and risks overwriting concurrent edits.
-  </Tab>
-
-  <Tab title="Delete">
-    `remove` is a hard delete. The record is dropped from SQLite and broadcast as `record_removed` to every connected client.
-
-    ```tsx
-    const { remove } = useMutations<Note>('notes')
-
-    await remove(noteId)
-    ```
-  </Tab>
-
-  <Tab title="Confirmed">
-    The `*Confirmed` variants resolve only after the Durable Object acknowledges the write. Use when the next step depends on persistence - typically before navigating to a server-generated ID.
-
-    ```tsx
-    const { createConfirmed } = useMutations<Note>('notes')
-
-    const id = await createConfirmed({ title: 'New', body: '', pinned: false })
-    navigate(`/notes/${id}`)
-    ```
-
-    If the server rejects the write (RBAC denial, schema validation), the plain `create` rolls back the optimistic update; `createConfirmed` rejects the promise instead.
-  </Tab>
-</Tabs>
-
-| Method | Signature | Notes |
-|---|---|---|
-| `create` | `(data: T) => Promise<string>` | Returns the new `recordId` (generated client-side). Requires the full record shape. |
-| `put` | `(id: string, patch: Partial<T>) => Promise<void>` | Server merges: `{ ...existing, ...patch }`. Send only fields that change. |
-| `remove` | `(id: string) => Promise<void>` | Hard delete. |
-| `createConfirmed` | `(data: T) => Promise<string>` | Resolves after server acknowledgment. |
-| `putConfirmed` | `(id, patch) => Promise<void>` | Resolves after server acknowledgment. |
-| `removeConfirmed` | `(id) => Promise<void>` | Resolves after server acknowledgment. |
+See the [reference](/sdk-reference/client/records) for the full method table.
 
 ## A complete CRUD example
 
@@ -213,10 +134,8 @@ export default function NotesPage() {
 
   return (
     <div>
-      <div>
-        <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="New note…" />
-        <button onClick={addNote}>Add</button>
-      </div>
+      <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="New note…" />
+      <button onClick={addNote}>Add</button>
       <ul>
         {records.map((note) => (
           <li key={note.recordId}>
@@ -237,28 +156,23 @@ export default function NotesPage() {
 
 Open the page in two browser windows - changes in one window appear in the other in real time.
 
-## Working with JSON columns
+## JSON columns
 
-For structured data, use `interpretation: { kind: 'json' }`:
+For structured field data, use `interpretation: { kind: 'json' }`:
 
 ```ts
 { name: 'tags', storage: 'text', interpretation: { kind: 'json' } }
 ```
 
-On write, pass the value directly - the SDK serializes:
+The SDK serializes on write and parses on read - pass and receive the value directly, no `JSON.stringify` / `JSON.parse` on either end.
 
 ```ts
 await create({ title: 'Trip', tags: ['vacation', '2024'] })
+// later
+record.data.tags  // ['vacation', '2024']
 ```
 
-On read, the value is already parsed - don't call `JSON.parse`:
-
-```ts
-record.data.tags        // ✓ ['vacation', '2024']
-JSON.parse(record.data.tags)  // ✗ throws (already an object)
-```
-
-## Restricting access
+## Per-user privacy
 
 Permissions are enforced server-side. To make notes private per user:
 
@@ -268,16 +182,14 @@ permissions: {
 }
 ```
 
-Now each user sees only the notes they created. `'own'` resolves against `record.createdBy` by default; override with `ownerField` if you want a different column to determine ownership.
-
-For more advanced rules - published/draft visibility, collaborators, teams - see [Concepts → Permissions](/concepts/permissions).
+`'own'` resolves against `record.createdBy` by default; override with `ownerField` if a different column determines ownership. For published/draft visibility, collaborators, and team rules, see [Permissions](/concepts/permissions).
 
 ## Performance tips
 
-- **Filter at the query.** `useQuery('notes', { where: { pinned: true } })` is more efficient than fetching everything and filtering in React.
-- **Use `limit` on long lists.** The DO sends every matching record over the wire on initial subscription. For lists in the thousands, paginate (cursor-based pagination is on the roadmap; for now, slice by date or category).
-- **Avoid mounting the same `useQuery` in many components.** Mount once at the page level and pass records down via props or context. Each mount maintains its own subscription state.
-- **Use `put` with partial patches.** Sending only the changed fields keeps the wire payload small.
+- **Filter at the query.** `where` runs server-side, so unauthorized or unwanted rows never cross the wire.
+- **Use `limit` on long lists.** Initial subscription sends every matching record. For thousands of rows, slice by date or category. (Cursor pagination is on the roadmap.)
+- **Lift `useQuery` to a parent.** Identical queries deduplicate to one WebSocket subscription, but each mount still re-renders on every store change - fetch once at the top of the page and pass records down via props.
+- **Patch, don't replace.** `put` with a partial patch keeps the wire payload small and avoids overwriting concurrent edits.
 
 ## Next steps
 
