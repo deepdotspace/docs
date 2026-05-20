@@ -1,13 +1,15 @@
 ---
 title: "Payments"
-description: "Subscriptions, one-time products, and ad-hoc charges via Stripe Checkout."
+description: "Charge users on a subscription or one-time basis with Stripe Checkout."
 ---
 
-DeepSpace ships a Stripe-backed payment system. You declare your plans and products in two manifest files; the SDK gives you hooks for paywalls, checkouts, and self-service billing. The platform charges customers and routes funds to the developer's connected Stripe account.
+DeepSpace ships a Stripe-backed payment system. You declare your plans and products in two manifest files; the SDK gives you hooks for paywalls, checkouts, and self-service billing. The platform charges customers and routes funds to your connected Stripe account.
 
-You don't write Stripe code, register webhooks, or hold API keys. You don't even need a Stripe account to start declaring plans - funds accumulate until the developer connects their Stripe account in the [DeepSpace dashboard](https://dashboard.deep.space/earnings).
+You don't write Stripe code, register webhooks, or hold API keys. You don't even need a Stripe account to start declaring plans - funds accumulate until you connect your Stripe account in the [DeepSpace dashboard](https://dashboard.deep.space/earnings).
 
 ## Declare what you sell
+
+Two manifest files define the catalog. Edit, then run `npx deepspace deploy` to sync Products and Prices to Stripe.
 
 ### Subscription plans - `src/subscriptions.ts`
 
@@ -19,20 +21,10 @@ export const subscriptionPlans = [
     name: 'Pro',
     priceCents: 900,        // $9/month - minimum $3/mo
     yearlyCents: 9000,      // optional; minimum $12/year
-    trialDays: 7,           // optional; max 90 days
-    taxCode: 'txcd_10000000', // optional; defaults to digital services
+    trialDays: 7,           // optional; max 365 days
   },
 ] as const
 ```
-
-| Field | Required | Notes |
-|---|---|---|
-| `slug` | ✓ | Stable identifier. **Never rename** - see [Common pitfalls](#common-pitfalls). |
-| `name` | ✓ | Display name. Safe to change. |
-| `priceCents` | ✓ | Monthly price in USD cents. `0` = free tier. Min $3/mo. |
-| `yearlyCents` | - | Annual price. Min $12/yr. |
-| `trialDays` | - | Free trial length, max 90 days. |
-| `taxCode` | - | Stripe tax code. Defaults to digital services. |
 
 ### One-time products - `src/products.ts`
 
@@ -42,22 +34,17 @@ export const oneTimeProducts = [
 ] as const
 ```
 
-| Field | Required | Notes |
-|---|---|---|
-| `productId` | ✓ | Stable entitlement key. Used in `useCheckout({ productId })`. |
-| `name` | ✓ | Display name. |
-| `amountCents` | ✓ | Price in USD cents. Min $1.00. |
-| `description` | - | Shown in Checkout. |
-
-After editing either file, deploy:
+See the [plan manifest types](/sdk-reference/client/payments#plan-manifest-types) for the full field list.
 
 ```bash
 npx deepspace deploy
 ```
 
-The deploy syncs Stripe Products and Prices to match your manifest. The CLI warns about grandfathered subscribers when you change prices.
+The CLI warns about grandfathered subscribers when you change prices.
 
-## Subscriptions - `useSubscription`
+## Subscribe a user
+
+Call `subscribe()` from [`useSubscription`](/sdk-reference/client/payments#usesubscription). The hook navigates the browser to Stripe Checkout; the user lands back on your app with their subscription active.
 
 ```tsx
 import { useSubscription } from 'deepspace'
@@ -71,33 +58,32 @@ function Paywall() {
 }
 ```
 
-### `useSubscription` API
+For a ready-made pricing UI, mount [`<PricingTable />`](/sdk-reference/client/payments#%3Cpricingtable-plans-onselect-%3E) and wire its `onSelect` to `subscribe`:
 
-| Member | Type | Description |
-|---|---|---|
-| `tier` | `string` | Current plan slug. Free users return `'free'`. |
-| `status` | `SubscriptionStatus` | `'none' \| 'trialing' \| 'active' \| 'past_due' \| 'canceled' \| ...` |
-| `entitled` | `boolean` | `true` iff status is `active` or `trialing`. |
-| `hasTier(slug)` | `(slug: string) => boolean` | Strict slug match **AND** entitled. |
-| `isAtLeast(slug)` | `(slug: string) => boolean` | Rank ≥ target **AND** entitled. |
-| `interval` | `'month' \| 'year' \| null` | Billing interval. |
-| `currentPeriodEnd` | `number \| null` | Unix seconds. |
-| `cancelAtPeriodEnd` | `boolean` | Pending cancellation flag. |
-| `trialEndsAt` | `number \| null` | Trial expiration (Unix seconds). |
-| `isLoading` | `boolean` | True until the first `/me` fetch resolves. |
-| `error` | `string \| null` | Last fetch error message, if any. |
-| `plans` | `PlanInfo[]` | Plan catalog. Pass to `<PricingTable plans={sub.plans} />`. |
-| `subscribe(planSlug, opts?)` | `(planSlug: string, opts?: { interval?, returnUrl?, cancelUrl? }) => Promise<SubscribeResult>` | Starts Checkout; auto-redirects when `result.url` is set. |
-| `openPortal(returnUrl?)` | `(returnUrl?: string) => Promise<{ url: string }>` | Stripe Billing Portal for self-service. |
-| `refresh()` | `() => Promise<void>` | Re-pull subscription state. |
+```tsx
+import { PricingTable, useSubscription } from 'deepspace'
+
+function Pricing() {
+  const { plans, tier, subscribe } = useSubscription()
+  return (
+    <PricingTable
+      plans={plans}
+      currentTier={tier}
+      onSelect={(slug, interval) => subscribe(slug, { interval })}
+    />
+  )
+}
+```
+
+`useSubscription` also exposes `openPortal()` for self-service billing - point a "Manage billing" button at it.
 
 <Warning>
-**Gate on `hasTier` / `isAtLeast`, never on `tier` alone.** A user whose card just failed has `tier: 'pro'` and `status: 'past_due'` - they keep the slug but lose entitlement. `sub.tier === 'pro'` leaks paid features to past-due, canceled, and unpaid users.
+**Gate features on `hasTier` / `isAtLeast`, never on `tier` alone.** A user whose card just failed has `tier: 'pro'` and `status: 'past_due'` - they keep the slug but lose entitlement. `sub.tier === 'pro'` leaks paid features to past-due, canceled, and unpaid users.
 </Warning>
 
-## Server-side enforcement - `requireSubscription`
+## Gate a server route
 
-For API routes that must be paywalled, import the server helper:
+The client checks are for UX only - anyone can call your API directly. Gate sensitive routes with [`requireSubscription`](/sdk-reference/client/payments#requiresubscription-c-opts) from `'deepspace/server'`:
 
 ```ts
 // worker.ts
@@ -125,11 +111,11 @@ const r = await fetch('/api/premium', {
 })
 ```
 
-`getSubscription(c)` is the read-only variant that returns the subscription shape without throwing.
+Use [`getSubscription`](/sdk-reference/client/payments#getsubscription-c) for the read-only variant that returns the subscription object without throwing.
 
-## One-time charges - `useCheckout`
+## One-time charges
 
-The [`useCheckout`](/sdk-reference/client/payments#usecheckout-productid--) hook has two modes - **product mode** for durable entitlements declared in `src/products.ts`, and **ad-hoc mode** for tips and donations.
+[`useCheckout`](/sdk-reference/client/payments#usecheckout-productid) handles non-recurring purchases in two modes - **product mode** for durable entitlements declared in `src/products.ts`, and **ad-hoc mode** for tips and donations.
 
 <Tabs>
   <Tab title="Product mode">
@@ -170,83 +156,57 @@ The [`useCheckout`](/sdk-reference/client/payments#usecheckout-productid--) hook
     **Ad-hoc charges can't be used to unlock features later.** Ad-hoc purchases have `productId: null`, so `ownsProduct(id)` will never return true for them. Use ad-hoc mode only when the transaction itself is the value. For durable entitlements, declare a row in `src/products.ts`.
     </Warning>
   </Tab>
-
-  <Tab title="Inspect purchases">
-    Read the full purchase history off `purchases`, or check ownership by ID.
-
-    ```tsx
-    const co = useCheckout()
-
-    for (const p of co.purchases) {
-      console.log(p.productId, p.amount, p.paidAt)
-    }
-
-    if (co.ownsProduct('pro_unlock')) {
-      // user owns this product
-    }
-    ```
-  </Tab>
 </Tabs>
 
-### `useCheckout` API
+## Cancel a subscription
 
-| Member | Type | Description |
-|---|---|---|
-| `chargeOnce(opts)` | `(opts: ChargeOnceOpts) => Promise<ChargeOnceResult>` | Starts Checkout; auto-redirects to `result.url`. |
-| `purchases` | `Purchase[]` | Full purchase history. |
-| `owned` | `boolean` | `true` iff `productId` was passed to the hook AND a matching purchase exists. |
-| `ownsProduct(productId)` | `(productId: string) => boolean` | Pure check over `purchases`. |
-| `isLoading` | `boolean` | True until the first purchases fetch resolves. |
-| `error` | `string \| null` | Last fetch / charge error, if any. |
-| `refresh()` | `() => Promise<void>` | Re-pull. |
-
-Each `Purchase` row has the shape `{ id, productId, name, amount, currency, paidAt }` - `amount` is in cents (post-tax `amount_total`), `productId` is `null` for ad-hoc charges, and `paidAt` is an ISO timestamp.
-
-## Cancellation - `cancelSubscription`
+[`cancelSubscription`](/sdk-reference/client/payments#cancelsubscription-c-opts) cancels one user, or every user on a given plan slug. The inbound request must carry the app-owner's JWT.
 
 ```ts
 import { cancelSubscription } from 'deepspace/server'
 
-// One user, end of current period (default):
-await cancelSubscription(c, { userId: 'user_abc' })
+app.post('/api/admin/cancel', async (c) => {
+  // One user, end of current period (default):
+  await cancelSubscription(c, { userId: 'user_abc' })
+  return c.json({ ok: true })
+})
 
-// Everyone on a retired plan:
-let res = await cancelSubscription(c, { planSlug: 'legacy_pro', atPeriodEnd: true })
-while (res.hasMore) res = await cancelSubscription(c, { planSlug: 'legacy_pro' })
+// Or, for a one-off backfill - every user on a retired plan, batched 50 at a time:
+// let res = await cancelSubscription(c, { planSlug: 'legacy_pro' })
+// while (res.hasMore) res = await cancelSubscription(c, { planSlug: 'legacy_pro' })
 ```
 
-- Requires the inbound `Authorization` header - the platform verifies the JWT subject owns the app.
-- Pass `atPeriodEnd: false` for immediate cancellation.
-- Batched at 50 per call; loop on `hasMore`.
+Pass `atPeriodEnd: false` for immediate cancellation.
 
-## Refunds - `refundInvoice`
+## Issue a refund
+
+[`refundInvoice`](/sdk-reference/client/payments#refundinvoice-c-opts) refunds a charge by its local invoice ID. Wrap it behind your own admin check.
 
 ```ts
 import { refundInvoice } from 'deepspace/server'
 
-app.post('/api/admin/refund', requireAdmin, async (c) => {
+app.post('/api/admin/refund', async (c) => {
+  // Your admin check goes here.
+  const { invoiceId } = await c.req.json<{ invoiceId: string }>()
   const r = await refundInvoice(c, {
-    invoiceId,                     // local UUID, NOT stripe inv_xxx
-    amount: 500,                   // optional partial in cents
-    reason: 'requested_by_customer', // 'requested_by_customer' | 'duplicate' | 'fraudulent'
+    invoiceId,                       // local UUID, NOT stripe inv_xxx
+    amount: 500,                     // optional partial in cents
+    reason: 'requested_by_customer',
   })
   return c.json(r)
 })
 ```
 
-Constraints:
-
-- 90-day refund window from `paidAt`
-- 50 refunds per 24h per app
-- No overdraw - partial refunds can't exceed the original charge
-
-Dashboard-initiated refunds reconcile automatically.
+Constraints: 90-day refund window from `paidAt`, 50 refunds per 24h per app, no overdraw on partials. Dashboard-initiated refunds reconcile automatically.
 
 ## Common pitfalls
 
 <AccordionGroup>
   <Accordion title="Tier ≠ entitled">
-    A `past_due` subscriber keeps their tier slug but loses access. Always gate on `hasTier()` / `isAtLeast()`, which check both tier and status.
+    A `past_due` subscriber keeps their tier slug but loses access. Always gate on `hasTier()` / `isAtLeast()` on the client, and `requireSubscription` on the server - all three check status, not just slug.
+  </Accordion>
+  <Accordion title="`currentPeriodEnd` is Unix milliseconds">
+    `currentPeriodEnd` and `trialEndsAt` are Unix **milliseconds**. Pass them straight to `new Date()` - no multiplication needed.
   </Accordion>
   <Accordion title="Below-minimum prices fail at deploy">
     Subscription minimums are $3/month and $12/year. One-time minimum is $1.00. Below these, Stripe's per-charge fee consumes the entire price. The deploy worker rejects the manifest before syncing to Stripe.
@@ -258,33 +218,12 @@ Dashboard-initiated refunds reconcile automatically.
     The Stripe webhook fires shortly after the user returns from Checkout. Call `sub.refresh()` / `co.refresh()` once on return. If state is still stale, refresh again on user action - don't write a tight retry loop.
   </Accordion>
   <Accordion title="Connect onboarding lives in the dashboard, not your app">
-    Developer Stripe Connect onboarding happens at [dashboard.deep.space/earnings](https://dashboard.deep.space/earnings), outside the app. Don't build any Stripe Connect UI yourself. Funds accumulate on the platform balance until onboarding completes.
+    Developer Stripe Connect onboarding happens at [dashboard.deep.space/earnings](https://dashboard.deep.space/earnings), outside your app. Don't build any Stripe Connect UI yourself. Funds accumulate on the platform balance until onboarding completes.
   </Accordion>
 </AccordionGroup>
 
-## Pricing table component
-
-The SDK ships a ready-made pricing table:
-
-```tsx
-import { PricingTable, useSubscription } from 'deepspace'
-
-function Pricing() {
-  const { plans, tier, subscribe } = useSubscription()
-  return (
-    <PricingTable
-      plans={plans}
-      currentTier={tier}
-      onSelect={(planSlug, interval) => subscribe(planSlug, { interval })}
-    />
-  )
-}
-```
-
-`PricingTable` is stateless - `plans` and `currentTier` come from `useSubscription()`, and the required `onSelect(planSlug, interval)` callback decides what happens on click (typically forwarding to `subscribe`). Pass `interval="year"` to render yearly prices.
-
 ## Next steps
 
-- [Payments reference](/sdk-reference/client/payments) - full `useSubscription` and `useCheckout` API.
+- [Payments reference](/sdk-reference/client/payments) - full prop, option, and return-shape tables.
 - [Authentication](/guides/authentication) - gate UI behind sign-in.
 - [Server actions](/guides/server-actions) - admin-only routes for cancellations and refunds.

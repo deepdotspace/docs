@@ -3,11 +3,11 @@ title: "AI chat"
 description: "Streamed multi-turn chat with Claude, GPT, and Cerebras - tool use, persistent history, and context compaction included."
 ---
 
-DeepSpace ships a complete AI chat backend. The scaffold registers four endpoints, persists every chat to a Durable Object, streams responses via Vercel AI SDK v5, and exposes the underlying LLMs (Claude, GPT-5, Cerebras) for tool use over your records. You can use the bundled `ChatPanel` component for a turnkey UI or build your own surface with the wire helpers the SDK exports.
+Stream multi-turn chat with persistent history and built-in tool use over your records. The scaffold registers four HTTP endpoints, persists every chat to a Durable Object, and streams responses via [Vercel AI SDK v5](https://ai-sdk.dev/). Use the bundled `ChatPanel` component for a turnkey UI, or call the streaming endpoint directly and decode it with the [wire helpers](#custom-chat-ui).
 
 ## Install the chat feature
 
-The fastest way to add chat to a scaffolded app is the bundled feature:
+Install the bundled feature:
 
 ```bash
 npx deepspace add ai-chat
@@ -17,13 +17,13 @@ This installs three files:
 
 - `src/components/ChatPanel.tsx` - a reusable chat surface with model picker, abort button, and Markdown rendering.
 - `src/pages/assistant.tsx` - a full-page assistant with a chat history rail.
-- `src/schemas/ai-chat-schema.ts` - re-exports `[AI_CHATS_SCHEMA, AI_MESSAGES_SCHEMA]` for spreading into `src/schemas.ts`.
+- `src/schemas/ai-chat-schema.ts` - exports `aiChatSchemas` (an array of `[AI_CHATS_SCHEMA, AI_MESSAGES_SCHEMA]`) for spreading into `src/schemas.ts`.
 
 The feature also adds `react-markdown`, `remark-gfm`, `remark-breaks`, `rehype-highlight`, and `highlight.js` as dependencies and runs `npm install`.
 
 ## Add the schemas
 
-If you're wiring chat by hand, add the two pre-built schemas:
+If you're wiring chat by hand, import the two pre-built schemas directly:
 
 ```ts
 // src/schemas.ts
@@ -38,10 +38,19 @@ export const schemas = [
 ]
 ```
 
+Or, if you ran `npx deepspace add ai-chat`, spread the array the feature installed:
+
+```ts
+// src/schemas.ts
+import { aiChatSchemas } from './schemas/ai-chat-schema'
+
+export const schemas = [usersSchema, settingsSchema, ...aiChatSchemas]
+```
+
 | Schema | Rows | RBAC |
 |---|---|---|
 | `AI_CHATS_SCHEMA` (`ai-chats`) | One per chat conversation | `read/update/delete: 'own'`, `create: false` |
-| `AI_MESSAGES_SCHEMA` (`ai-messages`) | One per turn (user or assistant) | `read/update/delete: 'own'`, `create: false` |
+| `AI_MESSAGES_SCHEMA` (`ai-messages`) | One per message (user or assistant) | `read/update/delete: 'own'`, `create: false` |
 
 <Warning>
 **`create: false` is intentional.** Direct WebSocket creates would let a user PUT a forged `role: 'assistant'` row that the next turn's history reads back as if it were a real LLM response. Don't relax to `'own'`. All writes flow through the worker's chat routes, which validate ownership.
@@ -79,7 +88,7 @@ The scaffold registers four endpoints in `src/ai/chat-routes.ts`. The first thre
     { "title": "Renamed" }
     ```
 
-    Owner-checked - 404 on cross-user.
+    Owner-checked. Returns 404 if the chat doesn't exist or belongs to another user.
   </Tab>
 
   <Tab title="Delete chat">
@@ -100,7 +109,7 @@ The scaffold registers four endpoints in `src/ai/chat-routes.ts`. The first thre
     { "chatId": "chat_abc", "userMessageId": "umsg_xyz", "content": "Hello", "modelId": "claude-sonnet-4-6" }
     ```
 
-    Returns `text/event-stream` of Vercel AI SDK v5 `UIMessage` chunks. The `X-Asst-Id` response header carries the assistant row's ID for client-side dedup.
+    Returns `text/event-stream` of Vercel AI SDK v5 `UIMessageChunk` events. The `X-Asst-Id` response header carries the assistant row's ID for client-side dedup.
 
     For decoding the stream in custom UIs, see [Custom chat UI](#custom-chat-ui).
   </Tab>
@@ -142,6 +151,7 @@ const ALLOWED_MODELS: Record<string, 'anthropic' | 'openai' | 'cerebras'> = {
   'claude-haiku-4-5':   'anthropic',
   'gpt-5.4':            'openai',
   'gpt-5.4-mini':       'openai',
+  'gpt-5.4-nano':       'openai',
   'gpt-oss-120b':       'cerebras',
 }
 const DEFAULT_MODEL = 'claude-sonnet-4-6'
@@ -185,22 +195,30 @@ The assistant can read and modify your records via a built-in tool catalog. The 
 
 ### Adding custom tools
 
-Augment `buildTools` in `src/ai/tools.ts`:
+Extend the `ToolSet` returned by `buildTools` in `src/ai/tools.ts`:
 
 ```ts
-import { tool } from 'ai'
+// src/ai/tools.ts
+import { tool, type ToolSet } from 'ai'
 import { z } from 'zod'
+import { BUILT_IN_TOOLS } from 'deepspace/worker'
 
-const customTools = {
-  ...builtIn,
-  'lookup.weather': tool({
+export function buildTools(executor: ToolExecutor): ToolSet {
+  const tools: ToolSet = {}
+
+  // ...existing loop over BUILT_IN_TOOLS...
+
+  tools.lookup_weather = tool({
     description: 'Get weather for a city',
     inputSchema: z.object({ city: z.string() }),
     execute: async ({ city }) => {
-      const r = await integration.post('openweathermap/current-weather', { q: city })
-      return r.success ? r.data : { error: r.error }
+      const res = await fetch(`https://api.example.com/weather?city=${encodeURIComponent(city)}`)
+      if (!res.ok) return { error: `weather lookup failed: ${res.status}` }
+      return await res.json()
     },
-  }),
+  })
+
+  return tools
 }
 ```
 
@@ -208,24 +226,34 @@ The Zod `inputSchema` doubles as runtime validation; failing input emits a `tool
 
 ## Context compaction
 
-For long conversations, the SDK automatically compacts older turns to stay under the model's context budget. The default config:
+For long conversations, the scaffold automatically compacts older turns to stay under the model's context budget. The default config exported from `deepspace/worker`:
 
 ```ts
-DEFAULT_CONTEXT_CONFIG = {
-  contextBudget: 240_000,    // chars - ≈60–80K tokens
-  toolResultCap: 30_000,     // bytes per tool result
-  keepRecentToolResults: 5,
-  minKept: 10,               // sliding-window floor
-}
+import { DEFAULT_CONTEXT_CONFIG } from 'deepspace/worker'
+
+// {
+//   contextBudget: 240_000,    // chars - ≈60–80K tokens
+//   toolResultCap: 30_000,     // bytes per tool result
+//   keepRecentToolResults: 5,
+//   minKept: 10,               // sliding-window floor
+// }
 ```
 
-Tune for shorter-context models:
+Tune for shorter-context models by passing your own config to `prepareMessagesWithCompaction` in `chat-routes.ts`:
 
 ```ts
+import { DEFAULT_CONTEXT_CONFIG, prepareMessagesWithCompaction } from 'deepspace/worker'
+
 const config = {
   ...DEFAULT_CONTEXT_CONFIG,
   contextBudget: 120_000,    // for 128K-context models
 }
+
+const { messages: prepared, newSummary } = await prepareMessagesWithCompaction(
+  turns,
+  config,
+  { summarizer, cachedSummary },
+)
 ```
 
 The pipeline:
@@ -240,9 +268,9 @@ The pipeline:
 If you want to build your own chat surface (sidebar, modal, minimal), call `POST /api/ai/chat` directly and decode the SSE stream with the SDK's wire helpers:
 
 ```tsx
-import { parseSseLine, decodeAiStreamChunk, getAuthToken } from 'deepspace'
+import { parseSseLine, decodeAiStreamChunk, getAuthToken, type AiStreamAction } from 'deepspace'
 
-async function streamTurn(chatId: string, content: string) {
+async function streamTurn(chatId: string, content: string, handleAction: (asstId: string, action: AiStreamAction) => void) {
   const token = await getAuthToken()
   const res = await fetch('/api/ai/chat', {
     method: 'POST',
@@ -285,9 +313,32 @@ async function streamTurn(chatId: string, content: string) {
 | `stream-error` | Top-level stream error |
 | `abort` | Server-side abort with no error chunk to follow |
 
-For the canonical message list, mount `useQuery<AiMessageData>('ai-messages', { where: { chatId, userId }, orderBy: 'createdAt' })` against your `RecordScope`. The `parts` field holds UI-shape tool invocations for rendering.
+For the canonical message list, query `ai-messages` from inside a [`RecordScope`](/sdk-reference/client/storage):
 
-## Things that bite
+```tsx
+import { useQuery } from 'deepspace'
+
+type AiMessageData = {
+  chatId: string
+  userId: string
+  role: 'user' | 'assistant'
+  content: string
+  parts?: unknown[]
+}
+
+const { records } = useQuery<AiMessageData>('ai-messages', {
+  where: { chatId, userId },
+  orderBy: 'createdAt',
+  orderDir: 'asc',
+})
+
+// Each record is { recordId, data, createdAt, updatedAt } - fields live on `.data`.
+records.map((r) => ({ id: r.recordId, role: r.data.role, content: r.data.content }))
+```
+
+The `parts` field on each `data` holds UI-shape tool invocations for rendering.
+
+## Limitations
 
 <AccordionGroup>
   <Accordion title="Concurrent multi-tab writes can interleave">
@@ -297,7 +348,7 @@ For the canonical message list, mount `useQuery<AiMessageData>('ai-messages', { 
     Each turn can chain up to 5 tool calls. Raise this in `chat-routes.ts` for agentic workflows that need more steps - each step is a full LLM round-trip with proportional cost.
   </Accordion>
   <Accordion title="Reasoning content is stripped">
-    `toUIMessageStreamResponse({ sendReasoning: false })` removes `reasoning-*` chunks. The default UI has no "thinking" disclosure block; flipping this on without UI changes leaves users staring at a stuck spinner.
+    `toUIMessageStreamResponse({ sendReasoning: false })` removes `reasoning-*` chunks. The default UI has no "thinking" disclosure block, so flipping this on without UI changes shows no progress indication during long reasoning steps.
   </Accordion>
   <Accordion title="`X-Asst-Id` header is required for dedup">
     The header lets the client tag in-flight overlays with a server-generated ID that survives clock skew. If you proxy the streaming response through another worker, preserve the header.

@@ -36,7 +36,7 @@ export const schemas: CollectionSchema[] = [
 ]
 ```
 
-The drop-in schemas include sensible [RBAC](/concepts/permissions) defaults: signed-in users can read channels and post messages, and only the author can edit or delete a message. Private-channel gating is an app-level concern — enforce it with `useChannelMembers` (see [Channel membership](#channel-membership)).
+The drop-in schemas include sensible [RBAC](/concepts/permissions) defaults: signed-in users can read channels and post messages, and only the author can edit or delete a message. Private-channel gating is an app-level concern - enforce it with `useChannelMembers` (see [Channel membership](#channel-membership)).
 
 ## Build the chat surface
 
@@ -109,7 +109,7 @@ function ChannelView({ channelId }: { channelId: string }) {
 }
 ```
 
-Sends, edits, reactions, and deletes all dispatch optimistically and reconcile through the room - see [`useChannels`](/sdk-reference/client/messaging#usechannels), [`useMessages` options](/sdk-reference/client/messaging#usemessages-channelid-options), and [`useReactions`](/sdk-reference/client/messaging#usereactions-channelid) for the full API surface.
+Sends, edits, reactions, and deletes all dispatch optimistically and reconcile through the room. Prefer `softDelete(messageId)` over `remove(messageId)` for user-initiated deletes - it keeps thread replies and read receipts coherent. See [`useChannels`](/sdk-reference/client/messaging#usechannels), [`useMessages` options](/sdk-reference/client/messaging#usemessages-channelid-options), and [`useReactions`](/sdk-reference/client/messaging#usereactions-channelid) for the full API surface.
 
 ## Create a channel
 
@@ -185,24 +185,6 @@ function ChannelView({ channelId }: { channelId: string }) {
 ```
 
 `markAsRead` writes the current timestamp; `getUnreadCount` counts messages that landed after it. The receipt is per-user, scoped by the verified JWT. Full signatures live in [`useReadReceipts`](/sdk-reference/client/messaging#usereadreceipts).
-
-## Gotchas
-
-<Info>
-**Optimistic sends.** `send`, `edit`, `toggle`, `archive`, `join`, and `leave` dispatch optimistically and return `void` (or, for `send` and `create`, a promise that resolves to the new optimistic id - not a server ACK). The record store reconciles when the server acknowledges. To know a write landed, either watch for the record to appear in the live list returned by [`useQuery`](/sdk-reference/client/records#usequery<t>-collection-options), or call the `*Confirmed` variants of [`useMutations`](/sdk-reference/client/records#usemutations<t>-collection) directly.
-</Info>
-
-<Info>
-**Prefer `softDelete` for messages.** `softDelete(messageId)` sets a `deleted: true` tombstone so threads, parent links, and read receipts stay coherent. `remove(messageId)` is a hard delete and should be reserved for moderation or test cleanup.
-</Info>
-
-<Info>
-**`toggle` is symmetric.** [`useReactions.toggle`](/sdk-reference/client/messaging#usereactions-channelid) adds the caller's reaction if it's absent and removes it if it's already there. Don't call it twice to "confirm" - that undoes the reaction.
-</Info>
-
-<Info>
-**Channel `update` is a merge.** Only the fields you pass are patched - see [merge semantics](/sdk-reference/client/records#usemutations<t>-collection). To flip `archived`, use `archive(channelId)` rather than `update`.
-</Info>
 
 ## Next steps
 

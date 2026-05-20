@@ -1,11 +1,25 @@
 ---
 title: "File uploads"
-description: "Upload, list, and serve files backed by Cloudflare R2."
+description: "Let users upload files (avatars, attachments, generated images) to R2."
 ---
 
-DeepSpace apps get a per-app R2 bucket out of the box. The `useR2Files` hook handles uploads, listings, deletions, and signed URLs - all routed through the platform's file gateway so users never touch raw R2 credentials.
+DeepSpace apps get a per-app R2 bucket out of the box. The `useR2Files` hook covers uploads, listings, deletions, and authenticated downloads - all proxied through the platform-worker so the app never holds R2 credentials directly.
 
-## Upload a file
+This guide shows the common end-to-end flows. For the full method signatures and types, see the [files reference](/sdk-reference/client/files).
+
+## How files are wired
+
+You don't add an R2 binding yourself. The starter worker already proxies `/api/files/*` to the platform-worker, which holds a shared bucket and namespaces keys per app (via the `APP_NAME` the worker forwards on each request). Every write is gated by the caller's signed JWT.
+
+The client side is a single hook:
+
+```ts
+import { useR2Files } from 'deepspace'
+```
+
+## Upload from a file input
+
+The most common case - an `<input type="file">` or drag-drop event. Pass the resulting `File` to `upload`:
 
 ```tsx
 import { useR2Files } from 'deepspace'
@@ -30,11 +44,26 @@ function FileUploader() {
 }
 ```
 
-`upload(file, name?)` accepts a `File` (from `<input type="file">` or a drag-drop event) or a `Blob`, plus an optional positional display name. It returns an `R2UploadResult`: `{ success: boolean, key?, url?, name?, error? }`. Always check `success` before reading `key`.
+Always check `result.success` before reading `result.key` - the upload may fail (network, auth). `isUploading` is true while a request is in flight.
 
-## List files
+## Upload generated data (canvas, cropped image)
 
-`useR2Files` exposes an async `list()` function rather than a reactive array. Call it and store the result in component state:
+When you have data as a Base64 string - for example, from `<canvas>.toDataURL()` - use `uploadBase64`. The display name is required so the file has an `originalName` for later downloads:
+
+```tsx
+const { uploadBase64 } = useR2Files()
+
+async function saveCanvasAsImage(canvas: HTMLCanvasElement) {
+  const dataUrl = canvas.toDataURL('image/png')
+  const base64 = dataUrl.split(',')[1]
+  const result = await uploadBase64(base64, 'drawing.png', 'image/png')
+  if (!result.success) console.error(result.error)
+}
+```
+
+## List and render a user's files
+
+`list()` is an async function - call it and store the result in state rather than reading a reactive array:
 
 ```tsx
 import { useState, useEffect } from 'react'
@@ -67,77 +96,34 @@ function Gallery() {
 }
 ```
 
-### `R2FileInfo` shape
+Re-call `list()` after mutations - there's no reactive cache. `formatFileSize` and `isImageFile` are display helpers exported from `deepspace`.
 
-| Field | Type | Description |
-|---|---|---|
-| `key` | `string` | Storage key, unique within the bucket |
-| `size` | `number` | Bytes |
-| `uploaded` | `string` | ISO timestamp |
-| `url` | `string` | Signed URL valid for retrieval |
-| `originalName` | `string \| undefined` | Original filename captured at upload time |
-| `uploadedBy` | `string \| undefined` | userId of the uploader |
+## Authenticated downloads
 
-<Note>
-`R2FileInfo` does **not** include a `mimeType` field. If you need MIME-aware logic (e.g., distinguish images from documents), capture the type at upload time and store it in a sidecar collection. See [Storing metadata](#storing-metadata) below.
-</Note>
-
-## Serve a file
-
-`getUrl(fileOrKey)` accepts either an `R2FileInfo` or a raw key string and returns a plain URL pointing at the file gateway. It carries no auth token, so it only works for unauthenticated reads on deployed sites where the scope is derived from the hostname. For images on a deployed app, drop it into `<img src>`:
-
-```tsx
-<img src={getUrl(f)} alt="" referrerPolicy="no-referrer" />
-```
-
-For authenticated access, use `downloadFile` (which triggers a browser download) or `readFile` (which returns the raw `Response`):
+`getUrl(fileOrKey)` returns a plain URL with no auth token attached. It works for unauthenticated reads on deployed sites (the platform-worker resolves the app from `APP_NAME` and serves reads without a JWT), which is what you want for `<img src>`. For everything else, use `downloadFile` or `readFile`:
 
 ```ts
-// Trigger a browser download - returns { success, error? }
+const { downloadFile, readFile } = useR2Files()
+
+// Trigger a Save As… dialog. Uses originalName as the filename automatically.
 const result = await downloadFile(file)
 if (!result.success) console.error(result.error)
 
-// Read the bytes yourself - returns a Response you can .text(), .blob(), etc.
+// Or read the bytes yourself - returns a Response you can .text(), .blob(), etc.
 const resp = await readFile(file)
-const blob = await resp.blob()
+const text = await resp.text()
 ```
 
-`downloadFile` and `readFile` both accept an `R2FileInfo` or a raw key string. `downloadFile` accepts an optional second `fileName` to override the download filename; when passing an `R2FileInfo` the `originalName` is used automatically.
+Both accept either an `R2FileInfo` from `list()` or a raw key string.
 
-## Scoping files
+## Storing metadata (MIME type, captions, tags)
 
-`useR2Files` accepts a single `R2Scope` option object whose only field today is `scope?: 'self'`:
-
-```tsx
-const { upload, list } = useR2Files()              // default - { scope: 'self' }
-const { upload: scopedUpload } = useR2Files({ scope: 'self' })
-```
-
-The server derives the bucket prefix from the current hostname (the `'self'` scope), so files uploaded by one app are isolated from another app's files automatically. Per-user or per-room sub-scoping isn't exposed through this hook - if you need it, namespace your uploads via the optional `name` argument or store a sidecar record (see [Storing metadata](#storing-metadata)).
-
-## Programmatic uploads - `uploadBase64`
-
-When you have file data as a Base64 string (e.g., from a `<canvas>` `toDataURL()`):
-
-```tsx
-const { uploadBase64 } = useR2Files()
-
-async function saveCanvasAsImage() {
-  const canvas = canvasRef.current!
-  const dataUrl = canvas.toDataURL('image/png')
-  const base64 = dataUrl.split(',')[1]
-  // Signature: uploadBase64(base64Data, name, mimeType?). `name` is required.
-  const result = await uploadBase64(base64, 'drawing.png', 'image/png')
-  if (!result.success) console.error(result.error)
-}
-```
-
-## Storing metadata
-
-R2 files have no rich metadata of their own beyond what the gateway captures. For app-level metadata (tags, captions, MIME types, descriptions), store a sidecar record in a collection:
+`R2FileInfo` carries `key`, `size`, `uploaded`, `url`, `originalName`, and `uploadedBy` - and nothing else. There's no `mimeType` field. For richer metadata, store a sidecar record in a [collection](/concepts/data-model):
 
 ```ts
 // src/schemas/attachments-schema.ts
+import type { CollectionSchema } from 'deepspace'
+
 export const attachmentsSchema: CollectionSchema = {
   name: 'attachments',
   columns: [
@@ -151,9 +137,13 @@ export const attachmentsSchema: CollectionSchema = {
 }
 ```
 
-Then create the sidecar record alongside the upload:
+Create the sidecar alongside the upload. The snippet assumes a [`RecordProvider`](/sdk-reference/client/records) higher in the tree that has registered the `attachments` collection - `useMutations` throws otherwise.
 
 ```tsx
+import { useR2Files, useMutations } from 'deepspace'
+
+type Attachment = { fileKey: string; mimeType: string; caption: string }
+
 const { upload } = useR2Files()
 const { create } = useMutations<Attachment>('attachments')
 
@@ -171,23 +161,22 @@ async function uploadWithMeta(file: File) {
 }
 ```
 
-## Display helpers
+## Scoping and permissions
 
-| Helper | Signature | Description |
-|---|---|---|
-| `isImageFile` | `(mimeType: string) => boolean` | Convenience for "is this an image" |
-| `formatFileSize` | `(bytes: number) => string` | "1.2 MB", "456 KB" |
+`useR2Files` is always scoped to the current app - the platform derives the bucket prefix from `APP_NAME`. There's no per-user or cross-app scope exposed by the hook. If you need finer namespacing (per-room, per-project), encode it into the `name` argument at upload time or store it on a sidecar record.
+
+Writes require a signed user JWT. Anyone who knows a file's key and hits your app's `/api/files/<key>` can read it; if a file should be private, gate access in your UI and use `readFile`/`downloadFile` rather than rendering its URL. There is no recycle bin - `deleteFile` is immediate and irreversible.
 
 ## Local development
 
 <Warning>
-R2 uploads require an `APP_IDENTITY_TOKEN` minted by the deploy worker. The CLI does not provision this token in local dev, so `upload()` round-trips return 401 from the platform file gateway. In local dev, assert that uploads are *dispatched* (the function is called) - the full upload-and-read flow works only against deployed apps.
+R2 uploads require an `APP_IDENTITY_TOKEN` minted by the deploy worker. Until the app has been deployed at least once, the CLI can't fetch one, so `upload()` round-trips return 401 from the platform file gateway. After a first deploy, `npx deepspace dev` provisions the token into `.dev.vars` and uploads work locally.
 </Warning>
 
-If you need full file flows in local dev, deploy your app and run `npx deepspace dev --prod` to point local UI at production workers.
+For tests written before the first deploy, assert that uploads are *dispatched* (the function is called) rather than asserting on the round-trip. Or run `npx deepspace dev --prod` to point local UI at production workers.
 
 ## Next steps
 
-- [Custom bindings](/guides/custom-bindings) - declare your own R2 bucket with custom permissions.
-- [Data storage](/guides/data-storage) - pair files with sidecar records for metadata.
-- [Files reference](/sdk-reference/client/files) - full `useR2Files` API.
+- [Files reference](/sdk-reference/client/files) - full method signatures, return types, and the `R2FileInfo` shape.
+- [Custom bindings](/guides/custom-bindings) - declare a wholly separate R2 bucket with custom permissions.
+- [Data model](/concepts/data-model) - pair files with sidecar records for queryable metadata.

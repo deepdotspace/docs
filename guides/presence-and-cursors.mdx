@@ -3,14 +3,12 @@ title: "Presence and cursors"
 description: "Show who's online and broadcast live cursor, typing, and viewport state."
 ---
 
-DeepSpace exposes two distinct primitives for "who else is here right now":
+Show who else is in a room and where they're looking. DeepSpace exposes two distinct primitives for this.
 
-- **`usePresence`** - derived online/offline status from heartbeats stored on the users collection.
-- **`usePresenceRoom`** - high-frequency ephemeral state (cursors, typing, viewport) broadcast through a dedicated Durable Object.
+- [`usePresence`](/sdk-reference/client/realtime#usepresence-options) - derived online/offline status from heartbeats stored on the users collection. Persistent. ~60s granularity.
+- [`usePresenceRoom`](/sdk-reference/client/realtime#usepresenceroom-scopeid) - high-frequency ephemeral state (cursors, typing, viewport) broadcast through a dedicated Durable Object. In-memory only.
 
-Pick `usePresence` for "list of online users." Pick `usePresenceRoom` for cursor or typing UIs that need sub-second updates.
-
-## Online / offline - `usePresence`
+## Online status
 
 `usePresence` reads `lastSeenAt` from the users collection in the current `RecordScope` and sends a heartbeat every 60 seconds. A user is "online" if their last heartbeat was within `timeoutMs` (default 5 minutes).
 
@@ -26,7 +24,9 @@ function OnlineList() {
         <li key={u.id}>
           <span className={isOnline(u.id) ? 'online' : 'offline'}>●</span>
           {u.name}
-          {!isOnline(u.id) && <small>last seen {getLastSeen(u.id)}</small>}
+          {!isOnline(u.id) && getLastSeen(u.id) && (
+            <small>last seen {new Date(getLastSeen(u.id)!).toLocaleString()}</small>
+          )}
         </li>
       ))}
     </ul>
@@ -34,23 +34,13 @@ function OnlineList() {
 }
 ```
 
-| Field | Type | Description |
-|---|---|---|
-| `users` | `User[]` | All users in the current scope |
-| `isOnline` | `(userId: string) => boolean` | Whether the user heartbeated within the timeout |
-| `getLastSeen` | `(userId: string) => string \| null` | Last heartbeat timestamp |
+Heartbeats are written to the users collection, so they're visible to anyone with read access to users. The data persists. Use `usePresence` for "currently online" lists where 60-second granularity is acceptable.
 
-Pass `options.timeoutMs` to tune the online threshold:
+See [`usePresence`](/sdk-reference/client/realtime#usepresence-options) for the full return shape and options.
 
-```tsx
-const { isOnline } = usePresence({ timeoutMs: 2 * 60 * 1000 }) // 2 minutes
-```
+## Live cursors and typing
 
-`usePresence` writes its heartbeat to the users collection, so heartbeats are visible to anyone with read access to users - and the data persists. Use it for "currently online" lists where 60-second granularity is acceptable.
-
-## Live cursors and typing - `usePresenceRoom`
-
-For sub-second cursor or typing indicators, use `usePresenceRoom`. It connects to a dedicated `PresenceRoom` Durable Object that holds peer state **in memory only** - nothing is persisted.
+For sub-second cursor or typing indicators, use `usePresenceRoom`. It connects to a dedicated `PresenceRoom` Durable Object that holds peer state in memory only - nothing is persisted, and disconnecting removes you from `peers` on every other client within a second.
 
 ```tsx
 import { usePresenceRoom } from 'deepspace'
@@ -79,15 +69,11 @@ function Canvas({ canvasId }: { canvasId: string }) {
 }
 ```
 
-| Field | Type | Description |
-|---|---|---|
-| `peers` | `PresencePeerClient[]` | All other connected peers (excludes self) |
-| `connected` | `boolean` | WebSocket connection status |
-| `updateState` | `(state: object) => void` | Merge into your own peer state; broadcasts to peers |
+`peers` excludes the current user. Identity fields (`userId`, `userName`, etc.) come from the verified JWT - peers can't spoof them. See [`usePresenceRoom`](/sdk-reference/client/realtime#usepresenceroom-scopeid) for the full peer shape.
 
 ### Scoping rooms
 
-The first argument to `usePresenceRoom` is any string. Use it to scope presence to a specific surface:
+The first argument to `usePresenceRoom` is any string. Two clients passing the same scope ID connect to the same `PresenceRoom` instance and see each other.
 
 ```tsx
 usePresenceRoom(`canvas:${canvasId}`)        // Per-canvas cursors
@@ -95,11 +81,9 @@ usePresenceRoom(`doc:${docId}`)              // Per-document presence
 usePresenceRoom(`thread:${channelId}`)       // Per-channel typing
 ```
 
-Two clients passing the same scope ID connect to the same `PresenceRoom` instance and see each other.
-
 ### State merging
 
-`updateState` merges into your peer's state object. You can broadcast multiple kinds of state at once:
+`updateState` shallow-merges into your peer's state object, so you can broadcast multiple kinds of state independently:
 
 ```tsx
 updateState({ cursor: { x, y } })      // just cursor
@@ -107,57 +91,58 @@ updateState({ typing: true })          // just typing
 updateState({ cursor: { x, y }, typing: true })  // both
 ```
 
-To clear a state field, set it explicitly:
+To clear a state field, set it explicitly to `false` or `null` - omitting it leaves the previous value intact.
+
+### Throttling cursor updates
+
+`onMouseMove` fires far more often than you need to broadcast. Without throttling, you'll flood the room with messages. A `requestAnimationFrame` gate works:
 
 ```tsx
-updateState({ typing: false })
-updateState({ cursor: null })
-```
+const pending = useRef<{ x: number; y: number } | null>(null)
+const scheduled = useRef(false)
 
-### Peer shape
-
-Each peer in `peers` has this shape:
-
-```ts
-type PresencePeerClient = {
-  userId: string
-  userName: string
-  userEmail: string
-  userImageUrl?: string
-  joinedAt: string
-  state: Record<string, unknown>
+function handleMove(e: React.MouseEvent) {
+  pending.current = { x: e.clientX, y: e.clientY }
+  if (scheduled.current) return
+  scheduled.current = true
+  requestAnimationFrame(() => {
+    scheduled.current = false
+    if (pending.current) updateState({ cursor: pending.current })
+  })
 }
 ```
 
-Identity fields (`userId`, `userName`, etc.) come from the verified JWT - the client can't spoof them.
+For typing indicators, use a trailing timeout to clear the flag after the user stops typing.
 
-## Color-coding peers
+### Disconnects and reconnects
 
-For cursor displays, you typically want a stable color per user. The SDK ships `getUserColor` for this:
+The hook reconnects automatically. When the WebSocket drops, `connected` flips to `false` and your peer is removed from every other client's `peers` list. On reconnect you re-join with empty state - you must re-send your cursor or typing flag if you want it visible again. Use `connected` to dim or hide your own optimistic state during the gap.
+
+## User colors
+
+Cursor displays use a stable color per user.
 
 ```tsx
-import { getUserColor, DEFAULT_USER_COLORS } from 'deepspace'
+import { getUserColor } from 'deepspace'
 
 const color = getUserColor(peer.userId)  // deterministic hash → palette index
 ```
 
-The same userId always returns the same color. Pass a custom palette for brand colors:
+The same userId always returns the same color. Pass a custom palette for brand colors. See [`getUserColor`](/sdk-reference/client/realtime#user-colors).
 
-```tsx
-const color = getUserColor(peer.userId, ['#ff0', '#0f0', '#00f'])
-```
-
-## Typing indicator example
-
-A common pattern - show "X is typing…" in a chat:
+## Typing indicator
 
 ```tsx
 import { usePresenceRoom } from 'deepspace'
-import { useEffect, useRef } from 'react'
+import { useRef } from 'react'
 
-function MessageInput({ channelId, value, onChange }: Props) {
+function MessageInput({ channelId, value, onChange }: {
+  channelId: string
+  value: string
+  onChange: (v: string) => void
+}) {
   const { peers, updateState } = usePresenceRoom(`thread:${channelId}`)
-  const typingTimer = useRef<ReturnType<typeof setTimeout>>()
+  const typingTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   function handleChange(v: string) {
     onChange(v)
@@ -177,9 +162,11 @@ function MessageInput({ channelId, value, onChange }: Props) {
 }
 ```
 
-## Cursor overlay with names
+## Cursor overlay
 
 ```tsx
+import { usePresenceRoom, getUserColor } from 'deepspace'
+
 function CursorOverlay({ scope }: { scope: string }) {
   const { peers } = usePresenceRoom(scope)
 
@@ -200,7 +187,14 @@ function CursorOverlay({ scope }: { scope: string }) {
               color,
             }}
           >
-            <Cursor />
+            <div
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                background: color,
+              }}
+            />
             <span>{peer.userName}</span>
           </div>
         )
@@ -210,19 +204,17 @@ function CursorOverlay({ scope }: { scope: string }) {
 }
 ```
 
-## Choosing the right hook
+## Choosing a primitive
 
-| Need | Use |
-|---|---|
-| "Who's online right now?" (60s granularity) | `usePresence` |
-| "What was their last activity time?" | `usePresence` |
-| Live cursor positions | `usePresenceRoom` |
-| Typing indicators | `usePresenceRoom` |
-| Per-document presence | `usePresenceRoom` |
-| State that needs persistence | Records (`useQuery` / `useMutations`) |
+| Primitive | Use when | Persistence |
+| --- | --- | --- |
+| [`usePresenceRoom`](/sdk-reference/client/realtime#usepresenceroom-scopeid) | Cursors, typing, viewport pings, "active on this page" indicators | In-memory, ephemeral |
+| Yjs `awareness` (via [`useYjsField`](/sdk-reference/client/realtime) / [`useYjsRoom`](/sdk-reference/client/realtime)) | Editor cursors and selections that must stay in sync with CRDT state over the same socket | In-memory, ephemeral |
+| [`useGameRoom`](/sdk-reference/client/realtime#usegameroom-roomid) | Server-authoritative tick loops (player position, ready flags, game inputs) the server validates or simulates | Server-validated |
 
 ## Next steps
 
 - [Canvas](/guides/canvas) - real-time shapes and viewports on `useCanvas`.
 - [Collaborative editing](/guides/collaborative-editing) - Yjs-backed text and rich data.
 - [Real-time sync](/concepts/realtime-sync) - how sync works under the hood.
+- [Realtime reference](/sdk-reference/client/realtime) - full hook signatures and return shapes.
