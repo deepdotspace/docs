@@ -101,6 +101,10 @@ By default, `'own'` checks against `record.createdBy` (set automatically when th
 
 Now `'own'` resolves against `record.data.assignedTo`.
 
+<Tip>
+When you set `ownerField`, also mark the column `userBound: true` so a client can't claim someone else's id. The SDK's [schema-lint](/sdk-reference/worker/schemas#schema-lint-warnings) flags this (and other `visibilityField` / `userBound` foot-guns) at worker boot.
+</Tip>
+
 ## Worked examples
 
 ### A blog with public posts and member-only drafts

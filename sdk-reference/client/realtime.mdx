@@ -87,6 +87,14 @@ function useYjsRoom(docId: string, fieldName: string): {
 
 `text` / `setText` are bound to the `Y.Text` at `fieldName`. Use `doc` directly if you need a different type.
 
+`awareness` is a [y-protocols `Awareness`](https://github.com/yjs/y-protocols) instance pre-wired to the same WebSocket. Calls to `awareness.setLocalState(...)` or `awareness.setLocalStateField('cursor' | 'selection' | 'user' | …, value)` fire an `MSG_AWARENESS` frame to peers; remote states arrive on the awareness `'change'` / `'update'` events and are visible via `awareness.getStates()`. Pass it to an editor binding (e.g. `@tiptap/extension-collaboration-cursor`) or wire your own cursor/selection UI - see the [collaborative editing guide](/guides/collaborative-editing#cursors-and-selections) for a worked example.
+
+<Note>
+The `/ws/yjs/:docId` route is token-required and docs-aware: 401 without a verified JWT, 403 without read access. With the docs feature installed, roles resolve from `documents.ownerId` / `editors` / `collaborators`; without it, any authenticated caller is treated as `member`. See the [security model](/concepts/architecture#security-model-websocket-identity) for the full path.
+</Note>
+
+For the raw protocol constants (`MSG_AWARENESS`, `encodeAwarenessMessage`, `handleAwarenessMessage`) used by this hook internally, see [Low-level sync primitives](#low-level-sync-primitives) below.
+
 ## `useCanvas(roomId)`
 
 Connects to a `CanvasRoom` DO.

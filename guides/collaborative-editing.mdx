@@ -104,6 +104,24 @@ function Whiteboard({ sessionId }: { sessionId: string }) {
 
 The second argument names a `Y.Text` field exposed as `text` / `setText` on the hook return - useful when the room is mostly a text doc. For non-text data, ignore those fields and reach into `doc` directly as shown above.
 
+## YjsRoom authentication and roles
+
+The `/ws/yjs/:docId` route in the scaffold is the only `/ws/*` route that is **token-required and docs-aware**. The other `/ws/*` routes use the inline `wsRoute` helper, which allows anonymous connections (see [Security model](/concepts/architecture#security-model-websocket-identity)). The Yjs handler instead:
+
+1. Returns `401` if no verified JWT is present on the upgrade.
+2. Looks up `documents[docId]` (the docs feature's collection) and resolves a Yjs role from the row:
+   - `admin` when the caller is `documents.ownerId` or the app's `OWNER_USER_ID`.
+   - `member` when the caller's id is in `documents.editors` (JSON array stored as text).
+   - `viewer` when the caller's id is in `documents.collaborators` (JSON array stored as text).
+   - `403` otherwise.
+3. When the app has no `documents` collection registered (or the row is not found), the handler falls through to `'member'` for any authenticated user, so apps that use `useYjsRoom` without the docs feature still work.
+
+The resolved `role` is appended to the DO URL as a query parameter; the DO uses it to set `canWrite` (admins and members write, viewers are read-only).
+
+<Warning>
+**Don't replace the `/ws/yjs/:docId` handler with a bare `wsRoute` when adding the docs feature.** The role resolution above lives only in the dedicated handler. Swapping it for `wsRoute((env) => env.YJS_ROOMS)` makes every authenticated caller anonymous-equivalent in the DO's eyes - the visible bug is "everyone is a viewer" or "collaborators can't type," because the DO defaults to the most restrictive role when no `role` parameter arrives.
+</Warning>
+
 ## Editor integrations
 
 The Yjs ecosystem has bindings for popular editors. The SDK doesn't ship them, but the hooks expose the underlying `Y.Doc` and `awareness`, which is everything these bindings need.
@@ -139,7 +157,47 @@ Install `@tiptap/extension-collaboration-cursor` alongside Tiptap if you want pe
 
 Yjs's awareness protocol broadcasts ephemeral peer state - cursors, selections, names. Both `useYjsField` and `useYjsRoom` expose an `awareness` instance. Pass it to an editor binding (like `@tiptap/extension-collaboration-cursor` shown above), or read and write it directly when building a custom UI.
 
-For non-Yjs presence (live cursors on a canvas, who's typing in a chat), use [`usePresenceRoom`](/guides/presence-and-cursors) instead - a separate, lighter-weight room type.
+The awareness instance returned from `useYjsRoom` is already wired to the same WebSocket: any call to `awareness.setLocalState` or `awareness.setLocalStateField` triggers an `MSG_AWARENESS` frame to peers, and incoming peer frames update the map you read with `awareness.getStates()`.
+
+```tsx
+import { useEffect, useState } from 'react'
+import { useYjsRoom } from 'deepspace'
+
+type CursorState = { line: number; col: number }
+
+function CursorAwareEditor({ docId }: { docId: string }) {
+  const { text, setText, awareness, synced } = useYjsRoom(docId, 'body')
+  const [peers, setPeers] = useState<Array<[number, CursorState]>>([])
+
+  // Broadcast our cursor on every change.
+  function handleCaretChange(line: number, col: number) {
+    awareness.setLocalStateField('cursor', { line, col } satisfies CursorState)
+  }
+
+  // Read every peer's state. The map is keyed by Yjs clientID.
+  useEffect(() => {
+    const update = () => {
+      const next: Array<[number, CursorState]> = []
+      awareness.getStates().forEach((state, clientId) => {
+        if (clientId === awareness.clientID) return
+        const cursor = (state as { cursor?: CursorState }).cursor
+        if (cursor) next.push([clientId, cursor])
+      })
+      setPeers(next)
+    }
+    awareness.on('change', update)
+    update()
+    return () => awareness.off('change', update)
+  }, [awareness])
+
+  if (!synced) return <p>Loading...</p>
+  return <Editor text={text} onText={setText} onCaret={handleCaretChange} peers={peers} />
+}
+```
+
+Conventional fields are `cursor`, `selection`, `user` (`{ name, color }`), and `typing`. Anything you put under a key with `setLocalStateField` shows up in every peer's `getStates()` map until you clear it or disconnect. The docs feature's Tiptap toolbar wires the same `awareness` instance into `@tiptap/extension-collaboration-cursor`, which handles the cursor/selection encoding for you - see [Editor integrations](#editor-integrations) above.
+
+For the raw protocol primitives (`MSG_AWARENESS`, `encodeAwarenessMessage`, `handleAwarenessMessage`), see [low-level sync primitives](/sdk-reference/client/realtime#low-level-sync-primitives) in the reference. For non-Yjs presence (live cursors on a canvas, who's typing in a chat), use [`usePresenceRoom`](/guides/presence-and-cursors) instead - a separate, lighter-weight room type.
 
 ## When to use Yjs vs records
 

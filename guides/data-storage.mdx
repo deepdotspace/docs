@@ -191,6 +191,10 @@ permissions: {
 - **Lift `useQuery` to a parent.** Identical queries deduplicate to one WebSocket subscription, but each mount still re-renders on every store change - fetch once at the top of the page and pass records down via props.
 - **Patch, don't replace.** `put` with a partial patch keeps the wire payload small and avoids overwriting concurrent edits.
 
+<Note>
+The SDK lints each schema at boot and prints findings prefixed `[schema-lint]` to the worker console. See [Schema-lint warnings](/sdk-reference/worker/schemas#schema-lint-warnings) for the three shapes and their fixes.
+</Note>
+
 ## Next steps
 
 - [Permissions](/concepts/permissions) - role-based access control on collections.

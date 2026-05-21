@@ -298,6 +298,36 @@ npx deepspace test-accounts clear --yes          # skip confirmation
 
 Credentials are stored locally at `~/.deepspace/test-accounts.json` (mode 0600). Public sign-up is intentionally disabled; these accounts are the only way to obtain signed-in browser contexts for tests.
 
+## `library`
+
+Publish (or unpublish) your deployed app in the DeepSpace community library at `deepdotspace-site.app.space`.
+
+```bash
+# Publish the current app (reads name from ./wrangler.toml)
+npx deepspace library publish
+
+# Override metadata
+npx deepspace library publish --app my-cool-app --name "My Cool App" \
+  --description "A short tagline" --category Productivity \
+  --tags utility,ai --visibility unlisted
+
+# Remove an entry
+npx deepspace library unpublish <handle>
+```
+
+| Subcommand | Args / Flags |
+|---|---|
+| `publish` | `--dir <path>` (default `.`), `--app <name>` (default: `wrangler.toml` `name`), `--name <display>`, `--description <text>`, `--category <cat>` (default `General`), `--tags <a,b,c>`, `--visibility public\|unlisted\|private` (default `public`), `--screenshot <url>`, `--library-app <subdomain>`, `--json` |
+| `unpublish` | `<handle>` (positional, required), `--library-app <subdomain>`, `--json` |
+
+`library publish` requires a logged-in session (`deepspace login`) and that the app is already deployed - the library server verifies you own the deployed app via the deploy worker's registry before writing the entry. Publishing another user's app is rejected server-side.
+
+`<handle>` for `unpublish` is the `templateHandle` returned by `publish` (usually the same as your app name). Only the owner (or an admin) can unpublish.
+
+<Warning>
+**Deploy first.** `library publish` registers the deployed app and its preview - run `npx deepspace deploy` before publishing, otherwise the ownership check fails.
+</Warning>
+
 ## `managed-repos`
 
 Create and manage DeepSpace-owned private GitHub repositories. Intended for users who do not have or do not want to connect their own GitHub account; subject to per-developer quotas.
@@ -342,6 +372,7 @@ The CLI reads a small set of environment variables:
 | `DEEPSPACE_AUTH_URL` | `login`, `logout`, `test-accounts` | Override auth-worker URL (advanced/testing) |
 | `DEEPSPACE_API_URL` | `domain`, `invoke`, `integrations`, `managed-repos`, `deploy` | Override api-worker URL (advanced/testing) |
 | `DEEPSPACE_DEPLOY_URL` | `deploy`, `undeploy` | Override deploy-worker URL (advanced/testing) |
+| `DEEPSPACE_LIBRARY_HOST` | `library` | Override library host URL (advanced/testing) |
 
 ## See also
 

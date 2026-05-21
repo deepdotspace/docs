@@ -14,10 +14,16 @@ import {
   bindingManifestFromOutputConfig,
 } from 'deepspace/worker'
 
+import { captureScreenshot } from 'deepspace/server'
+
 import type {
   CustomBinding, CustomBindingManifest, ValidationError,
   RunMigrationsResult,
 } from 'deepspace/worker'
+
+import type {
+  ScreenshotEnv, ScreenshotOptions, ScreenshotResult,
+} from 'deepspace/server'
 ```
 
 ## `runMigrations(db, migrations)`
@@ -154,6 +160,91 @@ const COST_RATES = {
 ```
 
 The shape is a nested object grouped by binding kind, not a flat record of dotted keys.
+
+## Shared Browser Rendering (`captureScreenshot`)
+
+Render a URL to a PNG via the platform's shared Browser Rendering binding, without declaring your own `[browser]` binding in `wrangler.toml`. Added in v0.3.10.
+
+```ts
+function captureScreenshot(
+  env: ScreenshotEnv,
+  opts: ScreenshotOptions,
+): Promise<ScreenshotResult | null>
+
+interface ScreenshotOptions {
+  url: string
+  viewport?: { width: number; height: number }
+  waitUntil?: 'load' | 'domcontentloaded' | 'networkidle0' | 'networkidle2'
+  timeoutMs?: number
+  fullPage?: boolean
+}
+
+interface ScreenshotEnv extends PlatformWorkerEnv {
+  APP_NAME: string
+  APP_IDENTITY_TOKEN: string
+}
+
+interface ScreenshotResult {
+  /** PNG bytes. */
+  body: ArrayBuffer
+  /** `image/png`. */
+  contentType: string
+}
+```
+
+The helper POSTs to the platform-worker's internal screenshot endpoint, signed with `APP_IDENTITY_TOKEN` and `APP_NAME` (the same HMAC-of-app-name pattern `/internal/files` uses). The platform enforces a host allowlist (`*.app.space`, `*.deep.space`), per-app sliding rate limits, and viewport / timeout clamping.
+
+Imported from `'deepspace/server'` - this is a server-side helper, not a browser export.
+
+### Example: OG-image route
+
+The scaffold's `worker.ts` already binds `APP_IDENTITY_TOKEN`, `APP_NAME`, and the `PLATFORM_WORKER` service binding, so the route below is copy-paste-runnable - no `wrangler.toml` edits required.
+
+```ts
+import { captureScreenshot } from 'deepspace/server'
+
+app.get('/api/og/:roomId', async (c) => {
+  const roomId = c.req.param('roomId')
+  const shot = await captureScreenshot(c.env, {
+    url: `https://${c.env.APP_NAME}.app.space/rooms/${roomId}/preview`,
+    viewport: { width: 1200, height: 630 },
+    waitUntil: 'networkidle0',
+    timeoutMs: 8000,
+  })
+
+  if (!shot) {
+    // Allowlist miss, rate limit, timeout, or local dev without a token.
+    // Redirect to a static placeholder so the caller still gets an image.
+    return c.redirect('/og-placeholder.png', 302)
+  }
+
+  return new Response(shot.body, {
+    headers: {
+      'content-type': shot.contentType,
+      'cache-control': 'public, max-age=86400',
+    },
+  })
+})
+```
+
+### The `null` return is the contract
+
+`captureScreenshot` returns `null` on **any** non-2xx from the platform - rate limit, allowlist miss, target timeout, BR binding misconfigured platform-side. Underlying errors are logged on the platform side; the caller just sees `null`. Always branch on it and fall back to a placeholder. Users will hit this path during local dev (see below) and on the first request after an allowlist change.
+
+<Info>
+`APP_IDENTITY_TOKEN` is only populated after your first `npx deepspace deploy`. Calls before that, or from a fresh `deepspace dev` session with no prior deploy, will return `null`. Test screenshot flows against a deployed environment, or guard with a placeholder during local bring-up.
+</Info>
+
+### When you still want your own `browser_rendering` binding
+
+`captureScreenshot` covers standard preview / OG-image flows on app-owned hosts. Declare your own `[browser]` binding in `wrangler.toml` only if you need one of:
+
+- **Unmetered Browser Rendering** - the shared binding counts against the platform's per-app sliding rate limit; an app-owned binding is billed and rate-limited on your CF account.
+- **Custom user agents, headers, or cookies** - the shared endpoint sets these platform-side and does not accept overrides.
+- **Third-party hosts** - URLs outside `*.app.space` / `*.deep.space` are rejected by the allowlist. Render them via your own binding.
+- **Direct Puppeteer scripting** (`page.evaluate`, multi-step navigation, PDF export) - the shared endpoint exposes a single capture call only.
+
+For those cases, add `[browser] binding = "BROWSER"` to `wrangler.toml` and call `env.BROWSER.fetch(...)` directly - see [custom bindings](/guides/custom-bindings).
 
 ## Manifest validation
 

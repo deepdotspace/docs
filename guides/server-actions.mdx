@@ -70,8 +70,11 @@ type ActionContext<TEnv> = {
   params: Record<string, unknown>  // request body
   tools: ActionTools
   env: TEnv
+  callerJwt: string           // caller's raw Bearer token
 }
 ```
+
+`callerJwt` is the verified Bearer token the action was invoked with. Forward it on outbound requests that must run as the caller (not the app owner) - see [Forwarding caller identity](#forwarding-caller-identity).
 
 ### `tools` - RBAC-bypassing operations
 
@@ -79,7 +82,7 @@ Every method returns `ActionResult<T>` - narrow with `if (result.success)` befor
 
 | Method | `data` shape on success | Notes |
 |---|---|---|
-| `tools.create(coll, data)` | `{ recordId }` | Create a record. |
+| `tools.create(coll, data, recordId?)` | `{ recordId }` | Create a record. Pass `recordId` to upsert against a known key. |
 | `tools.update(coll, id, patch)` | `{ recordId }` | Patch an existing record. |
 | `tools.remove(coll, id)` | `{ recordId }` | Delete a record. |
 | `tools.get(coll, id)` | `{ record }` | Fetch one record (envelope: `{ recordId, data, createdAt, updatedAt, ... }`). |
@@ -102,6 +105,18 @@ if (r.success) {
 <Note>
 `tools.query` bypasses caller RBAC - your action sees every record in the collection, not just records the caller could read. If you want caller-scoped reads, do them client-side with `useQuery`, or pass a `where` clause that scopes by caller.
 </Note>
+
+### Upsert by known id
+
+By default `tools.create` lets the DO mint the `recordId`. Pass an explicit id as the third argument to upsert against a known key - the canonical case is seeding the `users` row so its id matches the caller's auth user id, which is what makes `tools.get('users', userId)` resolve later.
+
+```ts
+export const ensureUserRow: ActionHandler<Env> = async ({ userId, tools }) => {
+  return tools.create('users', { displayName: 'New player', score: 0 }, userId)
+}
+```
+
+If a record with that id already exists, the incoming `data` is merged on top of it (existing fields you don't pass are preserved), so the same call works for both first-time seed and subsequent refreshes.
 
 ## Action return shape
 
@@ -148,6 +163,29 @@ export const recomputeAnalytics: ActionHandler<OwnerEnv> = async (ctx) => {
 ```
 
 `OWNER_USER_ID` is set on every deployed app to the user who owns it. Use it as the trust anchor for owner-only operations.
+
+## Forwarding caller identity
+
+`tools.integration` already routes the right JWT for you (owner or caller, depending on `src/integrations.ts`). If you need to call a platform endpoint directly - for example a `platformWorkerFetch` or `apiWorkerFetch` where the upstream authorizes the JWT subject as *the user*, not the app - use `ctx.callerJwt` to forward the same Bearer token the action was invoked with.
+
+```ts
+import type { ActionHandler } from 'deepspace/worker'
+import { platformWorkerFetch } from 'deepspace/worker'
+
+export const listMyApps: ActionHandler<Env> = async ({ callerJwt, env }) => {
+  // The deploy worker's /api/apps endpoint scopes results by JWT subject,
+  // so the caller - not the app owner - must be the authenticated user.
+  const res = await platformWorkerFetch(env, '/api/apps', {
+    headers: { Authorization: `Bearer ${callerJwt}` },
+  })
+  if (!res.ok) return { success: false, error: `Upstream ${res.status}` }
+  return { success: true, data: await res.json() }
+}
+```
+
+<Warning>
+`callerJwt` is a live credential. Never log it, never return it in a response body, and never embed it in URLs. The only safe destination is an outbound `Authorization: Bearer …` header to a trusted upstream.
+</Warning>
 
 ## Integration calls - billing routing
 

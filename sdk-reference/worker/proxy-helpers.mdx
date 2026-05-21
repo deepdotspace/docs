@@ -72,6 +72,8 @@ app.get('/ws/:roomId', async (c) => {
 
 `wsRoute` in the example above is **not** an SDK export - it's a small helper defined locally in the scaffolded `worker.ts` (around line 345 of `templates/starter/worker.ts`). It owns the JWT verification + URL rewriting boilerplate for WebSocket routes. Apps are free to edit or replace it.
 
+For PNG capture against an `*.app.space` / `*.deep.space` URL, prefer the higher-level [`captureScreenshot`](/sdk-reference/worker/bindings#shared-browser-rendering-capturescreenshot) wrapper instead of calling `platformWorkerFetch` against `/internal/screenshot` yourself - it owns the HMAC headers and the `null`-on-failure contract.
+
 ## `authWorkerFetch(env, path, init?)`
 
 Fetch the auth-worker (Better Auth, JWT issuance, OAuth flows).

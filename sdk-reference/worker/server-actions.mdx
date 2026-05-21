@@ -40,10 +40,17 @@ interface ActionContext<TEnv = Record<string, unknown>> {
   params: Record<string, unknown>      // request body
   tools: ActionTools
   env: TEnv                            // worker bindings, typed
+  callerJwt: string                    // caller's raw Bearer token
 }
 ```
 
 `userId` is the caller - not the app owner. Use it for audit logs and per-caller logic. For owner-only actions, gate on `userId === env.OWNER_USER_ID`.
+
+`callerJwt` is the raw, already-verified Bearer token the action was invoked with. Forward it on outbound platform requests that need to act as the caller rather than as the app owner - for example, deploy-worker `/api/apps` ownership checks, or any `apiWorkerFetch` / `platformWorkerFetch` call where the upstream bills or authorizes the JWT subject. See [Forwarding caller identity](/guides/server-actions#forwarding-caller-identity) in the guide.
+
+<Warning>
+Never log `callerJwt` or echo it into response bodies. It's a live credential for the caller's session - treat it the same way you'd treat a password. Pass it to upstream workers via an `Authorization: Bearer …` header and nothing else.
+</Warning>
 
 ## `ActionTools`
 
@@ -52,6 +59,7 @@ interface ActionTools {
   create<T extends Record<string, unknown> = Record<string, unknown>>(
     collection: string,
     data: T,
+    recordId?: string,
   ): Promise<ActionResult<MutateActionData>>
 
   update<T extends Record<string, unknown> = Record<string, unknown>>(
@@ -106,7 +114,7 @@ interface QueryActionData<T = Record<string, unknown>> {
 |---|---|
 | `tools.get(coll, id)` | `{ record }` - full envelope with `data` typed as `T` |
 | `tools.query(coll, opts?)` | `{ records, count }` |
-| `tools.create(coll, data)` | `{ recordId }` |
+| `tools.create(coll, data, recordId?)` | `{ recordId }` - pass `recordId` to upsert against a known key (see [Upsert by known id](/guides/server-actions#upsert-by-known-id)) |
 | `tools.update(coll, id, patch)` | `{ recordId }` |
 | `tools.remove(coll, id)` | `{ recordId }` |
 | `tools.integration(endpoint, body)` | The integration's response body directly (typed as `T`) |

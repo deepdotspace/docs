@@ -255,6 +255,68 @@ export const itemsSchema: CollectionSchema = {
 }
 ```
 
+## Schema-lint warnings
+
+When each schema is registered (worker startup, first DO boot), the SDK runs a lightweight lint and prints any findings to the worker console prefixed `[schema-lint]`. Warnings do **not** block boot - each just flags a declaration that looks like it should enforce something but doesn't. Fix every one before shipping.
+
+`lintSchema(schema)` is also re-exported from `deepspace/worker` and returns the warning strings as an array, so you can assert against it in your own tests.
+
+```ts
+import { lintSchema } from 'deepspace/worker'
+import { notesSchema } from './schemas/notes-schema'
+
+// In a unit test:
+expect(lintSchema(notesSchema)).toEqual([])
+```
+
+### 1. `visibilityField` declared but no role uses `'published'` / `'shared'`
+
+```
+[<collection>] visibilityField is declared but no role uses read: 'published' or 'shared'. Roles with read: true (<roles>) will see every row regardless of visibility. Change those to read: 'published' (owner OR public) or 'shared' (owner OR collaborator OR public) to actually enforce the filter, or remove visibilityField if you don't intend to gate reads by it.
+```
+
+**Cause.** You set `visibilityField` (intending per-record gating), but every role with read access has `read: true`. `true` is unconditional - the visibility column is never consulted, so every row is visible to every reader.
+
+**Fix.** Either drop `visibilityField`, or change at least one role's `read` to `'published'` (owner OR matches `visibilityField`) or `'shared'` (owner OR collaborator OR matches `visibilityField`).
+
+<Warning>
+This is a privacy foot-gun, not a typo. A schema that triggers this warning will silently leak draft / private rows to everyone who can read the collection.
+</Warning>
+
+### 2. `ownerField` set but the column is not `userBound`
+
+```
+[<collection>] ownerField is '<field>' but that column is not marked userBound: true. A client can create a row with someone else's id in this field, bypassing 'own' permission checks. Add userBound: true (and ideally immutable: true) to the column.
+```
+
+**Cause.** `ownerField` tells `'own'` permission checks which column to read. Without `userBound: true` on that column, a client can write any user id into it on create - claiming ownership of a row they didn't actually create.
+
+**Fix.** Add `userBound: true` (and ideally `immutable: true`) to the named column. `userBound` makes the DO overwrite the field with the caller's verified user id on every write.
+
+```ts
+{
+  name: 'todos',
+  columns: [
+    { name: 'assignedTo', storage: 'text', interpretation: 'plain', userBound: true, immutable: true },
+    // ...
+  ],
+  ownerField: 'assignedTo',
+  permissions: {
+    member: { read: true, create: true, update: 'own', delete: 'own' },
+  },
+}
+```
+
+### 3. `userBound: true` on a non-`text` column
+
+```
+[<collection>] column '<name>' is userBound but storage is '<storage>'. userBound stamps the user id (a string); use storage: 'text'.
+```
+
+**Cause.** `userBound` stamps a user id (a string) into the column. The SDK only coerces strings into `'text'` storage; `'number'` will fail at write time.
+
+**Fix.** Change the column's `storage` to `'text'`.
+
 ## See also
 
 - [Data model concepts](/concepts/data-model) - collections and envelopes

@@ -106,6 +106,10 @@ Durable Objects trust whatever identity the request URL carries. Verifying that 
 **Never put identity in WebSocket URLs or `/api/*` headers.** The scaffold's inline `wsRoute` helper strips them; identity always comes from the JWT subject. There is no client-side override.
 </Warning>
 
+<Warning>
+**`/ws/yjs/:docId` is special.** It is the only `/ws/*` route that requires a verified JWT (401 without one) and resolves a per-doc role (`admin` / `member` / `viewer`) from the `documents` collection's `ownerId`, `editors`, and `collaborators` fields - 403 when the caller has none. Do not collapse it into a bare `wsRoute` call. See [YjsRoom authentication and roles](/guides/collaborative-editing#yjsroom-authentication-and-roles).
+</Warning>
+
 ## Cross-app shared scopes
 
 If your app needs to read or write `workspace:*`, `dir:*`, or `conv:*` scopes that sync across DeepSpace apps, three edits are required.

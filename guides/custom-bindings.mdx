@@ -60,6 +60,10 @@ dataset = "my_events"
 
 Allowed binding types: `vectorize`, `ai`, `r2_bucket`, `kv_namespace`, `d1`, `queue`, `browser_rendering`, `analytics_engine`, `hyperdrive`. The deploy validator rejects anything else.
 
+<Info>
+For standard preview / OG-image flows on `*.app.space` / `*.deep.space` URLs you do **not** need a `[browser]` binding - call [`captureScreenshot`](/sdk-reference/worker/bindings#shared-browser-rendering-capturescreenshot) from `deepspace/server` to render through the platform's shared Browser Rendering binding. Declare your own only for unmetered usage, custom user agents, or third-party hosts.
+</Info>
+
 ## `"auto"` autoprovisioning
 
 When the ID field is the literal string `"auto"`, the deploy worker creates the resource on the platform Cloudflare account on first deploy, persists the ID, and reuses it on subsequent deploys.
