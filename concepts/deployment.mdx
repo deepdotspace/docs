@@ -15,7 +15,7 @@ See [Build & deploy pipeline](/concepts/architecture#build--deploy-pipeline) for
 
 ## Subdomains
 
-The `name` field in `wrangler.toml` is your subdomain:
+`<name>.app.space` is a fully production-grade URL with SSL - most apps ship and stay on it. The `name` field in `wrangler.toml` is your subdomain:
 
 ```toml
 name = "my-app"
@@ -28,7 +28,7 @@ Rules:
 - Non-conforming names cause the CLI to fail with a clear error and the suggested canonical form; fix `name` in `wrangler.toml` and re-run
 - Renaming `name` after deploy and re-deploying gives you a new subdomain - the old one becomes orphaned (still accessible until explicitly undeployed)
 
-To attach a real domain to your app, see [Custom domains](/guides/custom-domains).
+If you'd rather use your own domain (e.g. `myapp.com`), see [Custom domains](/guides/custom-domains).
 
 ## State preservation
 
@@ -142,5 +142,5 @@ Three things to verify before shipping:
 
 - [Deploy command reference](/cli-reference/commands#deploy) - flags, environment variables, and edge cases.
 - [Custom bindings](/guides/custom-bindings) - declare Vectorize, R2, D1, and more.
-- [Custom domains](/guides/custom-domains) - buy and attach a real domain from the CLI.
+- [Custom domains](/guides/custom-domains) - optionally buy and attach your own domain from the CLI.
 - [Testing](/guides/testing) - run Playwright specs before you ship.
