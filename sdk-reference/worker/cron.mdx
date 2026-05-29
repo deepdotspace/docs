@@ -52,8 +52,10 @@ Returns a context for use inside `runTask`. Operations run as the app owner, byp
 function buildCronContext(
   env: {
     RECORD_ROOMS: DurableObjectNamespace
-    INTERNAL_STORAGE_HMAC_SECRET?: string
-    API_BASE_URL?: string
+    /** Optional in the type, but `ctx.integrations.call(...)` throws at runtime if missing. */
+    APP_OWNER_JWT?: string
+    API_WORKER?: Fetcher
+    API_WORKER_URL?: string
   },
   ownerUserId: string,
   roomId?: string,
@@ -70,7 +72,7 @@ interface CronContext {
     delete(collection: string, recordId: string): Promise<any>
   }
   integrations: {
-    call(endpoint: string, params: Record<string, unknown>): Promise<any>
+    call(endpoint: string, params?: Record<string, unknown>): Promise<any>
   }
   ownerUserId: string
 }
@@ -93,7 +95,7 @@ There is **no `records.get` method** on `CronContext` - use `records.query` with
 ## Properties
 
 - `ctx.records.*` - RBAC-bypassing record operations (results already unwrapped from the `ActionResult` envelope).
-- `ctx.integrations.call(endpoint, params)` - proxies through the api-worker via signed internal HMAC, billed to the app owner (uses `INTERNAL_STORAGE_HMAC_SECRET`).
+- `ctx.integrations.call(endpoint, params)` - proxies through the api-worker as the app owner (signed with `APP_OWNER_JWT`), billed to the app owner. Returns the unwrapped `data` field; throws on non-2xx or `success: false`.
 - `ctx.ownerUserId` - convenience accessor for the owner's user ID.
 
 ## Pattern

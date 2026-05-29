@@ -15,6 +15,7 @@ function Whiteboard({ canvasId }: { canvasId: string }) {
     shapes,
     viewports,
     connected,
+    canWrite,
     addShape,
     moveShape,
     resizeShape,
@@ -31,6 +32,8 @@ function Whiteboard({ canvasId }: { canvasId: string }) {
 ```
 
 `canvasId` is any string. Two clients passing the same `canvasId` connect to the same `CanvasRoom`.
+
+Use `canWrite` to disable draw / edit controls for viewers - shape mutations (`addShape`, `moveShape`, `resizeShape`, `updateShape`, `deleteShape`, `undo`, `redo`) **silently no-op when `canWrite` is `false`**, so unguarded buttons will appear to "click but do nothing" for read-only users. `setViewport` is exempt and stays open for viewers (viewport broadcasts are presence-like).
 
 ## Shape lifecycle
 

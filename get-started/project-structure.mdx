@@ -62,7 +62,8 @@ These ship pre-wired in the scaffold with empty defaults. Edit to populate, or d
 
 | File | Purpose |
 |---|---|
-| `src/cron.ts` | Scheduled tasks for `AppCronRoom`. See [Scheduled jobs](/guides/scheduled-jobs). |
+| `src/cron.ts` | Scheduled tasks for `AppCronRoom`. See [Scheduled tasks](/guides/scheduled-jobs). |
+| `src/jobs.ts` | Background-job handlers for `AppJobRoom`. See [Background jobs](/guides/background-jobs). |
 | `src/ai/tools.ts` | System prompt and tool allowlist for `/api/ai/chat`. |
 | `src/ai/chat-routes.ts` | Hono handlers for the AI chat endpoints. |
 | `src/integrations.ts` | Per-integration billing config (`developer` vs `user`). |
@@ -92,6 +93,7 @@ export const __DO_MANIFEST__ = [
   { binding: 'CANVAS_ROOMS', className: 'AppCanvasRoom', sqlite: true },
   { binding: 'PRESENCE_ROOMS', className: 'AppPresenceRoom', sqlite: true },
   { binding: 'CRON_ROOMS', className: 'AppCronRoom', sqlite: true },
+  { binding: 'JOB_ROOMS', className: 'AppJobRoom', sqlite: true },
 ] as const satisfies DOManifest
 ```
 

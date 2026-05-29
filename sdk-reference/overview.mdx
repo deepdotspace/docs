@@ -20,7 +20,7 @@ Everything you import on the frontend - providers, hooks, components, and utilit
 | [Auth](/sdk-reference/client/auth) | `useAuth`, `useUser`, `AuthGate`, `AuthOverlay`, `signIn`, `signOut`, `getAuthToken` |
 | [Records](/sdk-reference/client/records) | `useQuery`, `useMutations`, `RecordProvider`, `RecordScope`, `useUsers`, `useUserLookup` |
 | [Messaging](/sdk-reference/client/messaging) | `useChannels`, `useMessages`, `useReactions`, `useChannelMembers`, `useReadReceipts`, `useConversation` |
-| [Real-time](/sdk-reference/client/realtime) | `usePresence`, `usePresenceRoom`, `useYjsText`, `useYjsField`, `useCanvas`, `useGameRoom`, `useCronMonitor` |
+| [Real-time](/sdk-reference/client/realtime) | `usePresence`, `usePresenceRoom`, `useYjsText`, `useYjsField`, `useCanvas`, `useGameRoom`, `useCronMonitor`, `useJobs` |
 | [Files](/sdk-reference/client/files) | `useR2Files`, `formatFileSize`, `isImageFile` |
 | [Integrations](/sdk-reference/client/integrations) | `integration.post`, OAuth helpers, platform-context exports |
 | [Payments](/sdk-reference/client/payments) | `useSubscription`, `useCheckout`, `PricingTable`, server helpers |
@@ -32,7 +32,7 @@ Everything you import inside your Cloudflare Worker - DO base classes, schemas, 
 
 | Section | Covers |
 |---|---|
-| [Rooms](/sdk-reference/worker/rooms) | `RecordRoom`, `YjsRoom`, `CanvasRoom`, `PresenceRoom`, `CronRoom`, `GameRoom`, `DOManifest` |
+| [Rooms](/sdk-reference/worker/rooms) | `RecordRoom`, `YjsRoom`, `CanvasRoom`, `PresenceRoom`, `CronRoom`, `GameRoom`, `JobRoom`, `enqueueJob`, `DOManifest` |
 | [Schemas](/sdk-reference/worker/schemas) | `CollectionSchema`, RBAC types, drop-in collections, role constants |
 | [Server actions](/sdk-reference/worker/server-actions) | `ActionHandler`, `ActionContext`, `ActionTools`, `ActionResult` |
 | [AI](/sdk-reference/worker/ai) | `createDeepSpaceAI`, context compaction, chat history, built-in tools |

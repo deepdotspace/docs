@@ -160,6 +160,34 @@ test('/polls/:id renders the question', async ({ page }) => {
 
 A "page loads without JS errors" assertion is **not** sufficient. Assert that the data that should be there *is* there.
 
+## Testing `canWrite`-gated UI
+
+Surfaces backed by `useYjsRoom`, `useYjsText`, `useYjsField`, `useCanvas`, `useGameRoom`, `useCronMonitor`, and `useJobs` all expose a `canWrite` boolean that defaults to `false` until the server's AUTH frame arrives. Two patterns matter for tests:
+
+**Don't use `getByRole('textbox')` on ProseMirror / Tiptap editors.** A page that also renders a title `<input>` has multiple textbox-role nodes and the locator is ambiguous. Target the editable surface directly with a stable `data-testid`:
+
+```ts
+const editor = page.locator('[data-testid="editor-content"] .ProseMirror')
+```
+
+**Don't use `expect(locator).toBeEditable()`.** Playwright's actionability poll runs busy enough to starve the WebSocket `onmessage` callback, so the AUTH frame never lands and `contenteditable` stays `"false"`. Poll the attribute passively instead:
+
+```ts
+// Writer (member / owner) - wait for canWrite to flip true
+await expect.poll(
+  () => editor.getAttribute('contenteditable'),
+  { timeout: 30_000, intervals: [500] },
+).toBe('true')
+
+// Viewer - assert it stays read-only
+await expect.poll(
+  () => editor.getAttribute('contenteditable'),
+  { timeout: 30_000, intervals: [500] },
+).toBe('false')
+```
+
+The same race applies to any `canWrite`-gated UI - if a test wants to assert the writer can act before clicking, poll a DOM signal (a `disabled` attribute, `aria-readonly`, `data-can-write="true"`) rather than relying on actionability checks.
+
 ## Self-diagnosis with tests
 
 When something isn't working, don't start with console logs. Start with:

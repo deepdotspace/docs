@@ -15,7 +15,8 @@ When you scaffold a new app, you get a working starter with all of this already 
 - **File storage** - Per-app scoped R2 uploads.
 - **AI** - Streamed Claude, OpenAI, and Cerebras with multi-turn tool use, persistent chat history, and automatic context compaction.
 - **Payments** - Stripe subscriptions, one-time products, ad-hoc charges, refunds, and self-service billing portals.
-- **Scheduled jobs** - Per-app cron via a built-in Durable Object, with an admin monitor hook.
+- **Scheduled tasks** - Per-app cron via a built-in Durable Object, with an admin monitor hook.
+- **Background jobs** - Durable, observable background work (AI generations, exports, fan-outs) with live progress, cancel, and retry - jobs survive isolate restarts.
 - **Third-party integrations** - A proxy that fronts 215+ external API endpoints (OpenAI, Anthropic, Stripe, Gmail, Calendar, LiveKit, finance, search, media, and more), with billing routed to the developer or the end-user.
 - **Custom Cloudflare bindings** - Declare Vectorize, KV, D1, Queues, Browser Rendering, Hyperdrive, or your own R2 buckets and the deploy pipeline auto-provisions them.
 - **Custom domains (optional)** - Apps ship on `<name>.app.space` by default; bring your own `.com`, `.ai`, `.io`, or other domain via the CLI when you want a branded URL.

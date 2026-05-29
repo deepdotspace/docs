@@ -109,7 +109,7 @@ Never use as a substitute for `verifyJwt` on the trust boundary. Decoded but unv
 
 ## HMAC primitives - internal signing
 
-For platform → app internal calls (and cron's `ctx.integrations.call`, which signs requests with `INTERNAL_STORAGE_HMAC_SECRET`). All of these are async and use `crypto.subtle` on the Workers runtime (with a Node fallback for testing).
+For platform → app internal calls and any custom signed-request flow you build yourself. (Cron's `ctx.integrations.call` no longer uses these - it signs with `APP_OWNER_JWT` instead.) All of these are async and use `crypto.subtle` on the Workers runtime (with a Node fallback for testing).
 
 ```ts
 function buildInternalPayload(body: unknown): string

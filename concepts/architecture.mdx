@@ -31,7 +31,7 @@ The scaffolded worker is a [Hono](https://hono.dev/) app. Its main routes:
 
 | Route | What it serves |
 |---|---|
-| `GET /ws/:roomId` (and variants) | WebSocket upgrades for Durable Object rooms - records, Yjs, canvas, presence, cron |
+| `GET /ws/:roomId` (and variants) | WebSocket upgrades for Durable Object rooms - records, Yjs, canvas, presence, cron, jobs |
 | `/api/auth/*` | Proxied to the platform's auth worker (sign-in, OAuth callback, sign-out) |
 | `/api/integrations/*` | Proxied to the platform's API worker - any method, including `DELETE /oauth/:provider/disconnect` |
 | `POST /api/actions/:name` | Server actions defined in `src/actions/index.ts` |
@@ -45,7 +45,7 @@ The worker runs on Cloudflare Workers for Platforms, which means each deployed a
 
 ## Durable Objects
 
-State that needs to be **shared** - across users, across tabs, in real time - lives in a Durable Object. The scaffold ships five DO classes; each is an SDK base class subclassed in `worker.ts`:
+State that needs to be **shared** - across users, across tabs, in real time - lives in a Durable Object. The scaffold ships six DO classes; each is an SDK base class subclassed in `worker.ts`:
 
 | Class | Purpose | WebSocket route |
 |---|---|---|
@@ -54,6 +54,7 @@ State that needs to be **shared** - across users, across tabs, in real time - li
 | `CanvasRoom` | Collaborative canvas shapes + viewports | `/ws/canvas/:docId` |
 | `PresenceRoom` | Cursors, typing indicators, viewports | `/ws/presence/:scopeId` |
 | `CronRoom` | Scheduled task scheduler + history | `/ws/cron/:roomId` |
+| `JobRoom` | Durable background jobs (AI generations, exports, fan-outs) | `/ws/jobs/:roomId` |
 
 You can add more (such as `GameRoom` for turn-based games) or subclass any of them with custom behavior.
 

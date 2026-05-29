@@ -54,7 +54,7 @@ Each task declares **either** `intervalMinutes` (every N minutes) **or** `schedu
 | Property | Type | Description |
 |---|---|---|
 | `records` | object | `query`, `create`, `update`, `delete` operations. |
-| `integrations` | object | `call(endpoint, params)` - proxies through the api-worker with HMAC auth, billed to the owner. |
+| `integrations` | object | `call(endpoint, params)` - proxies through the api-worker as the app owner (signed with `APP_OWNER_JWT`), billed to the owner. |
 | `ownerUserId` | `string` | The owner's user ID. |
 
 The records API differs from server actions - methods return their data directly rather than wrapping in `{ success, data }`:
@@ -98,7 +98,7 @@ import { useCronMonitor, useUser } from 'deepspace'
 import { SCOPE_ID } from '../constants'
 
 function CronAdmin() {
-  const { tasks, history, connected, trigger, pause, resume } = useCronMonitor(SCOPE_ID)
+  const { tasks, history, connected, canWrite, trigger, pause, resume } = useCronMonitor(SCOPE_ID)
   const { user } = useUser()
   const isAdmin = user?.role === 'admin'
 
@@ -140,12 +140,13 @@ function CronAdmin() {
 | `tasks` | `CronTaskState[]` | Live state of each task. |
 | `history` | `CronHistoryEntry[]` | Recent runs (with success, duration, error). |
 | `connected` | `boolean` | WebSocket connection status. |
-| `trigger(name)` | `(name: string) => void` | Fire `onTask` immediately - same code path as the alarm. Fire-and-forget over the open socket. |
-| `pause(name)` | `(name: string) => void` | Disable a task. |
-| `resume(name)` | `(name: string) => void` | Re-enable a task. |
+| `canWrite` | `boolean` | RBAC gate from the server. False until the AUTH frame lands; stays false for read-only viewers. |
+| `trigger(name)` | `(name: string) => void` | Fire `onTask` immediately - same code path as the alarm. Fire-and-forget. Silently no-ops when `canWrite` is `false`. |
+| `pause(name)` | `(name: string) => void` | Disable a task. Silently no-ops when `canWrite` is `false`. |
+| `resume(name)` | `(name: string) => void` | Re-enable a task. Silently no-ops when `canWrite` is `false`. |
 
 <Warning>
-**Auth-gate any page that exposes `trigger` / `pause` / `resume`.** The Durable Object does not enforce a role on these methods - without a client-side check, any signed-in user can trigger owner-billed tasks. Gate by `user?.role === 'admin'`.
+**Default scaffold lets every signed-in user fire owner-billed tasks.** The Cron DO authorizes `trigger` / `pause` / `resume` based on the role the `wsRoute` resolver returns, and the scaffolded `/ws/cron/:roomId` returns `role: 'member'` for any signed-in connection. To restrict writes to the app owner, replace the scaffolded `wsRoute` helper with an inline handler that returns `role: 'member'` only when the JWT subject matches `OWNER_USER_ID`. Then also gate the UI client-side by `canWrite` (or `user?.role === 'admin'`) so the buttons match server policy.
 </Warning>
 
 ## Outbound calls in handlers

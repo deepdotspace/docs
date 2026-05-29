@@ -1,19 +1,20 @@
 ---
 title: "Rooms reference"
-description: "Durable Object base classes - RecordRoom, YjsRoom, CanvasRoom, PresenceRoom, CronRoom, GameRoom."
+description: "Durable Object base classes - RecordRoom, YjsRoom, CanvasRoom, PresenceRoom, CronRoom, GameRoom, JobRoom."
 ---
 
-The SDK ships six Durable Object base classes. Subclass them in `worker.ts`, declare them in `__DO_MANIFEST__`, and the SDK handles WebSocket upgrades, RBAC, persistence, and broadcast.
+The SDK ships seven Durable Object base classes. Subclass them in `worker.ts`, declare them in `__DO_MANIFEST__`, and the SDK handles WebSocket upgrades, RBAC, persistence, and broadcast.
 
 ```ts
 import {
   BaseRoom, RecordRoom, YjsRoom, CanvasRoom,
-  PresenceRoom, CronRoom, GameRoom,
+  PresenceRoom, CronRoom, GameRoom, JobRoom,
 } from 'deepspace/worker'
 import type {
   RecordRoomConfig, CronRoomConfig, GameRoomConfig,
   CronTask, CronExecution, CanvasShape, Viewport,
   PresencePeer, Player, GameInput, UserAttachment,
+  Job, JobContext,
 } from 'deepspace/worker'
 ```
 
@@ -267,6 +268,99 @@ interface GameInput {
 
 Connected to via `/ws/game/:roomId`.
 
+## `JobRoom<E>`
+
+Durable background-job DO. Handlers run on the DO's alarm with a ~15-minute wall budget per tick (chain longer jobs with `ctx.continue(state)`). Jobs are persisted in SQLite, survive isolate restarts, and broadcast every state change over WebSocket - clients see live progress without polling. For worked patterns, see the [Background jobs guide](/guides/background-jobs).
+
+```ts
+abstract class JobRoom<
+  E = Record<string, unknown>,
+  P = unknown,
+  R = unknown,
+> extends BaseRoom<E> {
+  constructor(state: DurableObjectState, env: unknown, config?: JobRoomConfig)
+  protected abstract onJob(job: Job<P>, ctx: JobContext): R | void | Promise<R | void>
+}
+
+interface JobRoomConfig {
+  /** Default retry budget for jobs that don't pass `maxAttempts` to `enqueue`. Default 1 (no auto-retry). */
+  defaultMaxAttempts?: number
+  /** How long terminal rows (succeeded / failed / canceled) are kept. Default 24h. */
+  retentionMs?: number
+  /** Default retry backoff for failed jobs. Default 1000ms. */
+  retryBackoffMs?: number
+  /** How many historical rows the DO holds in its in-memory snapshot before evicting. Default 100. */
+  snapshotLimit?: number
+}
+
+interface Job {
+  id: string
+  type: string
+  payload?: unknown
+  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'canceled'
+  attempts: number
+  maxAttempts: number
+  /** Return value of a successful `onJob`. */
+  result?: unknown
+  /** Error message from a thrown `onJob`. */
+  error?: string
+  /** Last `ctx.progress(value)` value (0..1). Present while live. */
+  progress?: number
+  /** Last `ctx.progress(_, message)` string. */
+  progressMessage?: string
+  enqueuedAt: string
+  startedAt?: string | null
+  completedAt?: string | null
+  enqueuedBy?: string | null
+  /** State checkpoint from a previous `ctx.continue(state)` call. */
+  resumeFrom?: unknown
+}
+
+interface JobContext {
+  /** Broadcast progress (0..1) and an optional human-readable message. */
+  progress(value: number, message?: string): void
+  /** AbortSignal that fires on client cancel. Pass to `fetch(url, { signal })`. */
+  signal: AbortSignal
+  /** Checkpoint state and yield to the next alarm tick. Call this then `return`. */
+  continue(state: unknown, opts?: { afterMs?: number }): void
+}
+```
+
+The `onJob` return value becomes `job.result` (must be JSON-serializable); throwing fails the job and triggers a retry if `attempts < maxAttempts`. There is no `ctx.complete()` / `ctx.fail()` - return or throw. Sync returns are allowed - `onJob` does not have to be `async`.
+
+`P` and `R` narrow the job payload and result types: `JobRoom<Env, MyPayload, MyResult>` gives you `onJob(job: Job<MyPayload>, ctx): MyResult | void | Promise<MyResult | void>`. Most apps leave them as `unknown` and cast at the dispatch site (see the scaffold pattern below).
+
+Scaffold pattern:
+
+```ts
+export class AppJobRoom extends JobRoom<Env> {
+  constructor(state: DurableObjectState, env: Env) {
+    super(state, env)
+  }
+  protected async onJob(job: Job, ctx: JobContext): Promise<unknown> {
+    return await runJob(job, ctx, this.env)
+  }
+}
+```
+
+Connected to via `/ws/jobs/:roomId`. For the worker-side enqueue helper that lets you enqueue from HTTP routes, cron handlers, or server actions (different isolate from the DO), see [`enqueueJob`](#enqueuejob-namespace-roomid-type-payload-opts) below.
+
+### `enqueueJob(namespace, roomId, type, payload?, opts?)`
+
+Cross-isolate enqueue helper - use anywhere outside the JobRoom DO (HTTP routes, cron handlers, server actions, AI routes).
+
+```ts
+function enqueueJob(
+  namespace: DurableObjectNamespace,
+  roomId: string,
+  type: string,
+  payload?: unknown,
+  opts?: { maxAttempts?: number; enqueuedBy?: string },
+): Promise<string>   // resolves with the jobId
+```
+
+Pass `app:${env.APP_NAME}` as `roomId` to hit the per-app `AppJobRoom`. From inside an `onJob` handler, call `this.enqueue(...)` directly instead - it skips the HTTP hop.
+
 > Audio/video rooms have no SDK DO class. Use LiveKit via the `livekit/*` integration endpoints instead.
 
 ## The DO manifest
@@ -291,6 +385,7 @@ export const __DO_MANIFEST__ = [
   { binding: 'CANVAS_ROOMS',   className: 'AppCanvasRoom',   sqlite: true },
   { binding: 'PRESENCE_ROOMS', className: 'AppPresenceRoom', sqlite: true },
   { binding: 'CRON_ROOMS',     className: 'AppCronRoom',     sqlite: true },
+  { binding: 'JOB_ROOMS',      className: 'AppJobRoom',      sqlite: true },
 ] as const satisfies DOManifest
 
 interface Env extends DOBindings<typeof __DO_MANIFEST__> {

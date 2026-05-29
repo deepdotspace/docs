@@ -17,6 +17,8 @@ import {
   useGameRoom,
   // Cron monitor
   useCronMonitor,
+  // Background jobs
+  useJobs,
   // User colors
   DEFAULT_USER_COLORS, getUserColor,
   // Low-level sync primitives
@@ -105,6 +107,8 @@ function useCanvas(roomId: string): {
   /** All connected users' viewports (including self). */
   viewports: ViewportClient[]
   connected: boolean
+  /** RBAC gate. False until the server AUTH frame lands; stays false for viewers. */
+  canWrite: boolean
   addShape:    (shape: Partial<CanvasShapeClient>) => void
   moveShape:   (shapeId: string, x: number, y: number) => void
   resizeShape: (shapeId: string, width: number, height: number, x?: number, y?: number) => void
@@ -117,6 +121,8 @@ function useCanvas(roomId: string): {
 ```
 
 All mutation methods are fire-and-forget - they encode and send a typed message and return `void`. `viewports` is an array, not a `Map`.
+
+Use `canWrite` to disable shape/draw controls for viewers - shape mutations (`addShape`, `moveShape`, `resizeShape`, `updateShape`, `deleteShape`, `undo`, `redo`) **silently no-op when `canWrite` is `false`**. `setViewport` is exempt and stays open for viewers (viewport broadcasts are presence-like, not stateful writes).
 
 Each shape:
 
@@ -195,6 +201,8 @@ function useGameRoom(roomId: string): {
   players: GamePlayer[]
   running: boolean
   connected: boolean
+  /** RBAC gate. False until the server AUTH frame lands; stays false for spectators. */
+  canWrite: boolean
   sendInput:  (action: string, data?: Record<string, unknown>) => void
   setReady:   () => void
   startGame:  () => void
@@ -211,7 +219,7 @@ type GamePlayer = {
 }
 ```
 
-All mutation methods (`sendInput`, `setReady`, `startGame`, `endGame`) are fire-and-forget - they return `void`. The server-side `GameInput` event carries `userId` (not `playerId`), `action`, `data`, and the current `tick`.
+All mutation methods (`sendInput`, `setReady`, `startGame`, `endGame`) are fire-and-forget - they return `void` - and **silently no-op when `canWrite` is `false`**. Use `canWrite` to disable lobby and input UI for spectators. The server-side `GameInput` event carries `userId` (not `playerId`), `action`, `data`, and the current `tick`.
 
 State migration on schema bumps lives in the worker - override `onHydrateState(stored)` on your `GameRoom` subclass.
 
@@ -224,6 +232,8 @@ function useCronMonitor(roomId: string): {
   tasks: CronTaskState[]
   history: CronHistoryEntry[]
   connected: boolean
+  /** RBAC gate. False until the server AUTH frame lands; stays false for read-only viewers. */
+  canWrite: boolean
   trigger: (taskName: string) => void
   pause:   (taskName: string) => void
   resume:  (taskName: string) => void
@@ -252,10 +262,55 @@ type CronHistoryEntry = {
 }
 ```
 
-`trigger`, `pause`, and `resume` are fire-and-forget - they return `void`.
+`trigger`, `pause`, and `resume` are fire-and-forget - they return `void` - and **silently no-op when `canWrite` is `false`**.
 
 <Warning>
-The Cron DO does **not** enforce a role on `trigger` / `pause` / `resume`. Gate the admin UI by `useUser().user?.role === 'admin'`.
+**Default scaffold lets every signed-in user fire owner-billed tasks.** The Cron DO authorizes `trigger` / `pause` / `resume` based on the role the `wsRoute` resolver returns. The scaffolded `/ws/cron/:roomId` returns `role: 'member'` for any signed-in connection, so by default **any signed-in user gets `canWrite: true`**. For owner-only writes, replace the scaffolded `wsRoute` helper with an inline handler that returns `role: 'member'` only when the JWT subject matches `OWNER_USER_ID`. Then also disable the controls client-side by `canWrite` (or `useUser().user?.role === 'admin'`) so the buttons match server policy.
+</Warning>
+
+## `useJobs(roomId)`
+
+Enqueue and monitor durable background jobs on the `JobRoom` DO. Pass `app:<APP_NAME>` for the per-app job room. The hook subscribes via WebSocket, so `jobs` re-renders on every state change - no polling.
+
+```ts
+function useJobs(roomId: string): {
+  jobs: JobView[]
+  connected: boolean
+  enqueue(
+    type: string,
+    payload?: unknown,
+    opts?: { maxAttempts?: number },
+  ): Promise<string>                       // resolves with the jobId
+  getJob(id: string): JobView | undefined
+  cancel(id: string): void
+  retry(id: string): void
+}
+
+type JobView = {
+  id: string
+  type: string
+  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'canceled'
+  payload?: unknown
+  result?: unknown
+  error?: string
+  /** 0..1 - present while live. */
+  progress?: number
+  progressMessage?: string
+  attempts: number
+  maxAttempts: number
+  enqueuedAt: string
+  startedAt?: string
+  completedAt?: string
+  enqueuedBy?: string
+}
+```
+
+`enqueue` resolves once the server acks (10 s timeout, also rejects on socket close). `cancel(id)` is best-effort - it always flips the DB row to `canceled`, and if the cancel reaches the isolate running the job, `ctx.signal` fires so any in-flight `fetch(...)` you wired with `signal: ctx.signal` aborts cleanly. `retry(id)` re-queues a failed or canceled job.
+
+The handler runs in your `AppJobRoom`'s `onJob(job, ctx)` - see [Background jobs](/guides/background-jobs) for the worker-side pattern and the `enqueueJob` helper for HTTP routes / cron / actions.
+
+<Warning>
+**The JobRoom DO does not enforce a role on `enqueue` / `cancel` / `retry`.** Unlike `useCronMonitor` - whose DO gates writes off the `wsRoute` resolver role - any signed-in (or anonymous) connection can enqueue jobs. For jobs that spend owner credits via integrations or AI proxies, gate the button by `useUser().user?.role === 'admin'` or wrap the page route in `(protected)/`. See [Background jobs](/guides/background-jobs#auth-gating-paid-jobs) for the pattern.
 </Warning>
 
 ## User colors
@@ -291,4 +346,5 @@ Most apps never use these directly. Use the higher-level hooks (`useYjsText`, et
 - [Collaborative editing guide](/guides/collaborative-editing)
 - [Presence and cursors guide](/guides/presence-and-cursors)
 - [Canvas guide](/guides/canvas)
-- [Scheduled jobs guide](/guides/scheduled-jobs)
+- [Scheduled tasks guide](/guides/scheduled-jobs)
+- [Background jobs guide](/guides/background-jobs)

@@ -50,6 +50,7 @@
         "pages": [
           "guides/server-actions",
           "guides/scheduled-jobs",
+          "guides/background-jobs",
           "guides/external-apis",
           "guides/custom-bindings"
         ]

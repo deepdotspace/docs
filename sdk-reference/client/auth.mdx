@@ -38,7 +38,7 @@ Primary auth-state hook. Session-based; updates immediately on sign-in / sign-ou
 
 | Field | Type | Description |
 |---|---|---|
-| `isLoaded` | `boolean` | `true` once the Better Auth session has resolved. |
+| `isLoaded` | `boolean` | `true` once the first Better Auth session check resolves, and **stays true** for the page's lifetime - does not flap back to `false` on background refetches or tab refocus. Safe to gate `RecordProvider` / data-layer mounts on without remount churn. |
 | `isSignedIn` | `boolean` | The canonical signed-in check. |
 | `userId` | `string \| null` | JWT subject; null when signed out. |
 | `sessionId` | `string \| null` | Better Auth session ID. |

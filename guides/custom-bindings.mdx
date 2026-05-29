@@ -83,13 +83,12 @@ Provisioned IDs persist in `app-resources/<appName>.json` on the platform R2 buc
 
 ## Reserved names
 
-Twelve binding names are owned by the SDK and cannot be redeclared:
+Eleven binding names are owned by the SDK and cannot be redeclared:
 
 ```
 ASSETS, PLATFORM_WORKER, API_WORKER, APP_NAME, OWNER_USER_ID,
 AUTH_JWT_PUBLIC_KEY, AUTH_JWT_ISSUER, AUTH_WORKER_URL,
-APP_IDENTITY_TOKEN, APP_OWNER_JWT, INTERNAL_STORAGE_HMAC_SECRET,
-USAGE_EVENTS
+APP_IDENTITY_TOKEN, APP_OWNER_JWT, USAGE_EVENTS
 ```
 
 The deploy validator rejects custom bindings using any of these names. It does **not** check against your `__DO_MANIFEST__` DO class names - picking `RECORD_ROOMS` as a custom binding name fails silently at deploy and shadows the DO at runtime.

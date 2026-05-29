@@ -1,0 +1,223 @@
+---
+title: "Background jobs"
+description: "Durable, observable background work that outlives the HTTP response."
+---
+
+DeepSpace apps include a per-app `AppJobRoom` Durable Object for background work that can't or shouldn't run inside an HTTP handler - long AI generations, CSV exports, image renders, bulk imports, fan-out side effects. Jobs are persisted in SQLite, survive isolate restarts, and broadcast every state change over WebSocket so clients see live progress and can cancel or retry without polling.
+
+Use this **instead** of `ctx.waitUntil(...)`. `waitUntil` is killed 30 seconds after the response goes out - the JobRoom replaces that pattern. For work that runs on a schedule (daily digest, hourly sync), use [scheduled tasks](/guides/scheduled-jobs); for privileged work that finishes inside the HTTP response, use [server actions](/guides/server-actions).
+
+<Warning>
+**The JobRoom DO does not enforce a role on `enqueue` / `cancel` / `retry`.** Unlike [`CronRoom`](/guides/scheduled-jobs#monitor-and-trigger-from-the-ui---usecronmonitor), which authorizes writes off the `wsRoute` resolver role, any signed-in (or anonymous) connection can enqueue jobs. If your handlers spend owner credits via integrations or AI proxies, gate the trigger UI client-side by `useUser().user?.role === 'admin'` or wrap the route in `(protected)/`.
+</Warning>
+
+## When to use jobs vs. cron vs. server actions
+
+| If the work… | Use |
+|---|---|
+| Finishes inside the HTTP response | A regular Hono route or [server action](/guides/server-actions) |
+| Runs on a schedule (daily digest, hourly sync) | [Scheduled tasks](/guides/scheduled-jobs) |
+| Is triggered by a user click and may take seconds to minutes | **Background jobs** (this guide) |
+| Is triggered by the worker and needs to outlive the response | **Background jobs** (this guide) |
+
+## Define handlers in `src/jobs.ts`
+
+A single `runJob` function dispatches every job type. It receives the [`Job`](/sdk-reference/worker/rooms#jobroom-e) row and a [`JobContext`](/sdk-reference/worker/rooms#jobroom-e), returns the result on success, and throws to fail.
+
+```ts
+import type { Job, JobContext } from 'deepspace/worker'
+
+export async function runJob(
+  job: Job,
+  ctx: JobContext,
+  env: Env,
+): Promise<unknown | void> {
+  if (job.type === 'ai-summarize') {
+    const { text } = job.payload as { text: string }
+    ctx.progress(0.1, 'starting')
+
+    // Pass ctx.signal so Cancel actually aborts the upstream fetch.
+    const summary = await callModel(text, { signal: ctx.signal })
+
+    return { summary, words: summary.split(/\s+/).length }
+  }
+
+  if (job.type === 'export-csv') {
+    // ... long export, call ctx.progress(p, msg) periodically
+  }
+
+  // Unknown type → fail loudly so it shows up in the failed list.
+  throw new Error(`Unknown job type: ${job.type}`)
+}
+```
+
+<Note>
+The return value becomes `job.result` and **must be JSON-serializable**. Throwing fails the job; if `attempts < maxAttempts`, the job retries on the next alarm tick. There is no `ctx.complete()` or `ctx.fail()` - return or throw to control the outcome.
+</Note>
+
+### The `JobContext` API
+
+| Member | Purpose |
+|---|---|
+| `ctx.progress(value, message?)` | Broadcast progress (0..1). Re-renders any `useJobs` subscriber. |
+| `ctx.signal` | `AbortSignal` that fires when the client calls `cancel(id)` (same isolate). Pass to `fetch(url, { signal: ctx.signal })` to abort upstream requests cleanly. |
+| `ctx.continue(state, { afterMs? })` | Checkpoint state and yield to the next alarm tick. Use for jobs that exceed the ~15-minute wall budget. Call `ctx.continue(...)` **then `return`** - the next tick invokes `onJob` again with `job.resumeFrom = state`. |
+
+## Worker wiring
+
+The scaffolded `worker.ts` already wires `AppJobRoom`:
+
+```ts
+export class AppJobRoom extends JobRoom<Env> {
+  constructor(state: DurableObjectState, env: Env) {
+    super(state, env)
+  }
+  protected async onJob(job: Job, ctx: JobContext): Promise<unknown> {
+    return await runJob(job, ctx, this.env)
+  }
+}
+```
+
+Don't edit the binding or route - add job types in `src/jobs.ts` and the DO picks them up.
+
+## Enqueueing - two entry points, one queue
+
+Two enqueue paths write to the same DO row. Pick by **where the caller lives**.
+
+### From the client - `useJobs`
+
+The [`useJobs`](/sdk-reference/client/realtime#usejobs-roomid) hook returns a live `jobs` list and an `enqueue` function. Every connected subscriber sees the same state transitions in real time.
+
+```tsx
+import { useJobs } from 'deepspace'
+import { SCOPE_ID } from '../constants'
+
+function ExportButton() {
+  const { enqueue, jobs, cancel, retry } = useJobs(SCOPE_ID)
+
+  return (
+    <>
+      <button onClick={() => enqueue('export-csv', { filterId: 'q1' }, { maxAttempts: 2 })}>
+        Run export
+      </button>
+      <ul>
+        {jobs.map((j) => (
+          <li key={j.id}>
+            {j.type} - {j.status}
+            {j.progress != null && <> ({Math.round(j.progress * 100)}%)</>}
+            {j.status === 'running' && <button onClick={() => cancel(j.id)}>Cancel</button>}
+            {j.status === 'failed' && <button onClick={() => retry(j.id)}>Retry</button>}
+          </li>
+        ))}
+      </ul>
+    </>
+  )
+}
+```
+
+`enqueue` resolves with the `jobId` once the server acks. `jobs` is sorted with live/recent first and re-renders on every state change.
+
+### From the worker - `enqueueJob`
+
+Use this from HTTP routes, server actions, cron handlers, AI routes - anywhere the JobRoom DO isn't the current isolate.
+
+```ts
+import { enqueueJob } from 'deepspace/worker'
+
+app.post('/api/start-export', async (c) => {
+  const auth = await resolveAuth(c.req.raw, c.env)
+  if (!auth) return c.json({ error: 'unauthorized' }, 401)
+
+  const jobId = await enqueueJob(
+    c.env.JOB_ROOMS,
+    `app:${c.env.APP_NAME}`,
+    'export-csv',
+    { filterId: '...' },
+    { maxAttempts: 2, enqueuedBy: auth.userId },
+  )
+
+  return c.json({ jobId })
+})
+```
+
+Inside `AppJobRoom.onJob(...)` itself, call `this.enqueue('next-step', payload)` to chain follow-up work - the in-isolate call skips the HTTP hop that `enqueueJob` makes from outside:
+
+```ts
+export class AppJobRoom extends JobRoom<Env> {
+  protected async onJob(job: Job, ctx: JobContext): Promise<unknown> {
+    const result = await runJob(job, ctx, this.env)
+    if (job.type === 'export-csv') this.enqueue('email-export', { jobId: job.id })
+    return result
+  }
+}
+```
+
+## Lifecycle and limits
+
+Every default below is fixed when the DO is constructed. Override them by passing a config object to `super(state, env, { ... })` inside `AppJobRoom` - see the [`JobRoomConfig` reference](/sdk-reference/worker/rooms#jobroom-e) for every knob.
+
+| Concern | Default | How to change |
+|---|---|---|
+| Retry on throw | None (`maxAttempts: 1`) | Pass `{ maxAttempts: N }` to `enqueue` |
+| Retry backoff | 1 s | Override `retryBackoffMs` on `AppJobRoom` config |
+| Terminal-row retention | 24 h | Override `retentionMs` on `AppJobRoom` config |
+| Per-tick wall budget | ~15 min | Chain with `ctx.continue(state)` |
+| Crash recovery | Auto | Rows stuck `running` past ~16 min are rescued on the next DO wake-up |
+
+State machine: `queued → running → succeeded | failed | canceled`.
+
+## Outbound calls in handlers
+
+Handlers run as the app owner, just like [scheduled tasks](/guides/scheduled-jobs). Use [`createDeepSpaceAI(env, 'anthropic')`](/sdk-reference/worker/ai) for [AI calls](/guides/ai-chat) - it falls back to `APP_OWNER_JWT` and bills the developer. Pass `ctx.signal` to every `fetch(...)` so client cancel aborts cleanly upstream:
+
+```ts
+const res = await fetch('https://api.example.com/render', {
+  method: 'POST',
+  body: JSON.stringify({ ... }),
+  signal: ctx.signal,
+})
+```
+
+## Auth-gating paid jobs
+
+Per the Warning at the top of this page, the `JobRoom` DO does not gate writes server-side. For jobs that spend owner credits, gate the trigger UI client-side:
+
+```tsx
+import { useJobs, useUser } from 'deepspace'
+import { SCOPE_ID } from '../constants'
+
+function SummarizeButton({ text }: { text: string }) {
+  const { enqueue } = useJobs(SCOPE_ID)
+  const { user } = useUser()
+  if (user?.role !== 'admin') return null
+  return <button onClick={() => enqueue('ai-summarize', { text })}>Summarize</button>
+}
+```
+
+Or wrap the route in `(protected)/` for a sign-in floor.
+
+## Testing without waiting for a real upstream
+
+Two approaches work well:
+
+1. **Use a fast handler in tests.** A job type like `'echo'` that returns its payload with no I/O lets you assert the full enqueue → run → succeed pipeline in under a second without mocking upstreams.
+2. **Hit the enqueue route from a Playwright spec.** Render a page that uses `useJobs`, click the enqueue button, then assert against the rendered status:
+
+```ts
+test('export job succeeds end-to-end', async ({ page }) => {
+  await page.goto('/jobs')
+  await page.getByRole('button', { name: /run export/i }).click()
+  await expect(
+    page.locator('[data-testid="job-row"][data-status="succeeded"]'),
+  ).toBeVisible({ timeout: 30_000 })
+})
+```
+
+Don't write tests that wait for the 16-minute crash-recovery sweep, and don't manually flip DB rows - use the public `enqueue` / `cancel` / `retry` surface.
+
+## Next steps
+
+- [Worker rooms reference](/sdk-reference/worker/rooms#jobroom-e) - `JobRoom`, `Job`, `JobContext`, `enqueueJob`.
+- [Real-time reference](/sdk-reference/client/realtime#usejobs-roomid) - `useJobs` return shape.
+- [Scheduled tasks](/guides/scheduled-jobs) - if the work needs to run on a schedule instead of on demand.
+- [Server actions](/guides/server-actions) - for privileged work that finishes inside the HTTP response.
